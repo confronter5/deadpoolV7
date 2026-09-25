@@ -1,0 +1,34 @@
+{
+  "name": "deadpoolv7",
+  "version": "7.2.0",
+  "description": "Deadpool V7 - Full WhatsApp Bot | Auto Status, Anti-Delete, Media DL, Welcome, Broadcast, Group tools",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "pair": "node pair.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "whatsapp-bot",
+    "baileys",
+    "deadpool",
+    "autostatus",
+    "antidelete",
+    "viewonce"
+  ],
+  "author": "DeadpoolV7",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "@hapi/boom": "^10.0.1",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "node-cache": "^5.1.2",
+    "axios": "^1.7.7",
+    "wa-sticker-formatter": "^4.4.4"
+  }
+}
