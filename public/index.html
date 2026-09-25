@@ -194,8 +194,9 @@
             codeEl.style.display = 'block';
             codeEl.textContent = data.code;
             statusText.innerHTML =
-              'Enter this code on your phone:<br>' +
-              '<b>Settings → Linked Devices → Link with phone number</b>';
+              '⏰ Enter this code <b>now</b> on your phone:<br>' +
+              '<b>WhatsApp → ⋮ → Linked Devices → Link with phone number</b><br>' +
+              'You have about 1 minute.';
           }
           if (data.status === 'done' && data.session) {
             clearInterval(pollTimer);
@@ -206,7 +207,7 @@
           }
           if (data.status === 'error') {
             clearInterval(pollTimer);
-            statusText.innerHTML = '<span class="err">❌ ' + (data.error || 'Pair failed') + '</span>';
+            statusText.innerHTML = '<span class="err">❌ ' + (data.error || 'Pair failed') + '</span><br><span class="hint">Wait 30–60s, then click Get Pairing Code again. On phone: Linked Devices → Link with phone number.</span>';
             btn.disabled = false;
           }
         } catch {}
