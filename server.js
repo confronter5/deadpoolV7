@@ -1,7 +1,6 @@
 /**
  * Deadpool V7 - Web Pair Dashboard
- * Start: node server.js  (or npm run pair:web)
- * Deploy as WEB dyno on Heroku / Web Service on Render
+ * Start: node server.js
  */
 
 const express = require('express');
@@ -14,7 +13,9 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   proto,
-  generateWAMessageFromContent
+  generateWAMessageFromContent,
+  makeCacheableSignalKeyStore,
+  Browsers
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
@@ -22,17 +23,36 @@ const config = require('./config');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
-const PAIR_CODE = config.PAIRING_CODE || 'DEADPOOL';
+const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().slice(0, 8);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory pair jobs: id -> { status, code, session, error, phone }
 const jobs = new Map();
 
 function jobId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function reasonText(statusCode) {
+  const map = {
+    [DisconnectReason.connectionClosed]: 'Connection closed — try again',
+    [DisconnectReason.connectionLost]: 'Connection lost — try again',
+    [DisconnectReason.connectionReplaced]: 'Connected elsewhere',
+    [DisconnectReason.timedOut]: 'Timed out — enter code faster & try again',
+    [DisconnectReason.loggedOut]: 'Session ended — click Get Pairing Code again',
+    [DisconnectReason.badSession]: 'Bad session — try again',
+    [DisconnectReason.restartRequired]: 'Restart required — try again',
+    [DisconnectReason.multideviceMismatch]: 'Multi-device mismatch',
+    405: 'Pairing not allowed — wait 1–2 min and retry',
+    408: 'Timed out — try again',
+    428: 'Connection closed — try again',
+    440: 'Session conflict — try again',
+    500: 'WhatsApp server error — try again',
+    515: 'Restart required — try again'
+  };
+  return map[statusCode] || `Disconnected (${statusCode}) — try again`;
 }
 
 async function sendSessionToPM(sock, sessionId) {
@@ -47,7 +67,7 @@ async function sendSessionToPM(sock, sessionId) {
     `✅ Pairing successful!\n\n` +
     `*Your SESSION ID:*\n` +
     `\`\`\`${sessionId}\`\`\`\n\n` +
-    `📋 Long-press to copy, or use the buttons below.\n` +
+    `📋 Long-press to copy.\n` +
     `👨‍💻 Developer: ${DEV_LINK}\n\n` +
     `_Keep this private._\n` +
     `Powered by ${config.POWERED_BY || 'Confronter'}`;
@@ -78,13 +98,6 @@ async function sendSessionToPM(sock, sessionId) {
               })
             },
             {
-              name: 'quick_reply',
-              buttonParamsJson: JSON.stringify({
-                display_text: '📤 Share',
-                id: 'share_session'
-              })
-            },
-            {
               name: 'cta_url',
               buttonParamsJson: JSON.stringify({
                 display_text: '👨‍💻 Developer',
@@ -100,44 +113,21 @@ async function sendSessionToPM(sock, sessionId) {
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
   } catch {
     await sock.sendMessage(jid, {
-      text: `📋 *Copy Session*\n\`\`\`${sessionId}\`\`\`\n\n👨‍💻 Developer\n${DEV_LINK}`
+      text: `📋 *Copy Session*\n\`\`\`${sessionId}\`\`\`\n\n👨‍💻 ${DEV_LINK}`
     }).catch(() => {});
   }
-
-  sock.ev.on('messages.upsert', async (upsert) => {
-    try {
-      const m = upsert.messages?.[0];
-      if (!m?.message || m.key.remoteJid !== jid) return;
-      const text = String(
-        m.message.conversation ||
-        m.message.extendedTextMessage?.text ||
-        m.message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
-        ''
-      ).toLowerCase();
-      if (text.includes('share')) {
-        await sock.sendMessage(jid, {
-          text: `📤 Forward the session message, or copy:\n\`\`\`${sessionId}\`\`\``
-        });
-      }
-      if (text.includes('copy')) {
-        await sock.sendMessage(jid, {
-          text: `📋 *SESSION*\n\n\`\`\`${sessionId}\`\`\``
-        });
-      }
-    } catch {}
-  });
-
   return true;
 }
 
 async function startPairJob(phone) {
   const id = jobId();
   const cleanPhone = String(phone).replace(/[^0-9]/g, '');
-  if (cleanPhone.length < 10) {
-    throw new Error('Invalid phone number');
+  if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+    throw new Error('Invalid phone number (use country code, e.g. 2547...)');
   }
 
   const AUTH_DIR = path.join(__dirname, 'auth_pair_web', id);
+  await fs.remove(AUTH_DIR).catch(() => {});
   await fs.ensureDir(AUTH_DIR);
 
   const job = {
@@ -150,79 +140,140 @@ async function startPairJob(phone) {
   };
   jobs.set(id, job);
 
+  // auto cleanup job after 10 min
+  setTimeout(() => {
+    jobs.delete(id);
+    fs.remove(AUTH_DIR).catch(() => {});
+  }, 10 * 60 * 1000);
+
   (async () => {
+    let sock;
     try {
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
       const { version } = await fetchLatestBaileysVersion();
 
-      const sock = makeWASocket({
+      sock = makeWASocket({
         version,
-        auth: state,
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+        },
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        browser: ['DeadpoolV7', 'Chrome', '120.0.0'],
+        browser: Browsers.ubuntu('Chrome'),
         syncFullHistory: false,
-        markOnlineOnConnect: false
+        markOnlineOnConnect: false,
+        generateHighQualityLinkPreview: false,
+        getMessage: async () => undefined
       });
 
       sock.ev.on('creds.update', saveCreds);
 
       sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+
+        // ignore QR path — we use pairing code only
+        if (qr && job.status === 'starting') {
+          // still waiting for requestPairingCode
+        }
 
         if (connection === 'open') {
           job.status = 'connected';
+          job.error = null;
           try {
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 2500));
             const credsPath = path.join(AUTH_DIR, 'creds.json');
+            if (!(await fs.pathExists(credsPath))) {
+              job.status = 'error';
+              job.error = 'Creds not saved — try again';
+              return;
+            }
             const creds = await fs.readJson(credsPath);
             const sessionData = Buffer.from(JSON.stringify(creds)).toString('base64');
             const sessionId = `deadpool~${sessionData}`;
             job.session = sessionId;
             job.status = 'done';
+            job.error = null;
 
             await sendSessionToPM(sock, sessionId).catch(() => {});
 
-            // cleanup auth folder after a while
-            setTimeout(() => fs.remove(AUTH_DIR).catch(() => {}), 60000);
+            setTimeout(() => fs.remove(AUTH_DIR).catch(() => {}), 60_000);
             setTimeout(() => {
               try { sock.end(undefined); } catch {}
-            }, 90000);
+            }, 90_000);
           } catch (e) {
             job.status = 'error';
-            job.error = e.message;
+            job.error = e.message || 'Failed to build session';
           }
+          return;
         }
 
         if (connection === 'close') {
-          const code =
+          if (job.status === 'done') return;
+
+          const statusCode =
             lastDisconnect?.error instanceof Boom
               ? lastDisconnect.error.output?.statusCode
-              : 0;
-          if (job.status !== 'done') {
-            if (code === DisconnectReason.loggedOut) {
+              : lastDisconnect?.error?.output?.statusCode || 0;
+
+          // If we already showed a code, keep it visible and tell user to retry
+          if (job.code && job.status === 'code') {
+            // User may still be entering code — only error on hard logout after code was shown
+            if (
+              statusCode === DisconnectReason.loggedOut ||
+              statusCode === 401 ||
+              statusCode === 405
+            ) {
               job.status = 'error';
-              job.error = 'Logged out';
+              job.error = reasonText(statusCode);
+            } else if (statusCode === DisconnectReason.timedOut || statusCode === 408) {
+              job.status = 'error';
+              job.error = 'Timed out. Open Linked Devices quickly and enter DEADPOOL, then try again.';
+            } else {
+              job.status = 'error';
+              job.error = reasonText(statusCode);
             }
+          } else if (job.status !== 'done') {
+            job.status = 'error';
+            job.error = reasonText(statusCode);
           }
         }
       });
 
+      // Request pairing code
       if (!sock.authState.creds.registered) {
+        // small delay helps on free hosts
+        await new Promise((r) => setTimeout(r, 1500));
+
+        let code;
+        try {
+          // Prefer fixed code DEADPOOL
+          code = await sock.requestPairingCode(cleanPhone, PAIR_CODE);
+        } catch (e1) {
+          // Fallback: let WhatsApp generate code
+          try {
+            code = await sock.requestPairingCode(cleanPhone);
+          } catch (e2) {
+            job.status = 'error';
+            job.error = e2.message || e1.message || 'Could not request pairing code';
+            return;
+          }
+        }
+
+        job.code = (code || PAIR_CODE).toUpperCase();
         job.status = 'code';
-        const code = await sock.requestPairingCode(cleanPhone, PAIR_CODE);
-        job.code = code;
+        job.error = null;
       }
     } catch (e) {
       job.status = 'error';
       job.error = e.message || 'Pair failed';
+      try { sock?.end(undefined); } catch {}
     }
   })();
 
   return job;
 }
 
-// ---------- Routes ----------
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -235,7 +286,7 @@ app.post('/api/pair', async (req, res) => {
     res.json({
       id: job.id,
       status: job.status,
-      message: 'Pairing started. Enter the code on your phone.'
+      message: 'Pairing started'
     });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -244,7 +295,7 @@ app.post('/api/pair', async (req, res) => {
 
 app.get('/api/status/:id', (req, res) => {
   const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (!job) return res.status(404).json({ error: 'Job expired — click Get Pairing Code again' });
   res.json({
     id: job.id,
     status: job.status,
@@ -256,7 +307,7 @@ app.get('/api/status/:id', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, bot: config.BOT_NAME || 'Deadpool V7' });
+  res.json({ ok: true, bot: config.BOT_NAME || 'Deadpool V7', code: PAIR_CODE });
 });
 
 app.listen(PORT, () => {
