@@ -5,10 +5,13 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "pair": "node pair.js"
+    "pair": "node pair.js",
+    "pair:web": "node server.js",
+    "start:pair": "node server.js",
+    "start:bot": "node index.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   },
   "keywords": [
     "whatsapp-bot",
@@ -29,6 +32,7 @@
     "fs-extra": "^11.2.0",
     "node-cache": "^5.1.2",
     "axios": "^1.7.7",
-    "wa-sticker-formatter": "^4.4.4"
+    "wa-sticker-formatter": "^4.4.4",
+    "express": "^4.21.2"
   }
 }
