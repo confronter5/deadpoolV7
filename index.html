@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deadpool V7 — Pair Session</title>
+  <style>
+    :root {
+      --bg: #0b0b0f;
+      --card: #14141c;
+      --red: #e11d48;
+      --red2: #fb7185;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --line: #1e1e2a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #3f0d1a 0%, var(--bg) 55%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.45);
+    }
+    .logo {
+      text-align: center;
+      font-size: 42px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    h1 {
+      margin: 0 0 4px;
+      text-align: center;
+      font-size: 1.45rem;
+    }
+    .sub {
+      text-align: center;
+      color: var(--muted);
+      font-size: .9rem;
+      margin-bottom: 22px;
+    }
+    label {
+      display: block;
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 14px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #0d0d14;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input:focus { border-color: var(--red); }
+    button {
+      width: 100%;
+      margin-top: 14px;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--red), #9f1239);
+      color: white;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .box {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 12px;
+      background: #0d0d14;
+      border: 1px solid var(--line);
+      display: none;
+    }
+    .box.show { display: block; }
+    .code {
+      font-size: 1.8rem;
+      letter-spacing: .2em;
+      text-align: center;
+      font-weight: 800;
+      color: var(--red2);
+      margin: 8px 0;
+    }
+    .hint { color: var(--muted); font-size: .85rem; line-height: 1.45; }
+    .session {
+      word-break: break-all;
+      font-size: .72rem;
+      background: #000;
+      padding: 10px;
+      border-radius: 8px;
+      max-height: 120px;
+      overflow: auto;
+      margin-top: 8px;
+    }
+    .ok { color: #4ade80; }
+    .err { color: #fb7185; }
+    .footer {
+      text-align: center;
+      margin-top: 18px;
+      font-size: .8rem;
+      color: var(--muted);
+    }
+    a { color: var(--red2); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">💀</div>
+    <h1>Deadpool V7</h1>
+    <p class="sub">Get your WhatsApp session · Code <b>DEADPOOL</b></p>
+
+    <label for="phone">WhatsApp number (country code, no +)</label>
+    <input id="phone" type="tel" placeholder="e.g. 254712345678" />
+    <button id="btn" type="button">Get Pairing Code</button>
+
+    <div id="statusBox" class="box">
+      <div id="statusText" class="hint"></div>
+      <div id="codeEl" class="code" style="display:none"></div>
+      <div id="sessionWrap" style="display:none">
+        <p class="ok">✅ Session ready — also sent to your WhatsApp PM</p>
+        <div id="sessionEl" class="session"></div>
+        <button type="button" id="copyBtn" style="margin-top:10px;background:#334155">📋 Copy Session</button>
+      </div>
+    </div>
+
+    <p class="footer">
+      Powered by Confronter<br />
+      <a href="https://wa.me/254796283064" target="_blank">Developer support</a>
+    </p>
+  </div>
+
+  <script>
+    const btn = document.getElementById('btn');
+    const phone = document.getElementById('phone');
+    const statusBox = document.getElementById('statusBox');
+    const statusText = document.getElementById('statusText');
+    const codeEl = document.getElementById('codeEl');
+    const sessionWrap = document.getElementById('sessionWrap');
+    const sessionEl = document.getElementById('sessionEl');
+    const copyBtn = document.getElementById('copyBtn');
+    let pollTimer = null;
+
+    btn.onclick = async () => {
+      const num = phone.value.trim();
+      if (!num) return alert('Enter your number');
+      btn.disabled = true;
+      statusBox.classList.add('show');
+      statusText.innerHTML = '⏳ Starting pair...';
+      codeEl.style.display = 'none';
+      sessionWrap.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: num })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed');
+
+        statusText.innerHTML = '📱 Waiting for pairing code...';
+        poll(data.id);
+      } catch (e) {
+        statusText.innerHTML = '<span class="err">❌ ' + e.message + '</span>';
+        btn.disabled = false;
+      }
+    };
+
+    function poll(id) {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/api/status/' + id);
+          const data = await res.json();
+          if (data.code) {
+            codeEl.style.display = 'block';
+            codeEl.textContent = data.code;
+            statusText.innerHTML =
+              'Enter this code on your phone:<br>' +
+              '<b>Settings → Linked Devices → Link with phone number</b>';
+          }
+          if (data.status === 'done' && data.session) {
+            clearInterval(pollTimer);
+            sessionWrap.style.display = 'block';
+            sessionEl.textContent = data.session;
+            statusText.innerHTML = '<span class="ok">✅ Linked! Session sent to your PM.</span>';
+            btn.disabled = false;
+          }
+          if (data.status === 'error') {
+            clearInterval(pollTimer);
+            statusText.innerHTML = '<span class="err">❌ ' + (data.error || 'Pair failed') + '</span>';
+            btn.disabled = false;
+          }
+        } catch {}
+      }, 1500);
+    }
+
+    copyBtn.onclick = () => {
+      const t = sessionEl.textContent;
+      navigator.clipboard.writeText(t).then(() => {
+        copyBtn.textContent = '✅ Copied';
+        setTimeout(() => (copyBtn.textContent = '📋 Copy Session'), 1500);
+      });
+    };
+  </script>
+</body>
+</html>
