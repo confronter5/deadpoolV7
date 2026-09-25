@@ -1,0 +1,29 @@
+services:
+  - type: worker
+    name: deadpoolv7
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: SESSION
+        sync: false
+      - key: OWNER_NUMBER
+        sync: false
+      - key: BOT_NAME
+        value: Deadpool V7
+      - key: MENU_MEDIA
+        sync: false
+      - key: AUTO_VIEW_STATUS
+        value: "true"
+      - key: AUTO_LIKE_STATUS
+        value: "true"
+      - key: ANTI_DELETE
+        value: "pm"
+      - key: ANTI_VIEW_ONCE
+        value: "pm"
+      - key: MODE
+        value: "public"
+      - key: PRESENCE
+        value: "available"
+      - key: ANTI_CALL
+        value: "true"
