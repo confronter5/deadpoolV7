@@ -1,0 +1,130 @@
+{
+  "name": "Deadpool V7",
+  "description": "Deadpool V7 - Full WhatsApp Bot | Auto Status, Anti-Delete, Welcome, Antilink, Media DL, Owner Broadcast",
+  "repository": "https://github.com/YOUR_USERNAME/deadpoolv7",
+  "logo": "https://i.imgur.com/8KZQvQ0.png",
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "baileys",
+    "deadpool"
+  ],
+  "stack": "heroku-24",
+  "env": {
+    "SESSION": {
+      "description": "Required - Session ID (deadpool~xxxxx)",
+      "required": true,
+      "value": "deadpool~"
+    },
+    "OWNER_NUMBER": {
+      "description": "Your number with country code, no + (e.g. 254712345678)",
+      "required": true
+    },
+    "BOT_NAME": {
+      "description": "Bot name",
+      "value": "Deadpool V7"
+    },
+    "MENU_MEDIA": {
+      "description": "Catbox or direct URL for menu image/video",
+      "required": false
+    },
+    "WELCOME": {
+      "value": "true"
+    },
+    "GOODBYE": {
+      "value": "true"
+    },
+    "AUTO_VIEW_STATUS": {
+      "value": "true"
+    },
+    "AUTO_LIKE_STATUS": {
+      "value": "true"
+    },
+    "STATUS_LIKES": {
+      "value": "\u2764\ufe0f,\ud83d\udd25,\ud83d\udcaf,\ud83d\ude02,\ud83d\udc4d,\ud83d\ude0d"
+    },
+    "ANTI_DELETE": {
+      "description": "off | pm | chat",
+      "value": "pm"
+    },
+    "ANTI_VIEW_ONCE": {
+      "description": "off | pm | chat",
+      "value": "pm"
+    },
+    "MODE": {
+      "description": "public | private",
+      "value": "public"
+    },
+    "PRESENCE": {
+      "description": "available | composing | recording | unavailable",
+      "value": "available"
+    },
+    "ANTI_CALL": {
+      "value": "true"
+    },
+    "ANTILINK": {
+      "value": "false"
+    },
+    "DEVICE": {
+      "value": "default"
+    },
+    "HEROKU_APP_NAME": {
+      "required": false
+    },
+    "HEROKU_API_KEY": {
+      "required": false
+    },
+    "START_MSG": {
+      "description": "Message sent to all users when bot connects. Edit freely.",
+      "value": "\ud83d\udc80 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
+    },
+    "SEND_START_MSG": {
+      "description": "Send start message to users on connect (true/false)",
+      "value": "true"
+    },
+    "AUTO_REACT": {
+      "description": "Auto react to messages (true/false)",
+      "value": "false"
+    },
+    "REACT_EMOJIS": {
+      "description": "Emojis for auto-react (comma separated)",
+      "value": "\ud83d\udc4d,\u2764\ufe0f,\ud83d\udd25,\ud83d\ude02,\ud83d\ude4f,\ud83d\udcaf"
+    },
+    "BOT_EXPIRY_DAYS": {
+      "description": "Bot lifetime in days from first start (0 = unlimited). Example: 30",
+      "value": "0"
+    },
+    "BOT_EXPIRY_DATE": {
+      "description": "Hard expiry date YYYY-MM-DD (optional, overrides days)",
+      "required": false,
+      "value": ""
+    },
+    "BOT_ACTIVATED_AT": {
+      "description": "Optional activation date ISO. Leave empty to auto-set.",
+      "required": false
+    },
+    "EXPIRY_MSG": {
+      "description": "Message shown when bot is expired",
+      "value": "\u26d4 *Bot Duration has expired*\\nRenew to continue using the bot.\\nContact: wa.me/254796283064"
+    },
+    "POWERED_BY": {
+      "description": "Footer text on every bot message",
+      "value": "Powered by Confronter"
+    },
+    "SHOW_DATE_IN_FOOTER": {
+      "description": "Show day and date in footer (true/false)",
+      "value": "true"
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+}
