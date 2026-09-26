@@ -28,123 +28,83 @@ const question = (q) => new Promise((resolve) => rl.question(q, resolve));
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
   if (!me) return false;
+  const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : me;
 
-  const jid = me.includes(':')
-    ? me.split(':')[0] + '@s.whatsapp.net'
-    : me;
+  const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
+  const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
+  const dev = process.env.DEV_LINK || DEV_LINK;
 
-  const caption =
-    `╔══════════════════════╗\n` +
-    `║  💀 *DEADPOOL V7 SESSION*\n` +
-    `╚══════════════════════╝\n\n` +
-    `✅ Pairing successful!\n\n` +
-    `*Your SESSION ID:*\n` +
-    `\`\`\`${sessionId}\`\`\`\n\n` +
-    `📋 Tap *Copy Session* below or long-press the code to copy.\n` +
-    `📤 Use *Share* to forward to your deploy chat.\n` +
-    `👨‍💻 *Developer* for support.\n\n` +
-    `_Keep this private. Anyone with this session can access your WhatsApp._\n\n` +
-    `Powered by ${config.POWERED_BY || 'Confronter'}`;
+  await sock.sendMessage(jid, {
+    text:
+      `*${sessionId}*\n\n` +
+      `✅ *Deadpool V7* linked successfully!\n` +
+      `📋 Tap *Copy Session* or long-press the text.\n` +
+      `⚠️ _Do not share this with anyone._`
+  });
 
-  // 1) Main text with session (easy to long-press copy)
-  await sock.sendMessage(jid, { text: caption });
-
-  // 2) Interactive buttons (Android / some clients)
   try {
+    const buttons = [
+      {
+        name: 'cta_copy',
+        buttonParamsJson: JSON.stringify({
+          display_text: '📋 Copy Session',
+          copy_code: sessionId
+        })
+      },
+      {
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({
+          display_text: '🔗 Visit our site',
+          url: site,
+          merchant_url: site
+        })
+      }
+    ];
+    if (channel) {
+      buttons.push({
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({
+          display_text: '📢 Join WaChannel',
+          url: channel,
+          merchant_url: channel
+        })
+      });
+    } else {
+      buttons.push({
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({
+          display_text: '👨‍💻 Developer',
+          url: dev,
+          merchant_url: dev
+        })
+      });
+    }
+
     const buttonsMsg = {
       viewOnce: true,
       interactiveMessage: proto.Message.InteractiveMessage.create({
         body: proto.Message.InteractiveMessage.Body.create({
-          text:
-            '🎯 *Quick actions*\n\n' +
-            '• Copy Session – get session again\n' +
-            '• Share – share tips\n' +
-            '• Developer – contact support'
+          text: '💀 *Deadpool V7 Session*\nChoose an action:'
         }),
         footer: proto.Message.InteractiveMessage.Footer.create({
-          text: config.BOT_NAME || 'Deadpool V7'
+          text: config.POWERED_BY || 'Powered by Confronter'
         }),
         header: proto.Message.InteractiveMessage.Header.create({
-          title: '💀 Session Ready',
+          title: 'Session Ready',
           hasMediaAttachment: false
         }),
         nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-          buttons: [
-            {
-              name: 'cta_copy',
-              buttonParamsJson: JSON.stringify({
-                display_text: '📋 Copy Session',
-                copy_code: sessionId
-              })
-            },
-            {
-              name: 'quick_reply',
-              buttonParamsJson: JSON.stringify({
-                display_text: '📤 Share',
-                id: 'share_session'
-              })
-            },
-            {
-              name: 'cta_url',
-              buttonParamsJson: JSON.stringify({
-                display_text: '👨‍💻 Developer',
-                url: DEV_LINK,
-                merchant_url: DEV_LINK
-              })
-            }
-          ]
+          buttons
         })
       })
     };
-
-    const msg = generateWAMessageFromContent(jid, buttonsMsg, {
-      userJid: jid
-    });
+    const msg = generateWAMessageFromContent(jid, buttonsMsg, { userJid: jid });
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-  } catch (e) {
-    // Fallback classic buttons / plain links
-    try {
-      await sock.sendMessage(jid, {
-        text:
-          `📋 *Copy Session*\nReply: *.copy*\n\n` +
-          `📤 *Share*\nForward the message above.\n\n` +
-          `👨‍💻 *Developer*\n${DEV_LINK}`,
-        footer: config.BOT_NAME || 'Deadpool V7'
-      });
-    } catch {}
+  } catch {
+    await sock.sendMessage(jid, {
+      text: `📋 *SESSION*\n\`\`\`${sessionId}\`\`\`\n\n🔗 ${site}\n👨‍💻 ${dev}`
+    }).catch(() => {});
   }
-
-  // Listen once for quick replies
-  const onMsg = async (upsert) => {
-    try {
-      const m = upsert.messages?.[0];
-      if (!m?.message || m.key.remoteJid !== jid) return;
-      const text =
-        m.message.conversation ||
-        m.message.extendedTextMessage?.text ||
-        m.message?.buttonsResponseMessage?.selectedButtonId ||
-        m.message?.templateButtonReplyMessage?.selectedId ||
-        m.message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
-        '';
-      const t = String(text).toLowerCase();
-      if (t.includes('share_session') || t === 'share' || t.includes('share')) {
-        await sock.sendMessage(jid, {
-          text:
-            `📤 *Share your session*\n\n` +
-            `1. Long-press the session message\n` +
-            `2. Forward to your saved notes / deploy chat\n\n` +
-            `Or copy this:\n\`\`\`${sessionId}\`\`\``
-        });
-      }
-      if (t.includes('copy') || t === '.copy') {
-        await sock.sendMessage(jid, {
-          text: `📋 *SESSION (copy all)*\n\n\`\`\`${sessionId}\`\`\``
-        });
-      }
-    } catch {}
-  };
-  sock.ev.on('messages.upsert', onMsg);
-
   return true;
 }
 
