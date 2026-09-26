@@ -69,6 +69,9 @@ module.exports = {
   // Footer on every bot message (edit in .env)
   POWERED_BY: process.env.POWERED_BY || 'Powered by Confronter',
   DEV_LINK: process.env.DEV_LINK || 'https://wa.me/254796283064',
+  SITE_URL: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || 'https://deadpoolv7.onrender.com',
+  CHANNEL_URL: process.env.CHANNEL_URL || '',
+
   SHOW_DATE_IN_FOOTER: (process.env.SHOW_DATE_IN_FOOTER || 'true').toLowerCase() === 'true',
 
 
