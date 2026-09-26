@@ -41,7 +41,7 @@
       "value": "true"
     },
     "STATUS_LIKES": {
-      "value": "\u2764\ufe0f,\ud83d\udd25,\ud83d\udcaf,\ud83d\ude02,\ud83d\udc4d,\ud83d\ude0d"
+      "value": "❤️,🔥,💯,😂,👍,😍"
     },
     "ANTI_DELETE": {
       "description": "off | pm | chat",
@@ -76,7 +76,7 @@
     },
     "START_MSG": {
       "description": "Message sent to all users when bot connects. Edit freely.",
-      "value": "\ud83d\udc80 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
+      "value": "💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
     },
     "SEND_START_MSG": {
       "description": "Send start message to users on connect (true/false)",
@@ -88,7 +88,7 @@
     },
     "REACT_EMOJIS": {
       "description": "Emojis for auto-react (comma separated)",
-      "value": "\ud83d\udc4d,\u2764\ufe0f,\ud83d\udd25,\ud83d\ude02,\ud83d\ude4f,\ud83d\udcaf"
+      "value": "👍,❤️,🔥,😂,🙏,💯"
     },
     "BOT_EXPIRY_DAYS": {
       "description": "Bot lifetime in days from first start (0 = unlimited). Example: 30",
@@ -105,7 +105,7 @@
     },
     "EXPIRY_MSG": {
       "description": "Message shown when bot is expired",
-      "value": "\u26d4 *Bot Duration has expired*\\nRenew to continue using the bot.\\nContact: wa.me/254796283064"
+      "value": "⛔ *Bot Duration has expired*\\nRenew to continue using the bot.\\nContact: wa.me/254796283064"
     },
     "POWERED_BY": {
       "description": "Footer text on every bot message",
