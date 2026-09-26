@@ -1,7 +1,9 @@
 /**
- * Deadpool V7 - Web Pair Dashboard
- * QR scan + Pairing code (DEADPOOL)
- * Start: node server.js
+ * Deadpool V7 Pair Server
+ * Matches working pair sites (Keith / Toxic style):
+ * - Request pairing code on QR event
+ * - On 515 restartRequired after pair → reconnect with same creds (CRITICAL)
+ * - QR auto-refresh support
  */
 
 const express = require('express');
@@ -16,8 +18,8 @@ const {
   fetchLatestBaileysVersion,
   proto,
   generateWAMessageFromContent,
-  makeCacheableSignalKeyStore,
-  Browsers
+  Browsers,
+  delay
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
@@ -37,45 +39,25 @@ function jobId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function reasonText(statusCode) {
-  const map = {
-    [DisconnectReason.connectionClosed]: 'Connection closed — try again',
-    [DisconnectReason.connectionLost]: 'Connection lost — try again',
-    [DisconnectReason.connectionReplaced]: 'Connected on another device',
-    [DisconnectReason.timedOut]: 'Timed out — scan QR again',
-    [DisconnectReason.loggedOut]: 'Logged out — start a new pair',
-    [DisconnectReason.badSession]: 'Bad session — try again',
-    [DisconnectReason.restartRequired]: 'Restart required — try again',
-    [DisconnectReason.multideviceMismatch]: 'Multi-device mismatch',
-    405: 'Pairing blocked — wait 1–2 min and retry',
-    408: 'Timed out — try again',
-    428: 'Connection closed — try again',
-    440: 'Session conflict — try again',
-    500: 'WhatsApp error — try again',
-    515: 'Restart required — try again'
-  };
-  return map[statusCode] || `Disconnected (${statusCode || '?'}) — try again`;
+function log(...a) {
+  console.log(new Date().toISOString(), ...a);
 }
 
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
   if (!me) return false;
   const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : me;
-
   const site = config.SITE_URL || process.env.SITE_URL || 'https://deadpoolv7.onrender.com';
   const channel = config.CHANNEL_URL || process.env.CHANNEL_URL || '';
-  const dev = DEV_LINK;
 
-  // Main session text (easy long-press copy) — style like Keith example
-  const body =
-    `*${sessionId}*\n\n` +
-    `✅ *Deadpool V7* linked successfully!\n` +
-    `📋 Tap *Copy Session* below or long-press the text.\n` +
-    `⚠️ _Do not share this with anyone._`;
+  await sock.sendMessage(jid, {
+    text:
+      `*${sessionId}*\n\n` +
+      `✅ *Deadpool V7* linked successfully!\n` +
+      `📋 Tap *Copy Session* or long-press the text.\n` +
+      `⚠️ _Do not share this with anyone._`
+  });
 
-  await sock.sendMessage(jid, { text: body });
-
-  // Interactive buttons: Copy Session | Visit site | Join channel
   try {
     const buttons = [
       {
@@ -108,8 +90,8 @@ async function sendSessionToPM(sock, sessionId) {
         name: 'cta_url',
         buttonParamsJson: JSON.stringify({
           display_text: '👨‍💻 Developer',
-          url: dev,
-          merchant_url: dev
+          url: DEV_LINK,
+          merchant_url: DEV_LINK
         })
       });
     }
@@ -121,7 +103,7 @@ async function sendSessionToPM(sock, sessionId) {
           text: '💀 *Deadpool V7 Session*\nChoose an action:'
         }),
         footer: proto.Message.InteractiveMessage.Footer.create({
-          text: (config.POWERED_BY || 'Powered by Confronter')
+          text: config.POWERED_BY || 'Powered by Confronter'
         }),
         header: proto.Message.InteractiveMessage.Header.create({
           title: 'Session Ready',
@@ -134,26 +116,206 @@ async function sendSessionToPM(sock, sessionId) {
     };
     const msg = generateWAMessageFromContent(jid, buttonsMsg, { userJid: jid });
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-  } catch (e) {
-    // Fallback plain links
-    let fb = `📋 *Copy Session*\n\`\`\`${sessionId}\`\`\`\n\n🔗 Site: ${site}\n👨‍💻 Dev: ${dev}`;
-    if (channel) fb += `\n📢 Channel: ${channel}`;
-    await sock.sendMessage(jid, { text: fb }).catch(() => {});
+  } catch {
+    await sock.sendMessage(jid, {
+      text: `📋 *SESSION*\n\`\`\`${sessionId}\`\`\`\n\n🔗 ${site}\n👨‍💻 ${DEV_LINK}`
+    }).catch(() => {});
   }
   return true;
 }
 
-async function startPairJob(phone, mode = 'qr') {
+async function exportSession(AUTH_DIR) {
+  const credsPath = path.join(AUTH_DIR, 'creds.json');
+  if (!(await fs.pathExists(credsPath))) return null;
+  const creds = await fs.readJson(credsPath);
+  if (!creds || !creds.me) return null;
+  const sessionData = Buffer.from(JSON.stringify(creds)).toString('base64');
+  return `deadpool~${sessionData}`;
+}
+
+/**
+ * Core connector — reconnects on 515 like Keith/Toxic style bots
+ */
+async function startSocket(job) {
+  const AUTH_DIR = job.authDir;
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    logger: pino({ level: 'silent' }),
+    browser: Browsers.ubuntu('Chrome'),
+    printQRInTerminal: false,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 10_000,
+    getMessage: async () => undefined
+  });
+
+  job.sock = sock;
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    // ---- QR for scan mode ----
+    if (qr && job.status !== 'done') {
+      try {
+        job.qrDataUrl = await QRCode.toDataURL(qr, {
+          margin: 1,
+          width: 300,
+          color: { dark: '#000000', light: '#ffffff' }
+        });
+        if (job.mode === 'qr') {
+          job.status = 'qr';
+          job.error = null;
+        }
+        log(job.id, 'QR updated');
+      } catch {}
+
+      // ---- Pairing CODE: request when QR event fires (Baileys recommended) ----
+      if (
+        job.mode === 'code' &&
+        job.phone &&
+        !job.codeRequested &&
+        !sock.authState.creds.registered
+      ) {
+        job.codeRequested = true;
+        try {
+          await delay(1000);
+          let code;
+          try {
+            code = await sock.requestPairingCode(job.phone, PAIR_CODE);
+          } catch {
+            code = await sock.requestPairingCode(job.phone);
+          }
+          job.code = String(code || '').toUpperCase();
+          job.status = 'code';
+          job.error = null;
+          log(job.id, 'PAIR CODE', job.code);
+        } catch (e) {
+          job.status = 'error';
+          job.error = e.message || 'Failed to get pairing code';
+          log(job.id, 'code fail', e.message);
+        }
+      }
+    }
+
+    if (connection === 'open') {
+      log(job.id, 'OPEN', sock.user?.id);
+      job.status = 'connected';
+      job.error = null;
+      job.qrDataUrl = null;
+
+      // Wait for creds to fully settle
+      await delay(2500);
+      const sessionId = await exportSession(AUTH_DIR);
+      if (!sessionId) {
+        await delay(2000);
+      }
+      const finalId = (await exportSession(AUTH_DIR)) || sessionId;
+      if (!finalId) {
+        job.status = 'error';
+        job.error = 'Session file incomplete — try again';
+        return;
+      }
+
+      job.session = finalId;
+      job.status = 'done';
+      log(job.id, 'SESSION READY');
+
+      await sendSessionToPM(sock, finalId).catch((e) => log('pm', e.message));
+
+      // keep alive for PM delivery then cleanup
+      setTimeout(() => {
+        try { sock.end(undefined); } catch {}
+        job.sock = null;
+        setTimeout(() => fs.remove(AUTH_DIR).catch(() => {}), 30_000);
+      }, 90_000);
+      return;
+    }
+
+    if (connection === 'close') {
+      if (job.status === 'done') return;
+
+      const statusCode =
+        lastDisconnect?.error instanceof Boom
+          ? lastDisconnect.error.output?.statusCode
+          : lastDisconnect?.error?.output?.statusCode || 0;
+
+      log(job.id, 'CLOSE', statusCode);
+
+      // *** CRITICAL: after successful pair WA sends 515 — reconnect with same creds ***
+      if (
+        statusCode === DisconnectReason.restartRequired ||
+        statusCode === 515
+      ) {
+        log(job.id, '515 reconnect…');
+        job.status = job.code ? 'code' : 'starting';
+        job.codeRequested = job.mode === 'code'; // don't re-request code
+        await delay(1500);
+        try {
+          await startSocket(job);
+        } catch (e) {
+          job.status = 'error';
+          job.error = 'Reconnect failed — try again';
+        }
+        return;
+      }
+
+      // logged out / bad session
+      if (
+        statusCode === DisconnectReason.loggedOut ||
+        statusCode === 401
+      ) {
+        job.status = 'error';
+        job.error = 'Logged out — generate again';
+        return;
+      }
+
+      // connection lost while waiting — allow one soft retry
+      if (
+        !job.retried &&
+        (statusCode === DisconnectReason.connectionClosed ||
+          statusCode === DisconnectReason.connectionLost ||
+          statusCode === 428 ||
+          statusCode === 408)
+      ) {
+        job.retried = true;
+        log(job.id, 'soft retry…');
+        await delay(2000);
+        try {
+          await startSocket(job);
+        } catch {
+          job.status = 'error';
+          job.error = 'Connection lost — generate again';
+        }
+        return;
+      }
+
+      job.status = 'error';
+      job.error =
+        statusCode === 405
+          ? 'Rate limited — wait 2 minutes and try again'
+          : `Disconnected (${statusCode}) — generate again`;
+    }
+  });
+
+  return sock;
+}
+
+async function startPairJob(phone, mode) {
   const id = jobId();
   const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
-
   if (mode === 'code' && (cleanPhone.length < 10 || cleanPhone.length > 15)) {
-    throw new Error('Invalid phone number (e.g. 254712345678)');
+    throw new Error('Invalid number. Use country code e.g. 254712345678');
   }
 
-  const AUTH_DIR = path.join(__dirname, 'auth_pair_web', id);
-  await fs.remove(AUTH_DIR).catch(() => {});
-  await fs.ensureDir(AUTH_DIR);
+  const authDir = path.join(__dirname, 'auth_pair_web', id);
+  await fs.remove(authDir).catch(() => {});
+  await fs.ensureDir(authDir);
 
   const job = {
     id,
@@ -163,142 +325,37 @@ async function startPairJob(phone, mode = 'qr') {
     code: null,
     qrDataUrl: null,
     session: null,
-    error: null
+    error: null,
+    authDir,
+    codeRequested: false,
+    retried: false,
+    sock: null
   };
   jobs.set(id, job);
 
+  // expire job after 12 min
   setTimeout(() => {
-    jobs.delete(id);
-    fs.remove(AUTH_DIR).catch(() => {});
+    const j = jobs.get(id);
+    if (j && j.status !== 'done') {
+      try { j.sock?.end(undefined); } catch {}
+      jobs.delete(id);
+      fs.remove(authDir).catch(() => {});
+    }
   }, 12 * 60 * 1000);
 
-  (async () => {
-    let sock;
-    try {
-      const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-      const { version } = await fetchLatestBaileysVersion();
-
-      sock = makeWASocket({
-        version,
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-        },
-        printQRInTerminal: false,
-        logger: pino({ level: 'silent' }),
-        browser: Browsers.ubuntu('Chrome'),
-        syncFullHistory: false,
-        markOnlineOnConnect: false,
-        generateHighQualityLinkPreview: false,
-        getMessage: async () => undefined
-      });
-
-      sock.ev.on('creds.update', saveCreds);
-
-      sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        // QR path
-        if (qr && job.status !== 'done') {
-          try {
-            job.qrDataUrl = await QRCode.toDataURL(qr, {
-              margin: 2,
-              width: 320,
-              color: { dark: '#000000', light: '#ffffff' }
-            });
-            job.status = 'qr';
-            job.error = null;
-          } catch (e) {
-            job.error = 'Could not generate QR';
-          }
-        }
-
-        if (connection === 'open') {
-          job.status = 'connected';
-          job.error = null;
-          job.qrDataUrl = null;
-          try {
-            await new Promise((r) => setTimeout(r, 2000));
-            const credsPath = path.join(AUTH_DIR, 'creds.json');
-            if (!(await fs.pathExists(credsPath))) {
-              job.status = 'error';
-              job.error = 'Creds missing — try again';
-              return;
-            }
-            const creds = await fs.readJson(credsPath);
-            const sessionData = Buffer.from(JSON.stringify(creds)).toString('base64');
-            const sessionId = `deadpool~${sessionData}`;
-            job.session = sessionId;
-            job.status = 'done';
-
-            await sendSessionToPM(sock, sessionId).catch(() => {});
-
-            setTimeout(() => fs.remove(AUTH_DIR).catch(() => {}), 60_000);
-            setTimeout(() => {
-              try { sock.end(undefined); } catch {}
-            }, 90_000);
-          } catch (e) {
-            job.status = 'error';
-            job.error = e.message || 'Failed to build session';
-          }
-          return;
-        }
-
-        if (connection === 'close') {
-          if (job.status === 'done') return;
-          const statusCode =
-            lastDisconnect?.error instanceof Boom
-              ? lastDisconnect.error.output?.statusCode
-              : lastDisconnect?.error?.output?.statusCode || 0;
-
-          // Allow QR refresh on restartRequired / timeout — Baileys often re-emits qr
-          if (
-            statusCode === DisconnectReason.restartRequired ||
-            statusCode === 515
-          ) {
-            // keep waiting for new qr
-            job.status = job.mode === 'code' ? 'code' : 'starting';
-            return;
-          }
-
-          job.status = 'error';
-          job.error = reasonText(statusCode);
-        }
-      });
-
-      // Pairing CODE path
-      if (mode === 'code' && !sock.authState.creds.registered) {
-        await new Promise((r) => setTimeout(r, 1200));
-        try {
-          let code;
-          try {
-            code = await sock.requestPairingCode(cleanPhone, PAIR_CODE);
-          } catch {
-            code = await sock.requestPairingCode(cleanPhone);
-          }
-          job.code = String(code || PAIR_CODE).toUpperCase();
-          job.status = 'code';
-          job.error = null;
-        } catch (e) {
-          job.status = 'error';
-          job.error = e.message || 'Could not get pairing code. Use QR instead.';
-        }
-      }
-    } catch (e) {
-      job.status = 'error';
-      job.error = e.message || 'Pair failed';
-      try { sock?.end(undefined); } catch {}
-    }
-  })();
+  startSocket(job).catch((e) => {
+    job.status = 'error';
+    job.error = e.message || 'Start failed';
+  });
 
   return job;
 }
 
+// ---------- routes (Keith-style friendly) ----------
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// QR pair (no phone needed) — recommended
 app.post('/api/pair/qr', async (req, res) => {
   try {
     const job = await startPairJob(null, 'qr');
@@ -308,11 +365,10 @@ app.post('/api/pair/qr', async (req, res) => {
   }
 });
 
-// Code pair (DEADPOOL)
 app.post('/api/pair', async (req, res) => {
   try {
-    const phone = req.body.phone || req.body.number;
-    if (!phone) return res.status(400).json({ error: 'Phone number required for code pair' });
+    const phone = req.body.phone || req.body.number || req.query.q;
+    if (!phone) return res.status(400).json({ error: 'Phone required' });
     const job = await startPairJob(phone, 'code');
     res.json({ id: job.id, status: job.status, mode: 'code' });
   } catch (e) {
@@ -320,9 +376,32 @@ app.post('/api/pair', async (req, res) => {
   }
 });
 
+// Keith-style GET: /api/pair?q=2547...
+app.get('/api/pair', async (req, res) => {
+  try {
+    const phone = req.query.q || req.query.phone || req.query.number;
+    if (!phone) return res.status(400).json({ status: false, error: 'Phone required' });
+    const job = await startPairJob(phone, 'code');
+    // wait briefly for code
+    const started = Date.now();
+    while (Date.now() - started < 20000) {
+      if (job.code) {
+        return res.json({ status: true, result: job.code, id: job.id });
+      }
+      if (job.status === 'error') {
+        return res.status(500).json({ status: false, error: job.error });
+      }
+      await delay(500);
+    }
+    res.json({ status: true, result: job.code || PAIR_CODE, id: job.id, pending: !job.code });
+  } catch (e) {
+    res.status(400).json({ status: false, error: e.message });
+  }
+});
+
 app.get('/api/status/:id', (req, res) => {
   const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job expired — start again' });
+  if (!job) return res.status(404).json({ error: 'Expired — generate again' });
   res.json({
     id: job.id,
     status: job.status,
@@ -330,17 +409,14 @@ app.get('/api/status/:id', (req, res) => {
     code: job.code,
     qr: job.qrDataUrl,
     session: job.status === 'done' ? job.session : null,
-    error: job.error,
-    phone: job.phone
+    error: job.error
   });
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, bot: config.BOT_NAME || 'Deadpool V7', code: PAIR_CODE });
+  res.json({ ok: true, active: jobs.size });
 });
 
 app.listen(PORT, () => {
-  console.log(`\n💀 Deadpool V7 Pair Dashboard`);
-  console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`📱 Code: ${PAIR_CODE} | QR supported\n`);
+  log(`Deadpool V7 Pair :${PORT} | code=${PAIR_CODE}`);
 });
