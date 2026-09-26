@@ -33,6 +33,7 @@
     "node-cache": "^5.1.2",
     "axios": "^1.7.7",
     "wa-sticker-formatter": "^4.4.4",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4"
   }
 }
