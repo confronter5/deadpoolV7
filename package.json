@@ -11,7 +11,7 @@
     "start:bot": "node index.js"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "keywords": [
     "whatsapp-bot",
