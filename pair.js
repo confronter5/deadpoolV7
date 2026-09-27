@@ -34,12 +34,15 @@ async function sendSessionToPM(sock, sessionId) {
   const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
   const dev = process.env.DEV_LINK || DEV_LINK;
 
+  // Message 1: ONLY the session string (easy long-press copy, no extra text mixed)
+  await sock.sendMessage(jid, { text: sessionId });
+
+  // Message 2: instructions
   await sock.sendMessage(jid, {
     text:
-      `*${sessionId}*\n\n` +
-      `✅ *Deadpool V7* linked successfully!\n` +
-      `📋 Tap *Copy Session* or long-press the text.\n` +
-      `⚠️ _Do not share this with anyone._`
+      `✅ *Deadpool V7* linked successfully!\n\n` +
+      `📋 *Copy Session* button below, or long-press the message above.\n` +
+      `⚠️ Do not share this with anyone.`
   });
 
   try {
