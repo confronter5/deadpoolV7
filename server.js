@@ -254,24 +254,12 @@ async function startSocket(job) {
         return;
       }
 
-      // fullSession = deadpool~BASE64... → store base64 under short id
-      const rawB64 = fullSession.startsWith('deadpool~')
-        ? fullSession.slice('deadpool~'.length)
-        : fullSession;
-      let shortId = makeShortId(5);
-      try {
-        shortId = await saveShortSession(rawB64);
-      } catch (e) {
-        log(job.id, 'short save fail', e.message);
-      }
-      const shortSession = 'deadpool~' + shortId;
-
-      job.session = shortSession;
-      job.sessionFull = fullSession;
+      // Full base64 session only: deadpool~LONGTEXT
+      job.session = fullSession;
       job.status = 'done';
-      log(job.id, 'SESSION READY', shortSession);
+      log(job.id, 'SESSION READY (full base64)');
 
-      await sendSessionToPM(sock, shortSession).catch((e) => log('pm', e.message));
+      await sendSessionToPM(sock, fullSession).catch((e) => log('pm', e.message));
 
       // keep alive for PM delivery then cleanup
       setTimeout(() => {
