@@ -1,211 +1,210 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Deadpool V7 — Pair Session</title>
+  <title>Deadpool V7 — Pair</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <style>
-    :root {
+    :root, [data-theme="dark"] {
       --bg: #0b0b0f;
       --card: #14141c;
-      --red: #e11d48;
-      --red2: #fb7185;
-      --text: #f8fafc;
+      --text: #f1f5f9;
       --muted: #94a3b8;
       --line: #1e1e2a;
+      --accent: #e11d48;
+      --accent2: #fb7185;
+      --input: #0d0d14;
       --ok: #4ade80;
+    }
+    [data-theme="light"] {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #e11d48;
+      --accent2: #be123c;
+      --input: #f8fafc;
+      --ok: #16a34a;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: radial-gradient(1200px 600px at 50% -10%, #3f0d1a 0%, var(--bg) 55%);
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      margin: 0; min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; align-items: center; justify-content: center;
       padding: 20px;
     }
     .card {
-      width: 100%;
-      max-width: 420px;
+      width: 100%; max-width: 420px;
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 18px;
-      padding: 26px 22px;
-      box-shadow: 0 20px 50px rgba(0,0,0,.45);
+      padding: 24px 20px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.25);
+      position: relative;
     }
-    .logo { text-align: center; font-size: 42px; margin-bottom: 6px; }
-    h1 { margin: 0 0 4px; text-align: center; font-size: 1.4rem; }
-    .sub { text-align: center; color: var(--muted); font-size: .88rem; margin-bottom: 18px; }
-    label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; }
+    .theme-btn {
+      position: absolute; top: 14px; right: 14px;
+      background: var(--input); border: 1px solid var(--line);
+      color: var(--text); width: 40px; height: 40px;
+      border-radius: 50%; cursor: pointer; font-size: 1rem;
+    }
+    .logo { text-align: center; font-size: 2rem; color: var(--accent); margin-bottom: 6px; }
+    h1 { margin: 0; text-align: center; font-size: 1.35rem; }
+    .sub { text-align: center; color: var(--muted); font-size: .85rem; margin: 6px 0 16px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab {
+      flex: 1; padding: 12px; text-align: center; cursor: pointer;
+      border-radius: 12px; border: 1px solid var(--line);
+      background: var(--input); color: var(--muted); font-weight: 600; font-size: .85rem;
+    }
+    .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     input {
-      width: 100%;
-      padding: 13px 14px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: #0d0d14;
-      color: var(--text);
-      font-size: 1rem;
-      outline: none;
+      width: 100%; padding: 13px 14px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--input);
+      color: var(--text); font-size: 1rem; outline: none;
     }
-    input:focus { border-color: var(--red); }
-    button {
-      width: 100%;
-      margin-top: 12px;
-      padding: 13px;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--red), #9f1239);
-      color: white;
-      font-weight: 700;
-      font-size: .95rem;
-      cursor: pointer;
+    input:focus { border-color: var(--accent); }
+    button.action {
+      width: 100%; margin-top: 12px; padding: 13px;
+      border: none; border-radius: 12px;
+      background: var(--accent); color: #fff;
+      font-weight: 700; font-size: .95rem; cursor: pointer;
     }
-    button:disabled { opacity: .55; cursor: not-allowed; }
+    button.action:disabled { opacity: .55; cursor: not-allowed; }
     button.secondary {
-      background: #1e293b;
-      border: 1px solid var(--line);
-      margin-top: 8px;
+      width: 100%; margin-top: 8px; padding: 11px;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--input); color: var(--text);
+      font-weight: 600; cursor: pointer;
     }
     .box {
-      margin-top: 16px;
-      padding: 14px;
-      border-radius: 12px;
-      background: #0d0d14;
-      border: 1px solid var(--line);
+      margin-top: 14px; padding: 14px; border-radius: 12px;
+      background: var(--input); border: 1px solid var(--line);
       display: none;
     }
     .box.show { display: block; }
+    .code-row {
+      display: flex; align-items: center; gap: 8px;
+      justify-content: center; margin: 10px 0;
+    }
     .code {
-      font-size: 1.6rem;
-      letter-spacing: .18em;
-      text-align: center;
-      font-weight: 800;
-      color: var(--red2);
-      margin: 8px 0;
+      font-size: 1.5rem; letter-spacing: .2em; font-weight: 800;
+      color: var(--accent2); font-family: ui-monospace, monospace;
     }
-    .hint { color: var(--muted); font-size: .84rem; line-height: 1.45; }
-    .session {
-      word-break: break-all;
-      font-size: .7rem;
-      background: #000;
-      padding: 10px;
-      border-radius: 8px;
-      max-height: 110px;
-      overflow: auto;
-      margin-top: 8px;
-    }
+    .hint { color: var(--muted); font-size: .82rem; line-height: 1.45; }
     .ok { color: var(--ok); }
-    .err { color: var(--red2); }
+    .err { color: var(--accent2); }
     .qr-wrap { text-align: center; margin: 10px 0; }
     .qr-wrap img {
-      width: 260px;
-      max-width: 100%;
-      border-radius: 12px;
-      background: #fff;
-      padding: 8px;
+      width: 240px; max-width: 100%; border-radius: 12px;
+      background: #fff; padding: 8px;
     }
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 14px;
+    .session {
+      word-break: break-all; font-size: .68rem;
+      background: #000; color: #e2e8f0; padding: 10px;
+      border-radius: 8px; max-height: 100px; overflow: auto; margin-top: 8px;
     }
-    .tab {
-      flex: 1;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: #0d0d14;
-      color: var(--muted);
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-      font-size: .85rem;
-    }
-    .tab.active {
-      background: #3f0d1a;
-      color: #fff;
-      border-color: var(--red);
-    }
-    .panel { display: none; }
-    .panel.active { display: block; }
-    .footer {
-      text-align: center;
-      margin-top: 16px;
-      font-size: .8rem;
-      color: var(--muted);
-    }
-    a { color: var(--red2); text-decoration: none; }
+    [data-theme="light"] .session { background: #0f172a; }
+    .footer { text-align: center; margin-top: 16px; font-size: .78rem; color: var(--muted); }
+    .footer a { color: var(--accent2); text-decoration: none; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">💀</div>
+    <button class="theme-btn" id="themeBtn" type="button" title="Toggle theme">
+      <i class="fa-solid fa-moon"></i>
+    </button>
+
+    <div class="logo"><i class="fa-solid fa-skull"></i></div>
     <h1>Deadpool V7</h1>
-    <p class="sub">Get your WhatsApp session · Works on Chrome, Edge, Safari</p>
+    <p class="sub">Link device · Get session</p>
 
     <div class="tabs">
-      <div class="tab active" data-tab="qr">📷 Scan QR</div>
-      <div class="tab" data-tab="code">🔢 Pair Code</div>
+      <div class="tab active" data-tab="qr"><i class="fa-solid fa-qrcode"></i> QR Code</div>
+      <div class="tab" data-tab="code"><i class="fa-solid fa-hashtag"></i> Pair Code</div>
     </div>
 
-    <!-- QR TAB (recommended) -->
     <div id="panel-qr" class="panel active">
       <p class="hint">
-        <b>Best method:</b> open this site on phone or PC → Generate QR → on WhatsApp:
-        <b>Linked Devices → Link a device → Scan QR</b>.
-        Stay on this page until session appears (about 10–30s after scan).
+        <i class="fa-solid fa-info-circle"></i>
+        Generate QR → WhatsApp → Linked Devices → Link a device → Scan.
+        You can leave this page and open WhatsApp — session is sent to your PM when linking finishes.
       </p>
-      <button id="btnQr" type="button">Generate QR Code</button>
+      <button class="action" id="btnQr" type="button">
+        <i class="fa-solid fa-qrcode"></i> Generate QR
+      </button>
     </div>
 
-    <!-- CODE TAB -->
     <div id="panel-code" class="panel">
-      <label for="phone">WhatsApp number (country code, no +)</label>
-      <input id="phone" type="tel" placeholder="e.g. 254712345678" />
-      <button id="btnCode" type="button">Get Code (DEADPOOL)</button>
-      <p class="hint" style="margin-top:10px">On phone: Linked Devices → Link with phone number</p>
+      <label for="phone"><i class="fa-solid fa-phone"></i> Number (country code, no +)</label>
+      <input id="phone" type="tel" placeholder="254712345678" />
+      <button class="action" id="btnCode" type="button">
+        <i class="fa-solid fa-key"></i> Get Pairing Code
+      </button>
     </div>
 
     <div id="statusBox" class="box">
       <div id="statusText" class="hint"></div>
       <div id="qrWrap" class="qr-wrap" style="display:none">
-        <img id="qrImg" alt="QR Code" />
+        <img id="qrImg" alt="QR" />
       </div>
-      <div id="codeEl" class="code" style="display:none"></div>
+      <div id="codeRow" class="code-row" style="display:none">
+        <span id="codeEl" class="code"></span>
+        <button type="button" id="copyCodeBtn" class="secondary" style="width:auto;padding:8px 12px;margin:0">
+          <i class="fa-regular fa-copy"></i> Copy
+        </button>
+      </div>
       <div id="sessionWrap" style="display:none">
-        <p class="ok">✅ Session ready — also sent to your WhatsApp PM</p>
+        <p class="ok"><i class="fa-solid fa-circle-check"></i> Session ready</p>
         <div id="sessionEl" class="session"></div>
-        <button type="button" id="copyBtn" class="secondary">📋 Copy Session</button>
+        <button type="button" id="copySessionBtn" class="secondary">
+          <i class="fa-regular fa-copy"></i> Copy Session
+        </button>
       </div>
     </div>
 
     <p class="footer">
       Powered by Confronter<br />
-      <a href="https://wa.me/254796283064" target="_blank">Developer support</a>
+      <a href="https://wa.me/254796283064" target="_blank"><i class="fa-brands fa-whatsapp"></i> Support</a>
     </p>
   </div>
 
   <script>
-    const tabs = document.querySelectorAll('.tab');
-    const panels = { qr: document.getElementById('panel-qr'), code: document.getElementById('panel-code') };
-    tabs.forEach(t => t.onclick = () => {
-      tabs.forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-      Object.values(panels).forEach(p => p.classList.remove('active'));
-      panels[t.dataset.tab].classList.add('active');
+    const root = document.documentElement;
+    const themeBtn = document.getElementById('themeBtn');
+    const saved = localStorage.getItem('dp-theme') || 'dark';
+    root.setAttribute('data-theme', saved);
+    themeBtn.innerHTML = saved === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+    themeBtn.onclick = () => {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('dp-theme', next);
+      themeBtn.innerHTML = next === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+    };
+
+    document.querySelectorAll('.tab').forEach(t => {
+      t.onclick = () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+      };
     });
 
     const statusBox = document.getElementById('statusBox');
     const statusText = document.getElementById('statusText');
     const qrWrap = document.getElementById('qrWrap');
     const qrImg = document.getElementById('qrImg');
+    const codeRow = document.getElementById('codeRow');
     const codeEl = document.getElementById('codeEl');
     const sessionWrap = document.getElementById('sessionWrap');
     const sessionEl = document.getElementById('sessionEl');
-    const copyBtn = document.getElementById('copyBtn');
     const btnQr = document.getElementById('btnQr');
     const btnCode = document.getElementById('btnCode');
     let pollTimer = null;
@@ -214,7 +213,7 @@
       statusBox.classList.add('show');
       sessionWrap.style.display = 'none';
       qrWrap.style.display = 'none';
-      codeEl.style.display = 'none';
+      codeRow.style.display = 'none';
     }
 
     function poll(id) {
@@ -228,41 +227,35 @@
           if (data.qr) {
             qrImg.src = data.qr;
             qrWrap.style.display = 'block';
-            statusText.innerHTML =
-              '📷 <b>Scan this QR now</b><br>' +
-              'WhatsApp → Linked Devices → Link a device<br>' +
-              '<b>Keep this page open</b> until session appears (do not close tab)';
+            statusText.innerHTML = '<i class="fa-solid fa-camera"></i> Scan QR · you may switch to WhatsApp';
           }
           if (data.code) {
-            codeEl.style.display = 'block';
             codeEl.textContent = data.code;
-            statusText.innerHTML =
-              '⏰ Enter code <b>now</b>:<br>' +
-              'Linked Devices → <b>Link with phone number</b>';
+            codeRow.style.display = 'flex';
+            statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter code on phone now · Linked Devices → Link with phone number';
           }
           if (data.status === 'connected') {
-            statusText.innerHTML = '<span class="ok">⏳ Linked! Building session… wait</span>';
+            statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-spinner fa-spin"></i> Linked · building session…</span>';
           }
           if (data.status === 'done' && data.session) {
             clearInterval(pollTimer);
             qrWrap.style.display = 'none';
+            codeRow.style.display = 'none';
             sessionWrap.style.display = 'block';
             sessionEl.textContent = data.session;
-            statusText.innerHTML = '<span class="ok">✅ Linked! Copy session below (also in your WhatsApp PM).</span>';
+            statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-circle-check"></i> Done · also sent to your WhatsApp PM</span>';
             btnQr.disabled = false;
             btnCode.disabled = false;
           }
           if (data.status === 'error') {
             clearInterval(pollTimer);
-            statusText.innerHTML =
-              '<span class="err">❌ ' + (data.error || 'Failed') + '</span><br>' +
-              '<span class="hint">Tap Generate QR / Get Code again.</span>';
+            statusText.innerHTML = '<span class="err"><i class="fa-solid fa-circle-xmark"></i> ' + (data.error || 'Failed') + '</span>';
             btnQr.disabled = false;
             btnCode.disabled = false;
           }
         } catch (e) {
           clearInterval(pollTimer);
-          statusText.innerHTML = '<span class="err">❌ ' + e.message + '</span>';
+          statusText.innerHTML = '<span class="err">' + e.message + '</span>';
           btnQr.disabled = false;
           btnCode.disabled = false;
         }
@@ -270,29 +263,26 @@
     }
 
     btnQr.onclick = async () => {
-      btnQr.disabled = true;
-      btnCode.disabled = true;
+      btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      statusText.innerHTML = '⏳ Generating QR...';
+      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating QR…';
       try {
         const res = await fetch('/api/pair/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed');
         poll(data.id);
       } catch (e) {
-        statusText.innerHTML = '<span class="err">❌ ' + e.message + '</span>';
-        btnQr.disabled = false;
-        btnCode.disabled = false;
+        statusText.innerHTML = '<span class="err">' + e.message + '</span>';
+        btnQr.disabled = false; btnCode.disabled = false;
       }
     };
 
     btnCode.onclick = async () => {
       const num = document.getElementById('phone').value.trim();
-      if (!num) return alert('Enter your number');
-      btnQr.disabled = true;
-      btnCode.disabled = true;
+      if (!num) return alert('Enter number');
+      btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      statusText.innerHTML = '⏳ Requesting pairing code...';
+      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
       try {
         const res = await fetch('/api/pair', {
           method: 'POST',
@@ -303,16 +293,21 @@
         if (!res.ok) throw new Error(data.error || 'Failed');
         poll(data.id);
       } catch (e) {
-        statusText.innerHTML = '<span class="err">❌ ' + e.message + '</span>';
-        btnQr.disabled = false;
-        btnCode.disabled = false;
+        statusText.innerHTML = '<span class="err">' + e.message + '</span>';
+        btnQr.disabled = false; btnCode.disabled = false;
       }
     };
 
-    copyBtn.onclick = () => {
+    document.getElementById('copyCodeBtn').onclick = () => {
+      const c = codeEl.textContent;
+      navigator.clipboard.writeText(c).then(() => {
+        statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-check"></i> Code copied</span>';
+      });
+    };
+
+    document.getElementById('copySessionBtn').onclick = () => {
       navigator.clipboard.writeText(sessionEl.textContent).then(() => {
-        copyBtn.textContent = '✅ Copied';
-        setTimeout(() => (copyBtn.textContent = '📋 Copy Session'), 1500);
+        statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-check"></i> Session copied</span>';
       });
     };
   </script>
