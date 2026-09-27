@@ -3,16 +3,21 @@
   "description": "Deadpool V7 - Full WhatsApp Bot | Auto Status, Anti-Delete, Welcome, Antilink, Media DL, Owner Broadcast",
   "repository": "https://github.com/confronter5/deadpoolv7",
   "logo": "https://i.imgur.com/8KZQvQ0.png",
-  "keywords": ["whatsapp", "bot", "baileys", "deadpool"],
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "baileys",
+    "deadpool"
+  ],
   "stack": "heroku-24",
   "env": {
     "SESSION": {
-      "description": "Session ID short deadpool~abc12 or full deadpool~BASE64",
+      "description": "Full session string: deadpool~ + base64 (long). From pair site PM.",
       "required": true,
       "value": "deadpool~"
     },
     "SESSION_SERVER": {
-      "description": "Pair site URL for short session lookup",
+      "description": "Optional (unused if full base64 SESSION)",
       "required": false,
       "value": "https://deadpoolv7.onrender.com"
     },
@@ -52,13 +57,13 @@
       "value": "true"
     },
     "STATUS_LIKES": {
-      "value": "❤️,🔥,💯,😂,👍,😍"
+      "value": "\u2764\ufe0f,\ud83d\udd25,\ud83d\udcaf,\ud83d\ude02,\ud83d\udc4d,\ud83d\ude0d"
     },
     "AUTO_REACT": {
       "value": "false"
     },
     "REACT_EMOJIS": {
-      "value": "👍,❤️,🔥,😂,🙏,💯"
+      "value": "\ud83d\udc4d,\u2764\ufe0f,\ud83d\udd25,\ud83d\ude02,\ud83d\ude4f,\ud83d\udcaf"
     },
     "ANTI_DELETE": {
       "description": "off | pm | chat",
@@ -102,7 +107,7 @@
     },
     "START_MSG": {
       "description": "Template message for .bc start (not auto-sent)",
-      "value": "💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
+      "value": "\ud83d\udc80 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
     },
     "SEND_START_MSG": {
       "description": "Auto send START_MSG to all users on connect",
@@ -124,7 +129,7 @@
     },
     "EXPIRY_MSG": {
       "description": "Message when bot is expired",
-      "value": "⛔ *Bot Duration has expired*\nRenew to continue using the bot.\nContact: wa.me/254796283064"
+      "value": "\u26d4 *Bot Duration has expired*\nRenew to continue using the bot.\nContact: wa.me/254796283064"
     },
     "POWERED_BY": {
       "description": "Footer text on every bot message",
