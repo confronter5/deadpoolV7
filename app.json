@@ -1,13 +1,12 @@
 {
   "name": "Deadpool V7",
-  "description": "Deadpool V7 WhatsApp Bot - Baileys multi-device",
+  "description": "Deadpool V7 WhatsApp Bot",
   "repository": "https://github.com/confronter5/deadpoolv7",
   "logo": "https://i.imgur.com/8KZQvQ0.png",
   "keywords": [
     "whatsapp",
     "bot",
-    "baileys",
-    "deadpool"
+    "baileys"
   ],
   "stack": "heroku-24",
   "env": {
@@ -17,114 +16,30 @@
       "value": "deadpool~"
     },
     "OWNER_NUMBER": {
-      "description": "Owner number country code no plus",
+      "description": "Owner number with country code no +",
       "required": true,
       "value": "254796283064"
     },
-    "DEVELOPERS": {
-      "description": "Developer numbers comma separated",
-      "value": "254796283064,254793908571"
+    "BOT_EXPIRY_DAYS": {
+      "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
+      "required": true,
+      "value": "30"
     },
     "BOT_NAME": {
+      "description": "Bot display name",
       "value": "Deadpool V7"
     },
     "PREFIX": {
+      "description": "Command prefix",
       "value": "."
     },
-    "SESSION_SERVER": {
-      "value": "https://deadpoolv7.onrender.com"
-    },
-    "SITE_URL": {
-      "value": "https://deadpoolv7.onrender.com"
-    },
-    "MENU_MEDIA": {
-      "description": "Menu image or video URL",
-      "value": ""
-    },
-    "WELCOME": {
-      "value": "true"
-    },
-    "GOODBYE": {
-      "value": "true"
-    },
-    "AUTO_VIEW_STATUS": {
-      "value": "true"
-    },
-    "AUTO_LIKE_STATUS": {
-      "value": "true"
-    },
-    "STATUS_LIKES": {
-      "value": "❤️,🔥,💯,😂,👍,😍"
-    },
-    "AUTO_REACT": {
-      "value": "false"
-    },
-    "REACT_EMOJIS": {
-      "value": "👍,❤️,🔥,😂,🙏,💯"
-    },
-    "ANTI_DELETE": {
-      "value": "pm"
-    },
-    "ANTI_DELETE_STATUS": {
-      "value": "false"
-    },
-    "ANTI_VIEW_ONCE": {
-      "value": "pm"
-    },
     "MODE": {
+      "description": "public or private",
       "value": "public"
     },
-    "PRESENCE": {
-      "value": "available"
-    },
-    "ANTI_CALL": {
-      "value": "true"
-    },
-    "ANTI_CALL_MSG": {
-      "value": "Calls not allowed now. Kindly use text messages."
-    },
-    "ANTILINK": {
-      "value": "false"
-    },
-    "DEVICE": {
-      "value": "default"
-    },
-    "HEROKU_APP_NAME": {
+    "MENU_MEDIA": {
+      "description": "Optional menu image or video URL",
       "value": ""
-    },
-    "HEROKU_API_KEY": {
-      "value": ""
-    },
-    "START_MSG": {
-      "description": "Template for bc start",
-      "value": "Deadpool V7 connected. Made by Confronter. Issues: wa.me/254796283064"
-    },
-    "SEND_START_MSG": {
-      "value": "false"
-    },
-    "BOT_EXPIRY_DAYS": {
-      "value": "0"
-    },
-    "BOT_EXPIRY_DATE": {
-      "value": ""
-    },
-    "BOT_ACTIVATED_AT": {
-      "value": ""
-    },
-    "EXPIRY_MSG": {
-      "value": "Bot Duration has expired. Renew to continue. Contact: wa.me/254796283064"
-    },
-    "POWERED_BY": {
-      "value": "Powered by Confronter"
-    },
-    "SHOW_DATE_IN_FOOTER": {
-      "value": "true"
-    },
-    "CHANNEL_URL": {
-      "value": ""
-    },
-    "DEV_LINK": {
-      "value": "https://wa.me/254796283064"
     }
   },
   "formation": {
