@@ -1061,7 +1061,7 @@ async function startBot() {
 
         // Owner-only config commands
         const ownerCmds = [
-          'mode', 'presence', 'anticall', 'autoview', 'autolike', 'prefix', 'settings', 'save',
+          'mode', 'presence', 'anticall', 'autoview', 'autolike', 'prefix', 'settings', 'save', 'welcomemsg', 'setwelcome', 'goodbyemsg', 'setgoodbye', 'autoread',
           'antidelete', 'antiviewonce', 'antibot', 'broadcast', 'bc', 'users',
           'welcome', 'goodbye', 'autoreact', 'startmsg', 'sendstart', 'expiry'
         ];
@@ -1232,7 +1232,17 @@ async function startBot() {
         if (cmd === 'welcome') {
           if (args[0] === 'on') { config.WELCOME = true; await reply('✅ Welcome ON'); }
           else if (args[0] === 'off') { config.WELCOME = false; await reply('❌ Welcome OFF'); }
-          else await reply(`Current: *${config.WELCOME ? 'ON' : 'OFF'}*`);
+          else await reply(`Current: *${config.WELCOME ? 'ON' : 'OFF'}*\nSet text: ${config.PREFIX}welcomemsg <text>`);
+          continue;
+        }
+        if (cmd === 'welcomemsg' || cmd === 'setwelcome') {
+          if (!text) await reply(`Current:\n${config.WELCOME_MSG}\n\nUsage: ${config.PREFIX}welcomemsg Welcome @user to @group`);
+          else { config.WELCOME_MSG = text; await reply('✅ Welcome message updated'); }
+          continue;
+        }
+        if (cmd === 'goodbyemsg' || cmd === 'setgoodbye') {
+          if (!text) await reply(`Current:\n${config.GOODBYE_MSG}`);
+          else { config.GOODBYE_MSG = text; await reply('✅ Goodbye message updated'); }
           continue;
         }
 
@@ -1244,6 +1254,13 @@ async function startBot() {
         }
 
         // ----- AUTO-REACT -----
+        if (cmd === 'autoread') {
+          if (args[0] === 'on') { config.AUTO_READ = true; await reply('✅ Auto-Read ON'); }
+          else if (args[0] === 'off') { config.AUTO_READ = false; await reply('❌ Auto-Read OFF'); }
+          else await reply(`Auto-Read: *${config.AUTO_READ ? 'ON' : 'OFF'}*`);
+          continue;
+        }
+
         if (cmd === 'autoreact') {
           if (args[0] === 'on') { config.AUTO_REACT = true; await reply('✅ Auto-React ON'); }
           else if (args[0] === 'off') { config.AUTO_REACT = false; await reply('❌ Auto-React OFF'); }
