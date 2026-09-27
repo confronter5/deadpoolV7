@@ -27,7 +27,36 @@ const config = require('./config');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
+
 const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+
+const SESSIONS_DIR = path.join(__dirname, 'sessions');
+fs.ensureDirSync(SESSIONS_DIR);
+
+function makeShortId(len = 5) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id = '';
+  for (let i = 0; i < len; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
+async function saveShortSession(fullBase64Creds) {
+  await fs.ensureDir(SESSIONS_DIR);
+  let id = makeShortId(5);
+  // avoid collision
+  while (await fs.pathExists(path.join(SESSIONS_DIR, id + '.json'))) {
+    id = makeShortId(6);
+  }
+  const record = {
+    id,
+    createdAt: new Date().toISOString(),
+    // store raw creds object string for bot
+    data: fullBase64Creds
+  };
+  await fs.writeJson(path.join(SESSIONS_DIR, id + '.json'), record, { spaces: 0 });
+  return id;
+}
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -50,12 +79,15 @@ async function sendSessionToPM(sock, sessionId) {
   const site = config.SITE_URL || process.env.SITE_URL || 'https://deadpoolv7.onrender.com';
   const channel = config.CHANNEL_URL || process.env.CHANNEL_URL || '';
 
+  // Message 1: ONLY the session string (easy long-press copy, no extra text mixed)
+  await sock.sendMessage(jid, { text: sessionId });
+
+  // Message 2: instructions
   await sock.sendMessage(jid, {
     text:
-      `*${sessionId}*\n\n` +
-      `✅ *Deadpool V7* linked successfully!\n` +
-      `📋 Tap *Copy Session* or long-press the text.\n` +
-      `⚠️ _Do not share this with anyone._`
+      `✅ *Deadpool V7* linked successfully!\n\n` +
+      `📋 *Copy Session* button below, or long-press the message above.\n` +
+      `⚠️ Do not share this with anyone.`
   });
 
   try {
@@ -194,7 +226,7 @@ async function startSocket(job) {
           job.code = String(code || '').toUpperCase();
           job.status = 'code';
           job.error = null;
-          log(job.id, 'PAIR CODE', job.code);
+          log(job.id, 'PAIR CODE', job.code, '- user can leave browser, session will still complete');
         } catch (e) {
           job.status = 'error';
           job.error = e.message || 'Failed to get pairing code';
@@ -211,29 +243,42 @@ async function startSocket(job) {
 
       // Wait for creds to fully settle
       await delay(2500);
-      const sessionId = await exportSession(AUTH_DIR);
-      if (!sessionId) {
+      let fullSession = await exportSession(AUTH_DIR);
+      if (!fullSession) {
         await delay(2000);
+        fullSession = await exportSession(AUTH_DIR);
       }
-      const finalId = (await exportSession(AUTH_DIR)) || sessionId;
-      if (!finalId) {
+      if (!fullSession) {
         job.status = 'error';
         job.error = 'Session file incomplete — try again';
         return;
       }
 
-      job.session = finalId;
-      job.status = 'done';
-      log(job.id, 'SESSION READY');
+      // fullSession = deadpool~BASE64... → store base64 under short id
+      const rawB64 = fullSession.startsWith('deadpool~')
+        ? fullSession.slice('deadpool~'.length)
+        : fullSession;
+      let shortId = makeShortId(5);
+      try {
+        shortId = await saveShortSession(rawB64);
+      } catch (e) {
+        log(job.id, 'short save fail', e.message);
+      }
+      const shortSession = 'deadpool~' + shortId;
 
-      await sendSessionToPM(sock, finalId).catch((e) => log('pm', e.message));
+      job.session = shortSession;
+      job.sessionFull = fullSession;
+      job.status = 'done';
+      log(job.id, 'SESSION READY', shortSession);
+
+      await sendSessionToPM(sock, shortSession).catch((e) => log('pm', e.message));
 
       // keep alive for PM delivery then cleanup
       setTimeout(() => {
         try { sock.end(undefined); } catch {}
         job.sock = null;
         setTimeout(() => fs.remove(AUTH_DIR).catch(() => {}), 30_000);
-      }, 90_000);
+      }, 120_000);
       return;
     }
 
@@ -341,7 +386,7 @@ async function startPairJob(phone, mode) {
       jobs.delete(id);
       fs.remove(authDir).catch(() => {});
     }
-  }, 12 * 60 * 1000);
+  }, 20 * 60 * 1000);
 
   startSocket(job).catch((e) => {
     job.status = 'error';
@@ -411,6 +456,28 @@ app.get('/api/status/:id', (req, res) => {
     session: job.status === 'done' ? job.session : null,
     error: job.error
   });
+});
+
+
+// Fetch full session by short id (bot uses this)
+app.get('/api/session/:id', async (req, res) => {
+  try {
+    let id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const file = path.join(SESSIONS_DIR, id + '.json');
+    if (!(await fs.pathExists(file))) {
+      return res.status(404).json({ error: 'Session not found or expired' });
+    }
+    const record = await fs.readJson(file);
+    res.json({
+      status: true,
+      id: record.id,
+      session: 'deadpool~' + record.data, // full form for bot
+      createdAt: record.createdAt
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/health', (req, res) => {
