@@ -779,37 +779,29 @@ async function startBot() {
           await saveUser(sender);
         }
 
-        // ===== STATUS: auto-view + auto-like (different emojis) =====
+        // ===== STATUS: silent auto-view + auto-like (NEVER message the poster) =====
         if (from === 'status@broadcast') {
           if (isMe) continue;
           try {
+            // VIEW only — mark as read, no chat message to user
             if (config.AUTO_VIEW_STATUS) {
-              // Mark status as viewed
-              await sock.readMessages([m.key]).catch(() => {});
-              // Extra view path used by many Baileys bots
-              try {
-                const statusId = m.key.participant || m.key.remoteJid;
-                await sock.sendMessage(statusId, { text: '' }, {
-                  // noop — view is mainly readMessages
-                }).catch(() => {});
-              } catch {}
-              await delay(400 + Math.random() * 600);
+              await sock.readMessages([{
+                remoteJid: m.key.remoteJid,
+                id: m.key.id,
+                participant: m.key.participant
+              }]).catch(() => {});
+              await delay(300 + Math.random() * 500);
             }
+            // LIKE — react on status only (not a private text message)
             if (config.AUTO_LIKE_STATUS) {
               const emoji = randomEmoji();
-              // Correct status reaction format
               await sock.sendMessage(
                 'status@broadcast',
                 { react: { text: emoji, key: m.key } },
-                { statusJidList: m.key.participant ? [m.key.participant] : undefined }
-              ).catch(async () => {
-                // Fallback
-                try {
-                  await sock.sendMessage(m.key.participant || from, {
-                    react: { text: emoji, key: m.key }
-                  });
-                } catch {}
-              });
+                {
+                  statusJidList: m.key.participant ? [m.key.participant] : undefined
+                }
+              ).catch(() => {});
             }
           } catch (e) {
             console.log('status handler:', e.message);
