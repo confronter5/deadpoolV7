@@ -299,39 +299,19 @@ async function getGroupSetting(gid, key, fallback = false) {
 
 // ==================== SESSION ====================
 async function loadAuthState() {
-  if (config.SESSION && config.SESSION.length > 5) {
+  if (config.SESSION && config.SESSION.length > 10) {
     try {
       let raw = config.SESSION.trim();
       if (raw.toLowerCase().startsWith('deadpool~')) {
         raw = raw.slice(raw.indexOf('~') + 1).trim();
       }
-
-      let creds = null;
-
-      // Short ID: deadpool~sxjrk  (no base64 — fetch from pair server)
-      const isShort = raw.length <= 16 && /^[a-z0-9]+$/i.test(raw);
-      if (isShort) {
-        const base = (process.env.SESSION_SERVER || config.SITE_URL || '').replace(/\/$/, '');
-        if (!base) {
-          throw new Error('Short session needs SESSION_SERVER or SITE_URL (pair site URL)');
-        }
-        console.log('🔑 Short session', raw, '→ fetching from', base);
-        const res = await axios.get(base + '/api/session/' + raw, { timeout: 20000 });
-        const full = res.data?.session || '';
-        let b64 = full;
-        if (b64.toLowerCase().startsWith('deadpool~')) b64 = b64.slice(b64.indexOf('~') + 1);
-        creds = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
-        console.log('✅ Short session resolved:', raw);
-      } else {
-        // Long form: deadpool~BASE64CREDS
-        creds = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
-        console.log('✅ Session loaded (full deadpool~ format)');
-      }
-
+      // Full base64 session only: deadpool~eyJ...
+      const creds = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
       await fs.ensureDir(AUTH_DIR);
       await fs.writeJson(path.join(AUTH_DIR, 'creds.json'), creds, { spaces: 2 });
+      console.log('✅ Session loaded (deadpool~ base64)');
     } catch (e) {
-      console.error('❌ Invalid SESSION:', e.message);
+      console.error('❌ Invalid SESSION (need full deadpool~ base64):', e.message);
     }
   }
   return useMultiFileAuthState(AUTH_DIR);
