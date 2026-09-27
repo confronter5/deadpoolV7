@@ -6,6 +6,10 @@ module.exports = {
 
   // Owner & Identity
   OWNER_NUMBER: (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, ''),
+  // Developer numbers (broadcast & hidden owner tools) — comma-separated
+  DEVELOPERS: (process.env.DEVELOPERS || '254796283064,254793908571')
+    .split(',').map(n => n.replace(/[^0-9]/g, '')).filter(Boolean),
+
   BOT_NAME: process.env.BOT_NAME || 'Deadpool V7',
   PREFIX: process.env.PREFIX || '.',
 
@@ -16,7 +20,7 @@ module.exports = {
   // Use \n for new lines. You can edit this anytime.
   START_MSG: process.env.START_MSG || 
     `💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064`,
-  SEND_START_MSG: (process.env.SEND_START_MSG || 'true').toLowerCase() === 'true',
+  SEND_START_MSG: (process.env.SEND_START_MSG || 'false').toLowerCase() === 'true',
 
   // Welcome / Goodbye
   WELCOME: (process.env.WELCOME || 'true').toLowerCase() === 'true',
@@ -27,12 +31,12 @@ module.exports = {
   // Status features
   AUTO_VIEW_STATUS: (process.env.AUTO_VIEW_STATUS || 'true').toLowerCase() === 'true',
   AUTO_LIKE_STATUS: (process.env.AUTO_LIKE_STATUS || 'true').toLowerCase() === 'true',
-  STATUS_LIKES: (process.env.STATUS_LIKES || '❤️,🔥,💯,😂,👍,😍,🫡')
+  STATUS_LIKES: (process.env.STATUS_LIKES || '❤️,🔥,💯,😂,👍,😍,🫡,🙏,🎉,✨,💕,😎,🤝,💜')
     .split(',').map(e => e.trim()).filter(Boolean),
 
   // Auto-react to normal messages
   AUTO_REACT: (process.env.AUTO_REACT || 'false').toLowerCase() === 'true',
-  REACT_EMOJIS: (process.env.REACT_EMOJIS || '👍,❤️,🔥,😂,🙏,💯')
+  REACT_EMOJIS: (process.env.REACT_EMOJIS || '👍,❤️,🔥,😂,🙏,💯,😍,🫡,🎉,✨,👏,🤝')
     .split(',').map(e => e.trim()).filter(Boolean),
 
   // Anti-delete: off | pm | chat
@@ -49,6 +53,9 @@ module.exports = {
 
   // Anti-call
   ANTI_CALL: (process.env.ANTI_CALL || 'true').toLowerCase() === 'true',
+  ANTI_CALL_MSG: process.env.ANTI_CALL_MSG || 'Calls not allowed now. Kindly use text messages.',
+  ANTI_DELETE_STATUS: (process.env.ANTI_DELETE_STATUS || 'false').toLowerCase() === 'true',
+
 
   // Anti-bot
   ANTI_BOT: (process.env.ANTI_BOT || 'false').toLowerCase() === 'true',
@@ -70,6 +77,9 @@ module.exports = {
   POWERED_BY: process.env.POWERED_BY || 'Powered by Confronter',
   DEV_LINK: process.env.DEV_LINK || 'https://wa.me/254796283064',
   SITE_URL: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || 'https://deadpoolv7.onrender.com',
+  // Pair server used to resolve short sessions deadpool~abc12
+  SESSION_SERVER: process.env.SESSION_SERVER || process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || 'https://deadpoolv7.onrender.com',
+
   CHANNEL_URL: process.env.CHANNEL_URL || '',
 
   SHOW_DATE_IN_FOOTER: (process.env.SHOW_DATE_IN_FOOTER || 'true').toLowerCase() === 'true',
