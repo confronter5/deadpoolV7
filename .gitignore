@@ -5,3 +5,6 @@ auth_info_pair/
 session.txt
 *.log
 .DS_Store
+auth_pair_web/
+auth_info_pair/
+sessions/
