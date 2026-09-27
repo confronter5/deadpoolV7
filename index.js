@@ -648,35 +648,29 @@ async function startBot() {
         else await sock.sendPresenceUpdate('unavailable');
       } catch {}
 
-      // Owner only: bot is online (NOT mass-forward START_MSG)
-      const ownerJid = getOwnerJid();
-      if (ownerJid) {
-        try {
-          await sock.sendMessage(ownerJid, {
-            text:
-              `🚀 *${config.BOT_NAME}* is online!\n\n` +
-              `Mode: *${config.MODE}*\n` +
-              `Prefix: *${config.PREFIX}*\n` +
-              `Users tracked: *${(await loadUsers()).length}*\n\n` +
-              `Broadcast to all users:\n${config.PREFIX}broadcast <message>\n` +
-              `Type ${config.PREFIX}menu`
-          });
-        } catch {}
-      }
-      // Optional: only if SEND_START_MSG=true in env (default false)
-      if (config.SEND_START_MSG) {
-        try {
-          const users = await loadUsers();
-          console.log(`📢 SEND_START_MSG on → ${users.length} users`);
-          for (const jid of users) {
-            try {
-              await sock.sendMessage(jid, { text: config.START_MSG });
-              await delay(800);
-            } catch {}
-          }
-        } catch (e) {
-          console.log('Start broadcast error:', e.message);
+      // Start message → linked account chat (user who paired), NOT owner DM
+      try {
+        const me = sock.user?.id;
+        if (me) {
+          const linkedJid = me.includes(':')
+            ? me.split(':')[0] + '@s.whatsapp.net'
+            : jidNormalizedUser(me);
+          const p = config.PREFIX || '.';
+          const startText =
+            (config.START_MSG || `💀 *${config.BOT_NAME}* connected`) +
+            '\n\n' +
+            '┏━━━ *BOT READY* ━━━┓\n' +
+            `┃ Prefix: *${p}*\n` +
+            `┃ Mode: *${config.MODE}*\n` +
+            `┃ Menu: *${p}menu*\n` +
+            `┃ Ping: *${p}ping*\n` +
+            '┗━━━━━━━━━━━━━━━━┛\n\n' +
+            `Type *${p}menu* to see all commands.`;
+          await sock.sendMessage(linkedJid, { text: startText });
+          console.log('📩 Start message sent to linked user', linkedJid);
         }
+      } catch (e) {
+        console.log('Start msg error:', e.message);
       }
     }
 
@@ -760,7 +754,7 @@ async function startBot() {
   // ---------- Messages ----------
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     // accept notify + append so statuses are not missed
-    if (type !== 'notify' && type !== 'append') return;
+    if (type && type !== 'notify' && type !== 'append') return;
 
     for (const m of messages) {
       try {
@@ -912,14 +906,18 @@ async function startBot() {
           }
         }
 
-        if (!body.startsWith(config.PREFIX)) continue;
+        // Normalize body (trim, handle weird spaces)
+        const cleanBody = (body || '').trim();
+        const prefix = config.PREFIX || '.';
+        if (!cleanBody.startsWith(prefix)) continue;
 
-        // Mode check
+        // Mode: private = only owner + linked account (fromMe)
         if (config.MODE === 'private' && !isOwner(sender) && !isMe) continue;
 
-        const args = body.slice(config.PREFIX.length).trim().split(/\s+/);
+        const args = cleanBody.slice(prefix.length).trim().split(/\s+/);
         const cmd = (args.shift() || '').toLowerCase();
         const text = args.join(' ');
+        console.log('CMD:', cmd, 'from:', (sender || '').split('@')[0], 'chat:', from);
 
         const reply = async (content) => {
           let payload = typeof content === 'string' ? { text: content } : { ...content };
