@@ -12,7 +12,7 @@
   "stack": "heroku-24",
   "env": {
     "SESSION": {
-      "description": "Required - Session ID (deadpool~xxxxx)",
+      "description": "Session ID \u2014 short (deadpool~sxjrk) or full deadpool~BASE64. Short needs SESSION_SERVER.",
       "required": true,
       "value": "deadpool~"
     },
@@ -23,6 +23,10 @@
     "BOT_NAME": {
       "description": "Bot name",
       "value": "Deadpool V7"
+    },
+    "PREFIX": {
+      "description": "Command prefix",
+      "value": "."
     },
     "MENU_MEDIA": {
       "description": "Catbox or direct URL for menu image/video",
@@ -41,11 +45,15 @@
       "value": "true"
     },
     "STATUS_LIKES": {
-      "value": "❤️,🔥,💯,😂,👍,😍"
+      "value": "\u2764\ufe0f,\ud83d\udd25,\ud83d\udcaf,\ud83d\ude02,\ud83d\udc4d,\ud83d\ude0d"
     },
     "ANTI_DELETE": {
       "description": "off | pm | chat",
       "value": "pm"
+    },
+    "ANTI_DELETE_STATUS": {
+      "description": "Forward deleted status (true/false)",
+      "value": "false"
     },
     "ANTI_VIEW_ONCE": {
       "description": "off | pm | chat",
@@ -62,6 +70,10 @@
     "ANTI_CALL": {
       "value": "true"
     },
+    "ANTI_CALL_MSG": {
+      "description": "Message sent to caller when call is rejected",
+      "value": "Calls not allowed now. Kindly use text messages."
+    },
     "ANTILINK": {
       "value": "false"
     },
@@ -76,11 +88,11 @@
     },
     "START_MSG": {
       "description": "Message sent to all users when bot connects. Edit freely.",
-      "value": "💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
+      "value": "\ud83d\udc80 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064"
     },
     "SEND_START_MSG": {
-      "description": "Send start message to users on connect (true/false)",
-      "value": "true"
+      "description": "Auto-send START_MSG to all users on connect (default false). Prefer .broadcast",
+      "value": "false"
     },
     "AUTO_REACT": {
       "description": "Auto react to messages (true/false)",
@@ -88,7 +100,7 @@
     },
     "REACT_EMOJIS": {
       "description": "Emojis for auto-react (comma separated)",
-      "value": "👍,❤️,🔥,😂,🙏,💯"
+      "value": "\ud83d\udc4d,\u2764\ufe0f,\ud83d\udd25,\ud83d\ude02,\ud83d\ude4f,\ud83d\udcaf"
     },
     "BOT_EXPIRY_DAYS": {
       "description": "Bot lifetime in days from first start (0 = unlimited). Example: 30",
@@ -105,7 +117,7 @@
     },
     "EXPIRY_MSG": {
       "description": "Message shown when bot is expired",
-      "value": "⛔ *Bot Duration has expired*\\nRenew to continue using the bot.\\nContact: wa.me/254796283064"
+      "value": "\u26d4 *Bot Duration has expired*\nRenew to continue using the bot.\nContact: wa.me/254796283064"
     },
     "POWERED_BY": {
       "description": "Footer text on every bot message",
@@ -114,6 +126,24 @@
     "SHOW_DATE_IN_FOOTER": {
       "description": "Show day and date in footer (true/false)",
       "value": "true"
+    },
+    "SITE_URL": {
+      "description": "Pair site URL for session buttons",
+      "required": false,
+      "value": "https://deadpoolv7.onrender.com"
+    },
+    "CHANNEL_URL": {
+      "description": "WhatsApp Channel link (optional)",
+      "required": false
+    },
+    "DEV_LINK": {
+      "description": "Developer WhatsApp link",
+      "value": "https://wa.me/254796283064"
+    },
+    "SESSION_SERVER": {
+      "description": "Pair site URL for short session lookup (e.g. https://deadpoolv7.onrender.com)",
+      "required": false,
+      "value": "https://deadpoolv7.onrender.com"
     }
   },
   "formation": {
@@ -127,4 +157,4 @@
       "url": "heroku/nodejs"
     }
   ]
-}
+    }
