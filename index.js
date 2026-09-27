@@ -24,6 +24,90 @@ const axios = require('axios');
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 const config = require('./config');
 
+// ==================== PROXY ROTATION (optional) ====================
+let _proxyIdx = 0;
+const _uaList = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+];
+
+function getProxyList() {
+  return (config.PROXY_LIST && config.PROXY_LIST.length)
+    ? config.PROXY_LIST
+    : (process.env.PROXY_LIST || process.env.PROXIES || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function parseProxy(raw) {
+  try {
+    const u = new URL(raw.includes('://') ? raw : 'http://' + raw);
+    const conf = {
+      protocol: (u.protocol || 'http:').replace(':', ''),
+      host: u.hostname,
+      port: Number(u.port) || 80
+    };
+    if (u.username) {
+      conf.auth = {
+        username: decodeURIComponent(u.username),
+        password: decodeURIComponent(u.password || '')
+      };
+    }
+    return conf;
+  } catch {
+    return null;
+  }
+}
+
+function nextProxy() {
+  const list = getProxyList();
+  if (!list.length) return null;
+  const raw = list[_proxyIdx % list.length];
+  _proxyIdx++;
+  return parseProxy(raw);
+}
+
+function nextUA() {
+  return _uaList[Math.floor(Math.random() * _uaList.length)];
+}
+
+/** Axios options with rotating proxy + UA for download APIs */
+function dlAxiosConfig(extra = {}) {
+  const proxy = nextProxy();
+  const headers = {
+    'User-Agent': nextUA(),
+    Accept: '*/*',
+    ...(extra.headers || {})
+  };
+  const opts = { ...extra, headers, validateStatus: extra.validateStatus || (() => true) };
+  if (proxy) opts.proxy = proxy;
+  return opts;
+}
+
+async function dlGet(url, extra = {}) {
+  const list = getProxyList();
+  const attempts = Math.max(1, Math.min(list.length || 1, 4));
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await axios.get(url, dlAxiosConfig({ timeout: extra.timeout || 45000, ...extra }));
+      if (res.status >= 400 && i < attempts - 1) continue;
+      return res;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr) throw lastErr;
+  return axios.get(url, dlAxiosConfig({ timeout: extra.timeout || 45000, ...extra }));
+}
+
+async function dlPost(url, body, extra = {}) {
+  return axios.post(url, body, dlAxiosConfig({ timeout: extra.timeout || 45000, ...extra }));
+}
+
+
+
 const AUTH_DIR = path.join(__dirname, 'auth_info');
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -124,17 +208,24 @@ function formatDuration(ms) {
 
 
 function buildFooter() {
-  const now = new Date();
-  const date = now.toLocaleDateString(undefined, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-  const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  const powered = config.POWERED_BY || 'Powered by Confronter';
-  let foot = '\n\n━━━━━━━━━━━━━━\n';
-  foot += powered + '\n';
-  if (config.SHOW_DATE_IN_FOOTER !== false) {
-    foot += date + ' · ' + time + '\n';
+  const year = new Date().getFullYear();
+  const powered = (config.POWERED_BY || 'Powered by Confronter').replace(/©?\d{4}/g, '').trim();
+  return '\n\n—\n' + powered + ' ©' + year;
+}
+
+function jidToPhone(jid, msg) {
+  if (!jid) return 'unknown';
+  // Prefer real phone from alternate fields (avoid @lid internal ids)
+  const alt = msg?.key?.participantAlt || msg?.key?.remoteJidAlt || msg?.participantAlt;
+  if (alt && !String(alt).includes('@lid')) {
+    return String(alt).split('@')[0].split(':')[0];
   }
-  foot += '━━━━━━━━━━━━━━';
-  return foot;
+  let id = String(jid);
+  if (id.includes('@lid')) {
+    // cannot resolve lid → show cleaned id without @lid label as fallback
+    return id.split('@')[0] + ' (lid)';
+  }
+  return id.split('@')[0].split(':')[0];
 }
 
 function withFooter(content) {
@@ -206,13 +297,8 @@ function applyUnicodeFont(text, style) {
 }
 
 function styleMenuText(text) {
-  const style = nextFontStyle();
-  // Only transform letters/numbers; keep box lines & emojis intact
-  return text.split('\n').map(line => {
-    // keep pure border lines as-is
-    if (/^[┏┓┗┛━┃▬─═\|\s]+$/.test(line)) return line;
-    return applyUnicodeFont(line, style);
-  }).join('\n');
+  // Plain text only — unicode "fonts" often cause "Waiting for this message"
+  return text;
 }
 
 function buildMainMenu(pushName, userCount) {
@@ -259,6 +345,7 @@ function buildMainMenu(pushName, userCount) {
   menu += '┏━━━ *🛡️ PRIVACY* ━━━┓\n';
   menu += '┃ ' + p + 'antidelete off/pm/chat\n';
   menu += '┃ ' + p + 'antiviewonce off/pm/chat\n';
+  menu += '┃ ' + p + 'vv (reply view once)\n';
   menu += '┃ ' + p + 'anticall on/off\n';
   menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
 
@@ -358,11 +445,34 @@ async function downloadMediaMsg(message) {
   }
 }
 
-function randomEmoji() {
-  const list = (config.STATUS_LIKES && config.STATUS_LIKES.length)
-    ? config.STATUS_LIKES
-    : ['❤️', '🔥', '💯', '😂', '👍', '😍', '🫡', '🙏', '🎉', '✨'];
-  return list[Math.floor(Math.random() * list.length)] || '❤️';
+function randomEmoji(pool) {
+  const fallbackStatus = ['❤️', '🔥', '💯', '😂', '👍', '😍', '🫡', '🙏', '🎉', '✨', '💕', '😎', '🤝', '💜', '⭐'];
+  const fallbackReact = ['👍', '❤️', '🔥', '😂', '🙏', '💯', '😍', '🫡', '🎉', '✨', '👏', '🤝', '😊', '💪', '✅', '🤩'];
+  const fallbackCmd = ['✅', '⚡', '🔥', '💫', '✨', '🎯', '👍', '🤖', '💜', '🚀', '⭐', '👏', '💯', '🤩'];
+  let list = pool;
+  if (!list || !list.length) list = fallbackReact;
+  return list[Math.floor(Math.random() * list.length)] || '👍';
+}
+
+function statusLikeEmoji() {
+  return randomEmoji(config.STATUS_LIKES);
+}
+
+function msgReactEmoji() {
+  return randomEmoji(config.REACT_EMOJIS);
+}
+
+function cmdReactEmoji() {
+  return randomEmoji(['✅', '⚡', '🔥', '💫', '✨', '🎯', '👍', '🤖', '💜', '🚀', '⭐', '👏', '💯', '🤩', '🙌', '😊']);
+}
+
+async function reactToMessage(sock, jid, key, emoji) {
+  try {
+    await sock.sendMessage(jid, { react: { text: emoji, key } });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getMentioned(m) {
@@ -409,78 +519,87 @@ function hasLink(text) {
 async function downloadYouTube(query, audioOnly = false) {
   const q = (query || '').trim();
   if (!q) return null;
-
   const isUrl = /youtube\.com|youtu\.be|music\.youtube/i.test(q);
   let videoUrl = isUrl ? q : null;
 
-  // Resolve search → first YouTube URL
+  // --- Search song name → YouTube URL ---
   if (!videoUrl) {
     const searchApis = [
       `https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(q)}`,
       `https://vreden.my.id/api/ytsearch?query=${encodeURIComponent(q)}`,
-      `https://api.agatz.xyz/api/ytsearch?message=${encodeURIComponent(q)}`
+      `https://api.agatz.xyz/api/ytsearch?message=${encodeURIComponent(q)}`,
+      `https://bk9.fun/search/youtube?q=${encodeURIComponent(q)}`
     ];
     for (const ep of searchApis) {
       try {
-        const res = await axios.get(ep, { timeout: 20000, validateStatus: () => true });
-        const list = res?.data?.data || res?.data?.result || res?.data?.videos || res?.data || [];
-        const arr = Array.isArray(list) ? list : (list?.data || []);
+        const res = await dlGet(ep, { timeout: 25000 });
+        const raw = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data?.videos || res?.data || [];
+        const arr = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
         const first = arr[0];
         if (!first) continue;
-        videoUrl = first.url || first.link || first.video_url ||
+        videoUrl =
+          first.url || first.link || first.video_url || first.webpage_url ||
           (first.videoId ? `https://www.youtube.com/watch?v=${first.videoId}` : null) ||
-          (first.id ? `https://www.youtube.com/watch?v=${first.id}` : null);
-        if (videoUrl) break;
-      } catch {}
+          (first.id && String(first.id).length >= 10 ? `https://www.youtube.com/watch?v=${first.id}` : null);
+        if (videoUrl) {
+          console.log('YT search hit:', videoUrl);
+          break;
+        }
+      } catch (e) {
+        console.log('yt search fail', e.message);
+      }
     }
   }
   if (!videoUrl) return null;
 
-  // Download endpoints (y2mate-style / public DL APIs)
+  // --- y2mate / vidmate style download APIs ---
   const endpoints = audioOnly
     ? [
         `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`,
         `https://vreden.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
         `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-        `https://yt-download.org/api/button/mp3/${encodeURIComponent(videoUrl)}`,
-        `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`
+        `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+        `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`,
+        `https://yt.vreden.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`
       ]
     : [
         `https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(videoUrl)}`,
         `https://vreden.my.id/api/ytmp4?url=${encodeURIComponent(videoUrl)}`,
         `https://api.agatz.xyz/api/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-        `https://api.nyxs.pw/dl/yt-mp4?url=${encodeURIComponent(videoUrl)}`
+        `https://bk9.fun/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+        `https://api.nyxs.pw/dl/yt-mp4?url=${encodeURIComponent(videoUrl)}`,
+        `https://yt.vreden.my.id/api/ytmp4?url=${encodeURIComponent(videoUrl)}`
       ];
 
   for (const ep of endpoints) {
     try {
-      const res = await axios.get(ep, {
-        timeout: 45000,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      const d = res?.data?.data || res?.data?.result || res?.data?.download || res?.data;
-      if (!d || typeof d !== 'object') continue;
-
-      const url =
-        d.url || d.dl || d.download || d.media || d.link ||
-        d.audio || d.mp3 || d.mp4 || d.dl_url || d.download_url ||
-        d.medias?.[0]?.url || d.formats?.[0]?.url;
-
-      const title = d.title || d.filename || d.name || (audioOnly ? 'YouTube Audio' : 'YouTube Video');
-      const thumbnail = d.thumbnail || d.thumb || d.cover || d.image;
-
-      if (url && typeof url === 'string' && url.startsWith('http')) {
-        return { title, url, thumbnail, isAudio: audioOnly, source: videoUrl };
+      const res = await dlGet(ep, { timeout: 55000 });
+      const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data?.download || res?.data;
+      if (!d) continue;
+      let url = null;
+      let title = audioOnly ? 'Audio' : 'Video';
+      if (typeof d === 'string' && d.startsWith('http')) {
+        url = d;
+      } else if (typeof d === 'object') {
+        url =
+          d.url || d.dl || d.download || d.media || d.link || d.audio || d.mp3 || d.mp4 ||
+          d.dl_url || d.download_url || d.audio_url || d.video_url ||
+          d.medias?.[0]?.url || d.formats?.[0]?.url || d[0]?.url || d[0]?.link;
+        title = d.title || d.filename || d.name || title;
       }
-    } catch {}
+      if (url && String(url).startsWith('http')) {
+        console.log('YT dl hit:', ep.split('?')[0]);
+        return { title: String(title), url: String(url), isAudio: audioOnly, source: videoUrl };
+      }
+    } catch (e) {
+      console.log('yt dl fail', ep.split('/')[2], e.message);
+    }
   }
 
-  // Cobalt-style POST APIs
-  const cobaltHosts = ['https://api.cobalt.tools', 'https://cobalt-api.kwiatekmiki.com'];
-  for (const host of cobaltHosts) {
+  // Cobalt-style (y2mate alternative)
+  for (const host of ['https://api.cobalt.tools', 'https://cobalt-api.kwiatekmiki.com']) {
     try {
-      const res = await axios.post(
+      const res = await dlPost(
         host + '/api/json',
         {
           url: videoUrl,
@@ -490,21 +609,18 @@ async function downloadYouTube(query, audioOnly = false) {
           videoQuality: '720'
         },
         {
-          timeout: 45000,
+          timeout: 50000,
           headers: {
             Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0'
-          },
-          validateStatus: () => true
+            'Content-Type': 'application/json'
+          }
         }
       );
-      const d = res.data || {};
-      const url = d.url || d.download || d.audio;
-      if (url && url.startsWith('http')) {
+      const url = res.data?.url || res.data?.audio || res.data?.download;
+      if (url && String(url).startsWith('http')) {
         return {
-          title: d.filename || (audioOnly ? 'YouTube Audio' : 'YouTube Video'),
-          url,
+          title: res.data?.filename || (audioOnly ? 'Audio' : 'Video'),
+          url: String(url),
           isAudio: audioOnly,
           source: videoUrl
         };
@@ -515,45 +631,114 @@ async function downloadYouTube(query, audioOnly = false) {
   return null;
 }
 
+async function fetchBuffer(url, timeout = 90000) {
+  const res = await dlGet(url, {
+    responseType: 'arraybuffer',
+    timeout,
+    maxContentLength: 80 * 1024 * 1024
+  });
+  if (res.status >= 400) throw new Error('HTTP ' + res.status);
+  return Buffer.from(res.data);
+}
+
+async function sendAsMp3(sock, jid, data, quoted) {
+  const safeName = (data.title || 'audio')
+    .replace(/[^\w\s\-]/g, '')
+    .slice(0, 50)
+    .trim() || 'audio';
+  try {
+    const buffer = await fetchBuffer(data.url);
+    // Try as audio
+    try {
+      await sock.sendMessage(jid, {
+        audio: buffer,
+        mimetype: 'audio/mpeg',
+        fileName: safeName + '.mp3',
+        ptt: false
+      });
+      return true;
+    } catch {
+      // Document fallback (always works better on some devices)
+      await sock.sendMessage(jid, {
+        document: buffer,
+        mimetype: 'audio/mpeg',
+        fileName: safeName + '.mp3',
+        caption: '🎵 *' + (data.title || 'Audio') + '*'
+      });
+      return true;
+    }
+  } catch (e) {
+    console.log('sendAsMp3:', e.message);
+    try {
+      await sock.sendMessage(jid, {
+        audio: { url: data.url },
+        mimetype: 'audio/mpeg',
+        fileName: safeName + '.mp3'
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function sendAsVideo(sock, jid, data, quoted) {
+  const cap = '🎬 *' + (data.title || 'Video') + '*';
+  try {
+    const buffer = await fetchBuffer(data.url);
+    await sock.sendMessage(jid, {
+      video: buffer,
+      caption: cap,
+      mimetype: 'video/mp4'
+    });
+    return true;
+  } catch (e) {
+    console.log('sendAsVideo:', e.message);
+    try {
+      await sock.sendMessage(jid, {
+        video: { url: data.url },
+        caption: cap,
+        mimetype: 'video/mp4'
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 async function downloadTikTok(url) {
   const endpoints = [
     `https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(url)}`,
     `https://vreden.my.id/api/tiktok?url=${encodeURIComponent(url)}`,
     `https://api.agatz.xyz/api/tiktok?url=${encodeURIComponent(url)}`,
-    `https://api.nyxs.pw/dl/tiktok?url=${encodeURIComponent(url)}`,
-    `https://tikwm.com/api/?url=${encodeURIComponent(url)}`
+    `https://bk9.fun/download/tiktok?url=${encodeURIComponent(url)}`,
+    `https://tikwm.com/api/?url=${encodeURIComponent(url)}`,
+    `https://api.nyxs.pw/dl/tiktok?url=${encodeURIComponent(url)}`
   ];
   for (const ep of endpoints) {
     try {
-      const res = await axios.get(ep, {
-        timeout: 35000,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      const d = res?.data?.data || res?.data?.result || res?.data;
+      const res = await dlGet(ep, { timeout: 40000 });
+      const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data;
       if (!d) continue;
       const mediaUrl =
         d.play || d.hdplay || d.wmplay || d.video || d.url || d.download ||
-        d.nwm_video_url || d.playAddr || d.medias?.[0]?.url || d.links?.[0];
-      const title = d.title || d.desc || 'TikTok Video';
+        d.nwm_video_url || d.playAddr || d.medias?.[0]?.url || d.links?.[0] || d[0]?.url;
       if (mediaUrl && String(mediaUrl).startsWith('http')) {
-        return { title, url: mediaUrl, thumbnail: d.cover || d.thumbnail };
+        return { title: d.title || d.desc || 'TikTok', url: String(mediaUrl) };
       }
     } catch {}
   }
-  // Cobalt
   try {
-    const res = await axios.post(
+    const res = await dlPost(
       'https://api.cobalt.tools/api/json',
-      { url, filenameStyle: 'pretty' },
+      { url },
       {
         timeout: 40000,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        validateStatus: () => true
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' }
       }
     );
-    const u = res.data?.url;
-    if (u) return { title: 'TikTok Video', url: u };
+    if (res.data?.url) return { title: 'TikTok', url: res.data.url };
   } catch {}
   return null;
 }
@@ -563,41 +748,36 @@ async function downloadInstagram(url) {
     `https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(url)}`,
     `https://vreden.my.id/api/igdownload?url=${encodeURIComponent(url)}`,
     `https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(url)}`,
+    `https://bk9.fun/download/instagram?url=${encodeURIComponent(url)}`,
     `https://api.nyxs.pw/dl/ig?url=${encodeURIComponent(url)}`
   ];
   for (const ep of endpoints) {
     try {
-      const res = await axios.get(ep, {
-        timeout: 35000,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      const d = res?.data?.data || res?.data?.result || res?.data;
+      const res = await dlGet(ep, { timeout: 40000 });
+      const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data;
       if (!d) continue;
       let mediaUrl = null;
       if (Array.isArray(d)) mediaUrl = d[0]?.url || d[0]?.download_link || d[0];
       else if (Array.isArray(d?.media)) mediaUrl = d.media[0]?.url || d.media[0];
       else mediaUrl = d.url || d.video || d.image || d.download || d.media;
       if (mediaUrl && String(mediaUrl).startsWith('http')) {
-        return { url: mediaUrl, title: d.title || 'Instagram Media' };
+        return { url: String(mediaUrl), title: d.title || 'Instagram' };
       }
     } catch {}
   }
   try {
-    const res = await axios.post(
+    const res = await dlPost(
       'https://api.cobalt.tools/api/json',
-      { url, filenameStyle: 'pretty' },
+      { url },
       {
         timeout: 40000,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        validateStatus: () => true
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' }
       }
     );
-    if (res.data?.url) return { url: res.data.url, title: 'Instagram Media' };
+    if (res.data?.url) return { url: res.data.url, title: 'Instagram' };
   } catch {}
   return null;
 }
-
 
 async function startBot() {
   await ensureData();
@@ -788,14 +968,18 @@ async function startBot() {
             }
             // LIKE — react on status only (not a private text message)
             if (config.AUTO_LIKE_STATUS) {
-              const emoji = randomEmoji();
+              const emoji = statusLikeEmoji();
               await sock.sendMessage(
                 'status@broadcast',
                 { react: { text: emoji, key: m.key } },
                 {
                   statusJidList: m.key.participant ? [m.key.participant] : undefined
                 }
-              ).catch(() => {});
+              ).catch(async () => {
+                if (m.key.participant) {
+                  await reactToMessage(sock, m.key.participant, m.key, emoji);
+                }
+              });
             }
           } catch (e) {
             console.log('status handler:', e.message);
@@ -841,21 +1025,12 @@ async function startBot() {
           '';
 
 
-        // ===== AUTO-REACT to messages (text + media) =====
+        // ===== AUTO-REACT to messages (text + media, not commands) =====
         if (config.AUTO_REACT && !isMe) {
-          const isCmd = body && body.startsWith(config.PREFIX);
+          const isCmd = body && body.startsWith(config.PREFIX || '.');
           if (!isCmd) {
-            try {
-              const emojis = (config.REACT_EMOJIS && config.REACT_EMOJIS.length)
-                ? config.REACT_EMOJIS
-                : ['👍', '❤️', '🔥', '😂', '🙏', '💯', '😍', '🫡'];
-              const emoji = emojis[Math.floor(Math.random() * emojis.length)] || '👍';
-              await sock.sendMessage(from, {
-                react: { text: emoji, key: m.key }
-              });
-            } catch (e) {
-              console.log('autoreact:', e.message);
-            }
+            const emoji = msgReactEmoji();
+            await reactToMessage(sock, from, m.key, emoji);
           }
         }
 
@@ -918,17 +1093,18 @@ async function startBot() {
         const cmd = (args.shift() || '').toLowerCase();
         const text = args.join(' ');
         console.log('CMD:', cmd, 'from:', (sender || '').split('@')[0], 'chat:', from);
+        // React on every command with a different emoji
+        await reactToMessage(sock, from, m.key, cmdReactEmoji());
 
         const reply = async (content) => {
-          let payload = typeof content === 'string' ? { text: content } : { ...content };
-          // Do NOT apply random styles — breaks rendering ("Waiting for this message")
+          let payload = typeof content === 'string' ? { text: String(content) } : { ...content };
           payload = withFooter(payload);
+          // Prefer NO quote — quoting + media caption often shows "Waiting for this message"
           try {
-            return await sock.sendMessage(from, payload, { quoted: m });
+            return await sock.sendMessage(from, payload);
           } catch (e) {
-            // fallback without quote / without footer if needed
             try {
-              const plain = typeof content === 'string' ? { text: content } : content;
+              const plain = typeof content === 'string' ? { text: String(content) } : content;
               return await sock.sendMessage(from, plain);
             } catch (e2) {
               console.log('reply fail:', e2.message);
@@ -951,29 +1127,48 @@ async function startBot() {
           let menuText = styleMenuText(buildMainMenu(m.pushName, userCount));
 
           if (config.MENU_MEDIA) {
-            const url = (config.MENU_MEDIA || '').toLowerCase();
+            const mediaUrl = config.MENU_MEDIA;
+            const url = mediaUrl.toLowerCase();
             const isGif = url.includes('.gif');
             const isVideo = url.includes('.mp4') || url.includes('.mkv') || url.includes('.mov') ||
                             url.includes('.webm') || url.includes('video') || isGif;
             try {
+              const bufRes = await axios.get(mediaUrl, {
+                responseType: 'arraybuffer',
+                timeout: 60000,
+                maxContentLength: 40 * 1024 * 1024,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+              });
+              const buffer = Buffer.from(bufRes.data);
+              const caption = withFooter(menuText);
               if (isVideo) {
-                const vidMsg = {
-                  video: { url: config.MENU_MEDIA },
-                  caption: withFooter(menuText),
-                  mimetype: isGif ? 'video/mp4' : 'video/mp4'
-                };
-                // Only loop as GIF when URL is actually a gif — real mp4 plays as video
-                if (isGif) vidMsg.gifPlayback = true;
-                await sock.sendMessage(from, vidMsg, { quoted: m });
-              } else {
                 await sock.sendMessage(from, {
-                  image: { url: config.MENU_MEDIA },
-                  caption: withFooter(menuText)
-                }, { quoted: m });
+                  video: buffer,
+                  caption,
+                  mimetype: 'video/mp4',
+                  gifPlayback: !!isGif
+                });
+              } else {
+                await sock.sendMessage(from, { image: buffer, caption });
               }
             } catch (e) {
               console.log('Menu media error:', e.message);
-              await reply(menuText);
+              try {
+                if (isVideo) {
+                  await sock.sendMessage(from, {
+                    video: { url: mediaUrl },
+                    caption: withFooter(menuText),
+                    mimetype: 'video/mp4'
+                  });
+                } else {
+                  await sock.sendMessage(from, {
+                    image: { url: mediaUrl },
+                    caption: withFooter(menuText)
+                  });
+                }
+              } catch (e2) {
+                await reply(menuText);
+              }
             }
           } else {
             await reply(menuText);
@@ -992,6 +1187,51 @@ async function startBot() {
           );
           continue;
         }
+
+        // ----- VIEW ONCE (.vv) -----
+        if (['vv', 'viewonce', 'reveal'].includes(cmd)) {
+          try {
+            const ctx = m.message?.extendedTextMessage?.contextInfo;
+            const quoted = ctx?.quotedMessage;
+            let vo =
+              quoted?.viewOnceMessage?.message ||
+              quoted?.viewOnceMessageV2?.message ||
+              quoted?.viewOnceMessageV2Extension?.message;
+            if (!vo && quoted && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage)) {
+              vo = quoted;
+            }
+            if (!vo) {
+              vo =
+                m.message?.viewOnceMessage?.message ||
+                m.message?.viewOnceMessageV2?.message ||
+                m.message?.viewOnceMessageV2Extension?.message;
+            }
+            if (!vo) {
+              await reply('Reply to a *view once* photo/video with:\n' + config.PREFIX + 'vv');
+              continue;
+            }
+            const mediaType = getContentType(vo);
+            const dl = await downloadMediaMsg(vo);
+            if (!dl) {
+              await reply('❌ Could not download view once media.');
+              continue;
+            }
+            const cap = '🔓 *View once revealed*';
+            if (mediaType === 'imageMessage' || vo.imageMessage) {
+              await sock.sendMessage(from, { image: dl.buffer, caption: cap });
+            } else if (mediaType === 'videoMessage' || vo.videoMessage) {
+              await sock.sendMessage(from, { video: dl.buffer, caption: cap });
+            } else if (mediaType === 'audioMessage' || vo.audioMessage) {
+              await sock.sendMessage(from, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: true });
+            } else {
+              await reply('❌ Unsupported view once type.');
+            }
+          } catch (e) {
+            await reply('❌ VV failed: ' + (e.message || e));
+          }
+          continue;
+        }
+
 
 
         // ----- EXPIRY INFO -----
@@ -1035,26 +1275,88 @@ async function startBot() {
           continue;
         }
 
-        // ----- GPT / AI (simple public API fallback) -----
-        if (['gpt', 'ai', 'ask'].includes(cmd)) {
+        // ----- GPT / AI (multi-API fallback) -----
+        if (['gpt', 'ai', 'ask', 'chatgpt', 'bot'].includes(cmd)) {
           if (!text) {
-            await reply(`Usage: ${config.PREFIX}gpt <your question>`);
+            await reply(`Usage: ${config.PREFIX}gpt <your question>\nExample: ${config.PREFIX}ai hello`);
             continue;
           }
           await reply('🤖 Thinking...');
-          try {
-            const res = await axios.get(
-              `https://api.siputzx.my.id/api/ai/gpt3?prompt=${encodeURIComponent(text)}`,
-              { timeout: 30000, validateStatus: () => true }
-            );
-            const answer = res?.data?.data || res?.data?.result || res?.data?.response || res?.data?.message;
-            if (answer && typeof answer === 'string') {
-              await reply(`🤖 *AI*\n\n${answer}`);
-            } else {
-              await reply('❌ AI unavailable right now. Try again later.');
+          let answer = null;
+          const prompt = text.slice(0, 1500);
+
+          const tryExtract = (data) => {
+            if (!data) return null;
+            if (typeof data === 'string' && data.trim().length > 1) return data.trim();
+            if (typeof data === 'object') {
+              const v =
+                data.data || data.result || data.response || data.message ||
+                data.answer || data.output || data.text || data.reply ||
+                data.content || data.gpt || data.msg ||
+                (typeof data.data === 'object' ? (data.data.response || data.data.message || data.data.answer) : null);
+              if (typeof v === 'string' && v.trim()) return v.trim();
+              if (typeof v === 'object' && v !== null) {
+                const v2 = v.response || v.message || v.answer || v.text;
+                if (typeof v2 === 'string' && v2.trim()) return v2.trim();
+              }
             }
-          } catch {
-            await reply('❌ AI service error.');
+            return null;
+          };
+
+          // GET endpoints
+          const getApis = [
+            `https://api.siputzx.my.id/api/ai/gpt3?prompt=${encodeURIComponent(prompt)}`,
+            `https://api.siputzx.my.id/api/ai/gpt4?prompt=${encodeURIComponent(prompt)}`,
+            `https://vreden.my.id/api/gpt?prompt=${encodeURIComponent(prompt)}`,
+            `https://api.agatz.xyz/api/gpt4?text=${encodeURIComponent(prompt)}`,
+            `https://bk9.fun/ai/gpt4?q=${encodeURIComponent(prompt)}`,
+            `https://api.nyxs.pw/ai/gpt4?text=${encodeURIComponent(prompt)}`,
+            `https://api.giftedtech.co.ke/api/ai/gpt4?apikey=gifted&q=${encodeURIComponent(prompt)}`
+          ];
+
+          for (const ep of getApis) {
+            try {
+              const res = await dlGet(ep, { timeout: 35000 });
+              answer = tryExtract(res?.data);
+              if (answer) {
+                console.log('AI hit:', ep.split('?')[0]);
+                break;
+              }
+            } catch (e) {
+              console.log('AI fail', e.message);
+            }
+          }
+
+          // POST fallbacks
+          if (!answer) {
+            const posts = [
+              {
+                url: 'https://api.siputzx.my.id/api/ai/gpt3',
+                body: { prompt }
+              },
+              {
+                url: 'https://vreden.my.id/api/gpt',
+                body: { prompt, query: prompt, text: prompt }
+              }
+            ];
+            for (const p of posts) {
+              try {
+                const res = await dlPost(p.url, p.body, {
+                  timeout: 35000,
+                  headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+                });
+                answer = tryExtract(res?.data);
+                if (answer) break;
+              } catch {}
+            }
+          }
+
+          if (answer) {
+            // WhatsApp message limit safety
+            if (answer.length > 3500) answer = answer.slice(0, 3500) + '...';
+            await reply(`🤖 *${config.BOT_NAME} AI*\n\n${answer}`);
+          } else {
+            await reply('❌ AI is busy or offline. Try again in a moment.\nTip: keep the question short.');
           }
           continue;
         }
@@ -1201,6 +1503,14 @@ async function startBot() {
         }
 
         // ----- ANTIDELETE / ANTIVIEWONCE -----
+        if (cmd === 'antideletestatus') {
+          const onoff = (args[0] || '').toLowerCase();
+          if (onoff === 'on') { config.ANTI_DELETE_STATUS = true; await reply('✅ Anti-Delete Status ON'); }
+          else if (onoff === 'off') { config.ANTI_DELETE_STATUS = false; await reply('❌ Anti-Delete Status OFF'); }
+          else await reply(`Anti-Delete Status: *${config.ANTI_DELETE_STATUS ? 'ON' : 'OFF'}*\n${config.PREFIX}antideletestatus on/off`);
+          continue;
+        }
+
         if (cmd === 'antidelete') {
           const v = (args[0] || '').toLowerCase();
           if (['off', 'pm', 'chat'].includes(v)) {
@@ -1467,12 +1777,21 @@ async function startBot() {
             continue;
           }
           try {
+            const buf = await fetchBuffer(data.url);
             await sock.sendMessage(from, {
-              video: { url: data.url },
-              caption: `🎵 ${data.title || 'TikTok'}\n\n${config.BOT_NAME}`
-            }, { quoted: m });
+              video: buf,
+              caption: `🎵 ${data.title || 'TikTok'}`,
+              mimetype: 'video/mp4'
+            });
           } catch {
-            await reply(`✅ ${data.url}`);
+            try {
+              await sock.sendMessage(from, {
+                video: { url: data.url },
+                caption: `🎵 ${data.title || 'TikTok'}`
+              });
+            } catch {
+              await reply(`✅ ${data.url}`);
+            }
           }
           continue;
         }
@@ -1688,8 +2007,6 @@ async function startBot() {
 
   // ==================== ANTI-DELETE ====================
   sock.ev.on('messages.update', async (updates) => {
-    if (config.ANTI_DELETE === 'off') return;
-
     for (const u of updates) {
       try {
         if (u.update?.message === null || u.update?.messageStubType === 1 || u.update?.messageStubType === 2) {
@@ -1698,8 +2015,14 @@ async function startBot() {
           if (!cached?.message) continue;
 
           const from = key.remoteJid;
+          const isStatus = from === 'status@broadcast';
+          if (isStatus && !config.ANTI_DELETE_STATUS) continue;
+          if (!isStatus && config.ANTI_DELETE === 'off') continue;
+
           const sender = key.participant || key.remoteJid;
-          const target = config.ANTI_DELETE === 'chat' ? from : getOwnerJid();
+          const target = isStatus
+            ? getOwnerJid()
+            : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
           if (!target) continue;
 
           const msg = cached.message;
@@ -1718,15 +2041,15 @@ async function startBot() {
             weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
             hour: '2-digit', minute: '2-digit', second: '2-digit'
           });
-          const whoName = cached.pushName || sender.split('@')[0];
-          const whoNum = sender.split('@')[0];
+          const whoName = cached.pushName || 'Unknown';
+          const whoNum = jidToPhone(sender, cached);
           const header =
             `🗑️ *ANTI-DELETE*\n` +
             `👤 Name: *${whoName}*\n` +
             `📱 Number: *${whoNum}*\n` +
             `💬 Chat: ${isGroup(from) ? 'Group' : 'Private'}\n` +
             `🕒 Time: ${deletedAt}\n` +
-            `━━━━━━━━━━━━━━\n`;
+            `──────────────\n`;
 
           if (['imageMessage', 'videoMessage'].includes(type)) {
             try {
