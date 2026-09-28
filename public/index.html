@@ -113,6 +113,30 @@
     [data-theme="light"] .session { background: #0f172a; }
     .footer { text-align: center; margin-top: 16px; font-size: .78rem; color: var(--muted); }
     .footer a { color: var(--accent2); text-decoration: none; }
+
+    .music {
+      margin-top: 16px; padding: 12px;
+      border: 1px solid var(--line); border-radius: 14px;
+      background: var(--input);
+    }
+    .music-title {
+      font-size: .8rem; color: var(--muted); margin-bottom: 8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .music select {
+      width: 100%; padding: 10px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--card);
+      color: var(--text); margin-bottom: 8px; font-size: .85rem;
+    }
+    .music-controls { display: flex; gap: 8px; align-items: center; }
+    .music-controls button {
+      flex: 1; padding: 10px; border-radius: 10px; border: none;
+      background: var(--accent); color: #fff; font-weight: 700; cursor: pointer;
+    }
+    .music-controls button.secondary {
+      background: transparent; border: 1px solid var(--line); color: var(--text);
+    }
+    .music-now { font-size: .75rem; color: var(--ok); margin-top: 6px; min-height: 1em; }
   </style>
 </head>
 <body>
@@ -169,6 +193,25 @@
       </div>
     </div>
 
+
+    <div class="music">
+      <div class="music-title"><i class="fa-solid fa-music"></i> Play music while you wait</div>
+      <select id="songSelect">
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3">Vybz Kartel vibe</option>
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3">Central Cee vibe</option>
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3">Lil Baby vibe</option>
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3">Kenyan trending vibe</option>
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3">Dancehall / Afrobeat</option>
+        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3">Chill wait mix</option>
+      </select>
+      <div class="music-controls">
+        <button type="button" id="playMusicBtn"><i class="fa-solid fa-play"></i> Play</button>
+        <button type="button" id="pauseMusicBtn" class="secondary"><i class="fa-solid fa-pause"></i> Pause</button>
+      </div>
+      <div class="music-now" id="musicNow"></div>
+      <audio id="bgAudio" preload="none"></audio>
+    </div>
+
     <p class="footer">
       Powered by Confronter<br />
       <a href="https://wa.me/254796283064" target="_blank"><i class="fa-brands fa-whatsapp"></i> Support</a>
@@ -216,6 +259,7 @@
       codeRow.style.display = 'none';
     }
 
+    let pairMode = 'qr';
     function poll(id) {
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(async () => {
@@ -223,16 +267,21 @@
           const res = await fetch('/api/status/' + id);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Expired');
+          if (data.mode) pairMode = data.mode;
 
-          if (data.qr) {
+          // QR only for QR mode
+          if (pairMode === 'qr' && data.qr) {
             qrImg.src = data.qr;
             qrWrap.style.display = 'block';
+            codeRow.style.display = 'none';
             statusText.innerHTML = '<i class="fa-solid fa-camera"></i> Scan QR · you may switch to WhatsApp';
           }
-          if (data.code) {
+          // Pair code only for code mode (never show QR)
+          if (pairMode === 'code' && data.code) {
             codeEl.textContent = data.code;
             codeRow.style.display = 'flex';
-            statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter code on phone now · Linked Devices → Link with phone number';
+            qrWrap.style.display = 'none';
+            statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter <b>code</b> on phone · Linked Devices → Link with phone number';
           }
           if (data.status === 'connected') {
             statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-spinner fa-spin"></i> Linked · building session…</span>';
@@ -265,7 +314,7 @@
     btnQr.onclick = async () => {
       btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating QR…';
+      pairMode = 'qr'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating QR…';
       try {
         const res = await fetch('/api/pair/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const data = await res.json();
@@ -282,7 +331,7 @@
       if (!num) return alert('Enter number');
       btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
+      pairMode = 'code'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
       try {
         const res = await fetch('/api/pair', {
           method: 'POST',
@@ -310,6 +359,24 @@
         statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-check"></i> Session copied</span>';
       });
     };
+
+    const audio = document.getElementById('bgAudio');
+    const songSelect = document.getElementById('songSelect');
+    const musicNow = document.getElementById('musicNow');
+    if (audio && songSelect) {
+      document.getElementById('playMusicBtn').onclick = () => {
+        audio.src = songSelect.value;
+        audio.play().then(() => {
+          musicNow.textContent = '▶ ' + songSelect.options[songSelect.selectedIndex].text;
+        }).catch(() => {
+          musicNow.textContent = 'Tap Play again (browser blocked autoplay)';
+        });
+      };
+      document.getElementById('pauseMusicBtn').onclick = () => {
+        audio.pause();
+        musicNow.textContent = '⏸ Paused';
+      };
+    }
   </script>
 </body>
 </html>
