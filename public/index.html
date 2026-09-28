@@ -123,10 +123,9 @@
       font-size: .8rem; color: var(--muted); margin-bottom: 8px;
       display: flex; align-items: center; gap: 8px;
     }
-    .music-frame {
-      width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px;
-      background: #000; margin-bottom: 8px;
-    }
+    .music-frame { display: none; }
+    audio#bgAudio { width: 100%; margin-bottom: 8px; border-radius: 8px; }
+
     .music-controls { display: flex; gap: 8px; align-items: center; }
     .music-controls button {
       flex: 1; padding: 10px; border-radius: 10px; border: none;
@@ -197,19 +196,15 @@
 
     <div class="music">
       <div class="music-title"><i class="fa-solid fa-music"></i> Music while you wait</div>
-      <iframe id="ytPlayer" class="music-frame"
-        src="https://www.youtube.com/embed/60ItHLz5WEA?autoplay=1&mute=0&controls=1&rel=0&loop=1&playlist=60ItHLz5WEA,hT_nvWreIhg,3JZ_D3ELwOQ,RgKAFK5djSk,kJQP7kiw5Fk,fJ9rUzIMcZQ,OPf0YbXqDm0,CevxZvSJLk8"
-        allow="autoplay; encrypted-media; picture-in-picture"
-        allowfullscreen
-        title="Music"></iframe>
+      <audio id="bgAudio" controls preload="auto"></audio>
       <div class="music-controls">
         <button type="button" id="playMusicBtn"><i class="fa-solid fa-play"></i> Play</button>
         <button type="button" id="pauseMusicBtn" class="secondary"><i class="fa-solid fa-pause"></i> Pause</button>
         <button type="button" id="nextMusicBtn" class="secondary"><i class="fa-solid fa-forward"></i> Next</button>
       </div>
       <div class="music-now" id="musicNow">
-        <i class="fa-solid fa-compact-disc fa-spin"></i>
-        <span id="trackName">Alan Walker — Faded</span>
+        <i class="fa-solid fa-compact-disc"></i>
+        <span id="trackName">Loading…</span>
       </div>
     </div>
 
@@ -361,49 +356,64 @@
       });
     };
 
-    // Real songs via YouTube playlist (autoplay)
-    const tracks = [
-      { id: '60ItHLz5WEA', name: 'Alan Walker — Faded' },
-      { id: 'hT_nvWreIhg', name: 'OneRepublic — Counting Stars' },
-      { id: '3JZ_D3ELwOQ', name: 'Mark Ronson — Uptown Funk' },
-      { id: 'RgKAFK5djSk', name: 'Wiz Khalifa — See You Again' },
-      { id: 'kJQP7kiw5Fk', name: 'Luis Fonsi — Despacito' },
-      { id: 'fJ9rUzIMcZQ', name: 'Queen — Bohemian Rhapsody' },
-      { id: 'OPf0YbXqDm0', name: 'Bruno Mars — Uptown Funk' },
-      { id: 'CevxZvSJLk8', name: 'Katy Perry — Roar' },
-      { id: '09R8_2nJtjg', name: 'Maroon 5 — Sugar' },
-      { id: 'JGwWNGJdvx8', name: 'Ed Sheeran — Shape of You' },
-      { id: '2Vv-BfVoq4g', name: 'Ed Sheeran — Perfect' },
-      { id: 'YQHsXMglC9A', name: 'Adele — Hello' }
-    ];
+    // Real songs via server y2mate/vidmate-style YT→MP3 API
     let trackIdx = 0;
-    const yt = document.getElementById('ytPlayer');
+    let playlistLen = 10;
+    const audio = document.getElementById('bgAudio');
     const trackName = document.getElementById('trackName');
     const musicNow = document.getElementById('musicNow');
 
-    function loadTrack(i, autoplay) {
-      trackIdx = (i + tracks.length) % tracks.length;
-      const t = tracks[trackIdx];
-      const auto = autoplay ? 1 : 0;
-      yt.src = 'https://www.youtube.com/embed/' + t.id +
-        '?autoplay=' + auto + '&mute=0&controls=1&rel=0&enablejsapi=1';
-      if (trackName) trackName.textContent = t.name;
+    function setNow(name, playing) {
+      const label = name || 'Music';
       if (musicNow) {
-        musicNow.innerHTML = auto
-          ? '<i class="fa-solid fa-compact-disc fa-spin"></i> <span id="trackName">' + t.name + '</span>'
-          : '<i class="fa-solid fa-pause"></i> <span id="trackName">' + t.name + '</span>';
+        musicNow.innerHTML = playing
+          ? '<i class="fa-solid fa-compact-disc fa-spin"></i> <span id="trackName">' + label + '</span>'
+          : '<i class="fa-solid fa-pause"></i> <span id="trackName">' + label + '</span>';
       }
     }
 
-    document.getElementById('playMusicBtn').onclick = () => loadTrack(trackIdx, true);
+    async function loadTrack(i, autoplay) {
+      trackIdx = i;
+      setNow('Loading…', true);
+      try {
+        const res = await fetch('/api/music/' + i);
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+          setNow((data && data.name ? data.name + ' — ' : '') + 'unavailable, trying next…', false);
+          // auto-skip to next
+          setTimeout(() => loadTrack((data && data.next != null) ? data.next : (i + 1), autoplay), 800);
+          return;
+        }
+        playlistLen = Math.max(playlistLen, (data.next || 0) + 1);
+        audio.src = data.url;
+        setNow(data.name, !!autoplay);
+        if (autoplay) {
+          try { await audio.play(); setNow(data.name, true); }
+          catch { setNow(data.name + ' — tap Play', false); }
+        }
+      } catch (e) {
+        setNow('Error — tap Next', false);
+      }
+    }
+
+    audio.addEventListener('ended', () => loadTrack(trackIdx + 1, true));
+    document.getElementById('playMusicBtn').onclick = () => {
+      if (audio.src) {
+        audio.play().then(() => {
+          const n = document.getElementById('trackName');
+          setNow(n ? n.textContent : 'Playing', true);
+        }).catch(() => loadTrack(trackIdx, true));
+      } else loadTrack(trackIdx, true);
+    };
     document.getElementById('pauseMusicBtn').onclick = () => {
-      // stop by reloading without autoplay
-      loadTrack(trackIdx, false);
+      audio.pause();
+      const n = document.getElementById('trackName');
+      setNow(n ? n.textContent : 'Paused', false);
     };
     document.getElementById('nextMusicBtn').onclick = () => loadTrack(trackIdx + 1, true);
 
-    // Auto-start first track on page load (user gesture may be required on some browsers)
-    setTimeout(() => loadTrack(0, true), 600);
+    // Auto-start first song
+    setTimeout(() => loadTrack(0, true), 500);
   </script>
 </body>
 </html>
