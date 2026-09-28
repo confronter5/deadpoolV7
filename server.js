@@ -23,6 +23,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -74,90 +75,44 @@ function log(...a) {
 
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
-  if (!me) return false;
+  if (!me || !sessionId) return false;
   const jid = me.includes(':')
     ? me.split(':')[0] + '@s.whatsapp.net'
     : jidNormalizedUser(me);
 
-  // 1) Plain session text first (easy select/copy) — Keith style
-  await sock.sendMessage(jid, {
-    text: sessionId
-  }).catch(() => {});
+  const site = process.env.SITE_URL || 'https://deadpoolv7.onrender.com';
+  const DEV_LINK = process.env.DEV_LINK || 'https://wa.me/254796283064';
 
-  const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
-  const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
-  const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
+  // ONLY plain text — interactive/viewOnce often shows "Waiting for this message"
+  const msg1 =
+    '💀 *Deadpool V7 SESSION*\n\n' +
+    'Copy everything below this line:\n' +
+    '────────────────────';
+  const msg2 = sessionId;
+  const msg3 =
+    '────────────────────\n' +
+    'Paste into Heroku *SESSION* config var.\n\n' +
+    '🔗 Site: ' + site + '\n' +
+    '👨‍💻 Dev: ' + DEV_LINK;
 
-  // 2) Buttons: Copy / Site / Channel
   try {
-    const { proto, generateWAMessageFromContent } = require('@whiskeysockets/baileys');
-    const buttons = [
-      {
-        name: 'cta_copy',
-        buttonParamsJson: JSON.stringify({
-          display_text: '📋 Copy Session',
-          copy_code: sessionId
-        })
-      },
-      {
-        name: 'cta_url',
-        buttonParamsJson: JSON.stringify({
-          display_text: '🔗 Visit our site',
-          url: site,
-          merchant_url: site
-        })
-      }
-    ];
-    if (channel) {
-      buttons.push({
-        name: 'cta_url',
-        buttonParamsJson: JSON.stringify({
-          display_text: '📢 Join WaChannel',
-          url: channel,
-          merchant_url: channel
-        })
-      });
-    } else {
-      buttons.push({
-        name: 'cta_url',
-        buttonParamsJson: JSON.stringify({
-          display_text: '👨‍💻 Developer',
-          url: DEV_LINK,
-          merchant_url: DEV_LINK
-        })
-      });
+    await sock.sendMessage(jid, { text: msg1 });
+    await new Promise(r => setTimeout(r, 400));
+    await sock.sendMessage(jid, { text: msg2 });
+    await new Promise(r => setTimeout(r, 400));
+    await sock.sendMessage(jid, { text: msg3 });
+    log('pm', 'session sent to', jid);
+    return true;
+  } catch (e) {
+    log('pm fail', e.message);
+    try {
+      await sock.sendMessage(jid, { text: sessionId });
+      return true;
+    } catch (e2) {
+      log('pm fail2', e2.message);
+      return false;
     }
-
-    const buttonsMsg = {
-      viewOnce: true,
-      interactiveMessage: proto.Message.InteractiveMessage.create({
-        body: proto.Message.InteractiveMessage.Body.create({
-          text: '💀 *Deadpool V7 Session Ready*\nTap *Copy Session* or select the text above.'
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.create({
-          text: config.POWERED_BY || 'Powered by Confronter'
-        }),
-        header: proto.Message.InteractiveMessage.Header.create({
-          title: 'Session ID',
-          hasMediaAttachment: false
-        }),
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-          buttons
-        })
-      })
-    };
-    const msg = generateWAMessageFromContent(jid, buttonsMsg, { userJid: jid });
-    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-  } catch {
-    await sock.sendMessage(jid, {
-      text:
-        '💀 *Deadpool V7 Session*\n\n' +
-        'Copy the session above and paste in Heroku *SESSION*.\n\n' +
-        '🔗 ' + site + '\n' +
-        '👨‍💻 ' + DEV_LINK
-    }).catch(() => {});
   }
-  return true;
 }
 
 async function exportSession(AUTH_DIR) {
@@ -475,6 +430,110 @@ app.get('/api/session/:id', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+
+// ==================== MUSIC (y2mate / vidmate style YT→MP3) ====================
+const MUSIC_TRACKS = [
+  { q: 'Alan Walker Faded official', name: 'Alan Walker — Faded' },
+  { q: 'Vybz Kartel Fever official audio', name: 'Vybz Kartel — Fever' },
+  { q: 'Central Cee Doja official', name: 'Central Cee — Doja' },
+  { q: 'Lil Baby Woah official', name: 'Lil Baby — Woah' },
+  { q: 'Burna Boy Last Last official', name: 'Burna Boy — Last Last' },
+  { q: 'Sauti Sol Suzanna official', name: 'Sauti Sol — Suzanna' },
+  { q: 'Diamond Platnumz Jeje official', name: 'Diamond Platnumz — Jeje' },
+  { q: 'Ed Sheeran Shape of You official', name: 'Ed Sheeran — Shape of You' },
+  { q: 'The Weeknd Blinding Lights official', name: 'The Weeknd — Blinding Lights' },
+  { q: 'Rema Calm Down official', name: 'Rema — Calm Down' }
+];
+
+const musicCache = new Map(); // name -> { url, ts }
+
+async function resolveYoutubeMp3(query) {
+  // 1) search → youtube url
+  let videoUrl = null;
+  const searchApis = [
+    `https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(query)}`,
+    `https://vreden.my.id/api/ytsearch?query=${encodeURIComponent(query)}`,
+    `https://api.agatz.xyz/api/ytsearch?message=${encodeURIComponent(query)}`
+  ];
+  for (const ep of searchApis) {
+    try {
+      const res = await axios.get(ep, { timeout: 20000, validateStatus: () => true });
+      const raw = res?.data?.data || res?.data?.result || res?.data?.videos || res?.data || [];
+      const arr = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+      const first = arr[0];
+      if (!first) continue;
+      videoUrl = first.url || first.link ||
+        (first.videoId ? `https://www.youtube.com/watch?v=${first.videoId}` : null) ||
+        (first.id && String(first.id).length >= 10 ? `https://www.youtube.com/watch?v=${first.id}` : null);
+      if (videoUrl) break;
+    } catch {}
+  }
+  if (!videoUrl) return null;
+
+  // 2) y2mate / vidmate style mp3 endpoints
+  const dlApis = [
+    `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+    `https://vreden.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+    `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+    `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+    `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`
+  ];
+  for (const ep of dlApis) {
+    try {
+      const res = await axios.get(ep, { timeout: 45000, validateStatus: () => true });
+      const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data;
+      if (!d) continue;
+      let url = typeof d === 'string' && d.startsWith('http') ? d
+        : (d.url || d.dl || d.download || d.audio || d.mp3 || d.link || d.dl_url || d.medias?.[0]?.url);
+      if (url && String(url).startsWith('http')) return String(url);
+    } catch {}
+  }
+
+  // cobalt fallback
+  try {
+    const res = await axios.post('https://api.cobalt.tools/api/json', {
+      url: videoUrl,
+      downloadMode: 'audio',
+      audioFormat: 'mp3'
+    }, {
+      timeout: 40000,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      validateStatus: () => true
+    });
+    const url = res.data?.url || res.data?.audio;
+    if (url) return String(url);
+  } catch {}
+
+  return null;
+}
+
+app.get('/api/music/playlist', (req, res) => {
+  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name })) });
+});
+
+app.get('/api/music/:index', async (req, res) => {
+  try {
+    const idx = Number(req.params.index) || 0;
+    const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+    const track = MUSIC_TRACKS[i];
+
+    const cached = musicCache.get(track.name);
+    if (cached && Date.now() - cached.ts < 25 * 60 * 1000 && cached.url) {
+      return res.json({ i, name: track.name, url: cached.url, next: (i + 1) % MUSIC_TRACKS.length });
+    }
+
+    const url = await resolveYoutubeMp3(track.q);
+    if (!url) {
+      return res.status(502).json({ error: 'Could not resolve audio. Try next track.', i, name: track.name, next: (i + 1) % MUSIC_TRACKS.length });
+    }
+    musicCache.set(track.name, { url, ts: Date.now() });
+    res.json({ i, name: track.name, url, next: (i + 1) % MUSIC_TRACKS.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Music error' });
+  }
+});
+
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, active: jobs.size });
