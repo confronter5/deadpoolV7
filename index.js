@@ -1,3 +1,4 @@
+
 /**
  * DEADPOOL V7.1
  * Full-featured multi-instance WhatsApp Bot
@@ -13,7 +14,8 @@ const {
   downloadContentFromMessage,
   jidNormalizedUser,
   getContentType,
-  Browsers
+  Browsers,
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs-extra');
@@ -311,80 +313,72 @@ function buildMainMenu(pushName, userCount) {
   let menu = '';
   menu += '▬▬▬▬▬▬▬▬▬▬▬▬\n';
   menu += '│➤ 💀 *' + config.BOT_NAME + '*\n';
-  menu += '│➤ 👋 Hi welcome, *' + name + '*!\n';
+  menu += '│➤ 👋 Hi *' + name + '*!\n';
   menu += '│➤ 👥 Users: *' + (userCount || 0) + '*\n';
   menu += '│➤ 🎉 Active: *' + expInfo + '*\n';
-  if (config.BOT_EXPIRY_DATE) menu += '│➤ 📅 Expires: *' + config.BOT_EXPIRY_DATE + '*\n';
-  menu += '│➤ ✅ Bot is online!\n';
   menu += '▬▬▬▬▬▬▬▬▬▬▬▬\n\n';
 
-  menu += '┏━━━ *📥 DOWNLOADS* ━━━┓\n';
-  menu += '┃ ' + p + 'video <name/url>\n';
-  menu += '┃ ' + p + 'play <song>  → MP3\n';
-  menu += '┃ ' + p + 'yt <url>\n';
-  menu += '┃ ' + p + 'tiktok <url>\n';
-  menu += '┃ ' + p + 'ig <url>\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *📥 DOWNLOADS* ━━┓\n';
+  menu += '┃ ' + p + 'play / song / video / yt\n';
+  menu += '┃ ' + p + 'tiktok / ig / fb / twitter\n';
+  menu += '┃ ' + p + 'lyrics <song>\n';
+  menu += '┃ ' + p + 'pinterest <query>\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *🎨 STICKER* ━━━┓\n';
-  menu += '┃ ' + p + 'sticker / s\n';
-  menu += '┃ ' + p + 'toimg\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *🎨 STICKER* ━━┓\n';
+  menu += '┃ ' + p + 'sticker / s / toimg / take\n';
+  menu += '┃ ' + p + 'attp <text> / tts <text>\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *👥 GROUP* ━━━┓\n';
-  menu += '┃ ' + p + 'promote @user\n';
-  menu += '┃ ' + p + 'demote @user\n';
-  menu += '┃ ' + p + 'kick @user\n';
-  menu += '┃ ' + p + 'tagall / hidetag\n';
-  menu += '┃ ' + p + 'left / join / approve\n';
-  menu += '┃ ' + p + 'antilink on/off\n';
-  menu += '┃ ' + p + 'welcome on/off\n';
-  menu += '┃ ' + p + 'goodbye on/off\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *🤖 AI* ━━┓\n';
+  menu += '┃ ' + p + 'gpt / ai / ask\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *🛡️ PRIVACY* ━━━┓\n';
-  menu += '┃ ' + p + 'antidelete off/pm/chat\n';
-  menu += '┃ ' + p + 'antiviewonce off/pm/chat\n';
-  menu += '┃ ' + p + 'vv (reply view once)\n';
-  menu += '┃ ' + p + 'anticall on/off\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *👥 ADMIN* ━━┓\n';
+  menu += '┃ ' + p + 'promote / demote / kick / warn\n';
+  menu += '┃ ' + p + 'mute / unmute / delete / clean\n';
+  menu += '┃ ' + p + 'tagall / hidetag / tagadmins\n';
+  menu += '┃ ' + p + 'antilink / antibot / antispam\n';
+  menu += '┃ ' + p + 'welcome / goodbye / grouplink\n';
+  menu += '┃ ' + p + 'groupinfo / approve / left\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *⚙️ SETTINGS* ━━━┓\n';
-  menu += '┃ ' + p + 'settings\n';
-  menu += '┃ ' + p + 'prefix <symbol>\n';
-  menu += '┃ ' + p + 'mode public/private\n';
-  menu += '┃ ' + p + 'presence online/typing/recording/offline\n';
-  menu += '┃ ' + p + 'autoview on/off\n';
-  menu += '┃ ' + p + 'autolike on/off\n';
-  menu += '┃ ' + p + 'autoreact on/off\n';
-  menu += '┃ ' + p + 'save (reply status)\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *👑 OWNER* ━━┓\n';
+  menu += '┃ ' + p + 'settings / mode / prefix\n';
+  menu += '┃ ' + p + 'block / unblock / broadcast\n';
+  menu += '┃ ' + p + 'setbotname / setmenuimage\n';
+  menu += '┃ ' + p + 'autoview / autolike / autoreact\n';
+  menu += '┃ ' + p + 'anticall / antidelete / antiviewonce\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *🤖 AI & FUN* ━━━┓\n';
-  menu += '┃ ' + p + 'gpt / ai <question>\n';
-  menu += '┃ ' + p + 'dice / slot\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *👾 ANIME* ━━┓\n';
+  menu += '┃ ' + p + 'waifu / neko / megumin\n';
+  menu += '┃ ' + p + 'shinobu / husbu / loli\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *👑 OWNER* ━━━┓\n';
-  menu += '┃ ' + p + 'users\n';
-  menu += '┃ ' + p + 'startmsg <text>\n';
-  menu += '┃ ' + p + 'sendstart on/off\n';
-  menu += '┃ ' + p + 'expiry\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n\n';
+  menu += '┏━━ *🖋️ TEXTMAKER* ━━┓\n';
+  menu += '┃ ' + p + 'neon / fire / glitch / ice\n';
+  menu += '┃ ' + p + 'matrix / thunder / devil / sand\n';
+  menu += '┃ ' + p + 'blackpink / metallic / light\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
-  menu += '┏━━━ *📌 GENERAL* ━━━┓\n';
-  menu += '┃ ' + p + 'menu / alive / ping\n';
-  menu += '┗━━━━━━━━━━━━━━━━┛\n';
+  menu += '┏━━ *🎭 FUN* ━━┓\n';
+  menu += '┃ ' + p + 'joke / meme / quote / fact\n';
+  menu += '┃ ' + p + 'truth / dare / ship / gayrate\n';
+  menu += '┃ ' + p + 'dice / slot / coinflip / 8ball\n';
+  menu += '┃ ' + p + 'compliment / flirt / insult\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
 
+  menu += '┏━━ *🔧 UTILITY* ━━┓\n';
+  menu += '┃ ' + p + 'translate / calc / weather\n';
+  menu += '┃ ' + p + 'owner / ping / uptime / ssweb\n';
+  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+
+  menu += '💡 Type *' + p + 'menu* anytime\n';
   return menu;
 }
 
-async function getGroupSetting(gid, key, fallback = false) {
-  const data = await loadGroupSettings();
-  return data[gid]?.[key] ?? fallback;
-}
 
-// ==================== SESSION ====================
 async function loadAuthState() {
   if (config.SESSION && config.SESSION.length > 10) {
     try {
@@ -788,23 +782,40 @@ async function startBot() {
 
   const { state, saveCreds } = await loadAuthState();
   const { version } = await fetchLatestBaileysVersion();
+  const logger = pino({ level: 'silent' });
 
+  // makeCacheableSignalKeyStore reduces Bad MAC / decrypt failures
   sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger)
+    },
     printQRInTerminal: !config.SESSION,
-    logger: pino({ level: 'silent' }),
+    logger,
     browser: Browsers.ubuntu('Chrome'),
     syncFullHistory: false,
-    markOnlineOnConnect: config.ALWAYS_ONLINE || config.PRESENCE === 'available',
+    markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 10000,
+    emitOwnEvents: true,
+    fireInitQueries: true,
     getMessage: async (key) => {
       const c = msgCache.get(key.id);
-      return c?.message || undefined;
+      return c?.message || { conversation: '' };
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Soft-handle decrypt noise (does not spam logs)
+  process.on('unhandledRejection', (err) => {
+    const msg = String(err && err.message || err || '');
+    if (msg.includes('Bad MAC') || msg.includes('Failed to decrypt') || msg.includes('No session')) return;
+    console.log('unhandledRejection:', msg.slice(0, 200));
+  });
 
   // ---------- Connection ----------
   sock.ev.on('connection.update', async (update) => {
@@ -828,7 +839,7 @@ async function startBot() {
         else await sock.sendPresenceUpdate('unavailable');
       } catch {}
 
-      // Start message → linked account chat (user who paired), NOT owner DM
+      // Start message → linked account (who paired) — real newlines, clean style
       try {
         const me = sock.user?.id;
         if (me) {
@@ -836,16 +847,18 @@ async function startBot() {
             ? me.split(':')[0] + '@s.whatsapp.net'
             : jidNormalizedUser(me);
           const p = config.PREFIX || '.';
+          // Fix literal \n from Heroku env vars
+          let banner = (config.START_MSG || `💀 *${config.BOT_NAME}* connected`)
+            .replace(/\\n/g, '\n');
           const startText =
-            (config.START_MSG || `💀 *${config.BOT_NAME}* connected`) +
-            '\n\n' +
-            '┏━━━ *BOT READY* ━━━┓\n' +
-            `┃ Prefix: *${p}*\n` +
-            `┃ Mode: *${config.MODE}*\n` +
-            `┃ Menu: *${p}menu*\n` +
-            `┃ Ping: *${p}ping*\n` +
-            '┗━━━━━━━━━━━━━━━━┛\n\n' +
-            `Type *${p}menu* to see all commands.`;
+            banner + '\n\n' +
+            '╭───『 *BOT READY* 』───╮\n' +
+            `│ ⚡ Prefix: *${p}*\n` +
+            `│ 🌐 Mode: *${config.MODE}*\n` +
+            `│ 📋 Menu: *${p}menu*\n` +
+            `│ 📡 Ping: *${p}ping*\n` +
+            '╰──────────────────╯\n\n' +
+            `✨ Type *${p}menu* to see all commands.`;
           await sock.sendMessage(linkedJid, { text: startText });
           console.log('📩 Start message sent to linked user', linkedJid);
         }
@@ -987,13 +1000,14 @@ async function startBot() {
           continue;
         }
 
-        // ===== ANTI VIEW-ONCE =====
-        if (config.ANTI_VIEW_ONCE !== 'off') {
+        // ===== ANTI VIEW-ONCE (pm/private → owner only | chat → same chat) =====
+        if (config.ANTI_VIEW_ONCE && config.ANTI_VIEW_ONCE !== 'off') {
           const contentType = getContentType(m.message);
           const isVO =
             ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'].includes(contentType) ||
             m.message?.viewOnceMessage ||
-            m.message?.viewOnceMessageV2;
+            m.message?.viewOnceMessageV2 ||
+            m.message?.viewOnceMessageV2Extension;
 
           if (isVO && !isMe) {
             try {
@@ -1003,17 +1017,33 @@ async function startBot() {
                 m.message.viewOnceMessageV2Extension?.message ||
                 m.message;
               const mediaType = getContentType(voMsg);
-              const target = config.ANTI_VIEW_ONCE === 'chat' ? from : getOwnerJid();
+              const mode = String(config.ANTI_VIEW_ONCE).toLowerCase();
+              // private/pm → owner DM only (not whole group)
+              const target = (mode === 'chat') ? from : getOwnerJid();
               if (target) {
                 const dl = await downloadMediaMsg(voMsg);
-                const caption = `🔓 *ViewOnce Unlocked*\nFrom: ${m.pushName || sender.split('@')[0]}`;
-                if (dl && mediaType === 'imageMessage') {
-                  await sock.sendMessage(target, { image: dl.buffer, caption });
-                } else if (dl && mediaType === 'videoMessage') {
-                  await sock.sendMessage(target, { video: dl.buffer, caption });
+                const who = m.pushName || sender.split('@')[0];
+                const caption =
+                  `✅ *${config.BOT_NAME} antiViewOnce*\n` +
+                  `• From: @${sender.split('@')[0]} (${who})\n` +
+                  `• Chat: ${isGroup(from) ? 'Group' : 'Private'}`;
+                const mentions = [jidNormalizedUser(sender)];
+                if (dl && (mediaType === 'imageMessage' || voMsg.imageMessage)) {
+                  await sock.sendMessage(target, { image: dl.buffer, caption, mentions });
+                } else if (dl && (mediaType === 'videoMessage' || voMsg.videoMessage)) {
+                  await sock.sendMessage(target, { video: dl.buffer, caption, mentions });
+                } else if (dl && (mediaType === 'audioMessage' || voMsg.audioMessage)) {
+                  await sock.sendMessage(target, {
+                    audio: dl.buffer,
+                    mimetype: 'audio/ogg; codecs=opus',
+                    ptt: true
+                  });
+                  await sock.sendMessage(target, { text: caption, mentions });
                 }
               }
-            } catch {}
+            } catch (e) {
+              console.log('antiviewonce:', e.message);
+            }
           }
         }
 
@@ -1430,25 +1460,26 @@ async function startBot() {
         // ----- SETTINGS -----
         if (cmd === 'settings') {
           const exp = await isBotExpired();
+          const on = (v) => (v ? '✅ ON' : '❌ OFF');
           const lines = [
-            `⚙️ *${config.BOT_NAME} SETTINGS*`,
-            `━━━━━━━━━━━━━━`,
-            `Prefix: *${config.PREFIX}*`,
-            `Mode: *${config.MODE}*`,
-            `Presence: *${config.PRESENCE}*`,
-            `AutoView: *${config.AUTO_VIEW_STATUS ? 'ON' : 'OFF'}*`,
-            `AutoLike: *${config.AUTO_LIKE_STATUS ? 'ON' : 'OFF'}*`,
-            `AutoReact: *${config.AUTO_REACT ? 'ON' : 'OFF'}*`,
-            `AntiDelete: *${config.ANTI_DELETE}*`,
-            `AntiDelete Status: *${config.ANTI_DELETE_STATUS ? 'ON' : 'OFF'}*`,
-            `AntiViewOnce: *${config.ANTI_VIEW_ONCE}*`,
-            `AntiCall: *${config.ANTI_CALL ? 'ON' : 'OFF'}*`,
-            `Antilink: *${config.ANTILINK ? 'ON' : 'OFF'}*`,
-            `Welcome: *${config.WELCOME ? 'ON' : 'OFF'}*`,
-            `Goodbye: *${config.GOODBYE ? 'ON' : 'OFF'}*`,
-            `SendStart: *${config.SEND_START_MSG ? 'ON' : 'OFF'}*`,
-            `Expiry: *${exp.expired ? 'EXPIRED' : (config.BOT_EXPIRY_DAYS || config.BOT_EXPIRY_DATE || 'unlimited')}*`,
-            `━━━━━━━━━━━━━━`
+            `✅ *${config.BOT_NAME}* ⚙️ *SETTINGS*`,
+            `━━━━━━━━━━━━━━━━`,
+            `• Prefix: *${config.PREFIX}*`,
+            `• Mode: *${config.MODE}*`,
+            `• Presence: *${config.PRESENCE}*`,
+            `• AutoView status: ${on(config.AUTO_VIEW_STATUS)}`,
+            `• AutoLike status: ${on(config.AUTO_LIKE_STATUS)}`,
+            `• AutoReact messages: ${on(config.AUTO_REACT)}`,
+            `• AntiDelete: *${config.ANTI_DELETE}*`,
+            `• AntiDelete status: ${on(config.ANTI_DELETE_STATUS)}`,
+            `• AntiViewOnce: *${config.ANTI_VIEW_ONCE}*  (pm/private/chat)`,
+            `• AntiCall: ${on(config.ANTI_CALL)}`,
+            `• Antilink: ${on(config.ANTILINK)}`,
+            `• Welcome: ${on(config.WELCOME)}`,
+            `• Goodbye: ${on(config.GOODBYE)}`,
+            `• Expiry: *${exp.expired ? 'EXPIRED' : (config.BOT_EXPIRY_DAYS ? config.BOT_EXPIRY_DAYS + ' days' : (config.BOT_EXPIRY_DATE || 'unlimited'))}*`,
+            `━━━━━━━━━━━━━━━━`,
+            `_Toggle with .autoview on | .autolike on | .autoreact on_`
           ];
           await reply(lines.join('\n'));
           continue;
@@ -1531,10 +1562,17 @@ async function startBot() {
           continue;
         }
         if (cmd === 'antiviewonce') {
-          if (['off', 'pm', 'chat'].includes(args[0])) {
-            config.ANTI_VIEW_ONCE = args[0];
-            await reply(`✅ Anti-ViewOnce → *${config.ANTI_VIEW_ONCE}*`);
-          } else await reply(`Current: *${config.ANTI_VIEW_ONCE}*\nUsage: ${config.PREFIX}antiviewonce off/pm/chat`);
+          let v = (args[0] || '').toLowerCase();
+          if (v === 'private') v = 'pm';
+          if (['off', 'pm', 'chat'].includes(v)) {
+            config.ANTI_VIEW_ONCE = v;
+            await reply(
+              `✅ Anti-ViewOnce → *${config.ANTI_VIEW_ONCE}*\n` +
+              (v === 'pm' ? 'View-once media is sent to *your private chat* only.' :
+               v === 'chat' ? 'View-once media is revealed in *this chat*.' :
+               'Anti-ViewOnce is off.')
+            );
+          } else await reply(`Current: *${config.ANTI_VIEW_ONCE}*\nUsage: ${config.PREFIX}antiviewonce off/pm/private/chat`);
           continue;
         }
 
@@ -1999,6 +2037,444 @@ async function startBot() {
           continue;
         }
 
+
+        // ===================== EXTRA ADMIN =====================
+        if (['mute', 'unmute'].includes(cmd)) {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          if (!(await isBotAdmin(from))) { await reply('Bot needs admin'); continue; }
+          try {
+            await sock.groupSettingUpdate(from, cmd === 'mute' ? 'announcement' : 'not_announcement');
+            await reply(cmd === 'mute' ? '🔇 Group muted (admins only)' : '🔊 Group unmuted');
+          } catch (e) { await reply('❌ ' + e.message); }
+          continue;
+        }
+
+        if (['delete', 'del'].includes(cmd)) {
+          const ctx = m.message?.extendedTextMessage?.contextInfo;
+          if (!ctx?.stanzaId) { await reply('Reply to a message to delete it'); continue; }
+          try {
+            await sock.sendMessage(from, {
+              delete: {
+                remoteJid: from,
+                fromMe: ctx.participant ? false : true,
+                id: ctx.stanzaId,
+                participant: ctx.participant
+              }
+            });
+          } catch (e) { await reply('❌ Cannot delete'); }
+          continue;
+        }
+
+        if (cmd === 'clean' || cmd === 'purge') {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          await reply('🧹 Clean: reply to messages and use ' + config.PREFIX + 'delete (bulk purge limited by WA).');
+          continue;
+        }
+
+        if (cmd === 'warn') {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          let users = getMentioned(m);
+          if (!users.length) { const q = getQuotedParticipant(m); if (q) users = [q]; }
+          if (!users.length) { await reply('Tag user to warn'); continue; }
+          await reply(`⚠️ Warned @${users[0].split('@')[0]}`);
+          try {
+            await sock.sendMessage(from, {
+              text: `⚠️ *WARNING*\n@${users[0].split('@')[0]} you have been warned.\nReason: ${text || 'No reason'}`,
+              mentions: users
+            });
+          } catch {}
+          continue;
+        }
+
+        if (cmd === 'tagadmins') {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          const meta = await getGroupMeta(from);
+          const admins = (meta?.participants || []).filter(p => p.admin).map(p => p.id);
+          if (!admins.length) { await reply('No admins'); continue; }
+          const tags = admins.map(a => '@' + a.split('@')[0]).join(' ');
+          await sock.sendMessage(from, {
+            text: `👑 *Admins*\n${tags}\n\n${text || ''}`.trim(),
+            mentions: admins
+          });
+          continue;
+        }
+
+        if (cmd === 'grouplink' || cmd === 'invite') {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!(await isBotAdmin(from))) { await reply('Bot needs admin'); continue; }
+          try {
+            const code = await sock.groupInviteCode(from);
+            await reply(`🔗 https://chat.whatsapp.com/${code}`);
+          } catch (e) { await reply('❌ ' + e.message); }
+          continue;
+        }
+
+        if (cmd === 'groupinfo' || cmd === 'groupstatus') {
+          if (!isGroup(from)) { await reply('Group only'); continue; }
+          try {
+            const meta = await getGroupMeta(from);
+            const admins = (meta.participants || []).filter(p => p.admin).length;
+            await reply(
+              `👥 *${meta.subject}*\n` +
+              `Members: *${meta.participants?.length || 0}*\n` +
+              `Admins: *${admins}*\n` +
+              `Desc: ${(meta.desc || 'N/A').slice(0, 200)}`
+            );
+          } catch (e) { await reply('❌ ' + e.message); }
+          continue;
+        }
+
+        if (cmd === 'antispam') {
+          if (args[0] === 'on') { config.ANTI_SPAM = true; await reply('✅ Anti-spam ON'); }
+          else if (args[0] === 'off') { config.ANTI_SPAM = false; await reply('❌ Anti-spam OFF'); }
+          else await reply(`Anti-spam: *${config.ANTI_SPAM ? 'ON' : 'OFF'}*`);
+          continue;
+        }
+
+        // ===================== OWNER EXTRA =====================
+        if (['block', 'unblock'].includes(cmd)) {
+          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          let jid = getMentioned(m)[0] || getQuotedParticipant(m);
+          if (!jid && text) jid = text.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+          if (!jid) { await reply('Tag user or give number'); continue; }
+          try {
+            await sock.updateBlockStatus(jid, cmd === 'block' ? 'block' : 'unblock');
+            await reply(`✅ ${cmd}ed ${String(jid).split('@')[0]}`);
+          } catch (e) { await reply('❌ ' + e.message); }
+          continue;
+        }
+
+        if (cmd === 'setbotname') {
+          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'setbotname Name'); continue; }
+          config.BOT_NAME = text;
+          try { await sock.updateProfileName(text); } catch {}
+          await reply('✅ Bot name → *' + text + '*');
+          continue;
+        }
+
+        if (cmd === 'setmenuimage' || cmd === 'setmenu') {
+          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'setmenuimage <url>'); continue; }
+          config.MENU_MEDIA = text.trim();
+          await reply('✅ Menu media updated');
+          continue;
+        }
+
+        if (cmd === 'owner') {
+          const o = config.OWNER_NUMBER || 'not set';
+          await reply(`👑 *Owner*\nwa.me/${o}\n${config.DEV_LINK || ''}`);
+          continue;
+        }
+
+        if (cmd === 'uptime') {
+          const up = Math.floor(process.uptime());
+          const h = Math.floor(up / 3600), min = Math.floor((up % 3600) / 60), s = up % 60;
+          await reply(`⏱️ Uptime: *${h}h ${min}m ${s}s*`);
+          continue;
+        }
+
+        // ===================== ANIME =====================
+        const animeMap = {
+          waifu: 'waifu', neko: 'neko', megumin: 'megumin', shinobu: 'shinobu',
+          husbu: 'waifu', loli: 'neko', hneko: 'neko', hwaifu: 'waifu', random: 'waifu'
+        };
+        if (animeMap[cmd]) {
+          try {
+            await reply('⏳ Loading...');
+            const cat = animeMap[cmd];
+            let img = null;
+            try {
+              const r = await dlGet(`https://api.waifu.pics/sfw/${cat}`, { timeout: 20000 });
+              img = r?.data?.url;
+            } catch {}
+            if (!img) {
+              try {
+                const r = await dlGet(`https://api.waifu.im/search/?included_tags=${cat}`, { timeout: 20000 });
+                img = r?.data?.images?.[0]?.url;
+              } catch {}
+            }
+            if (!img) {
+              const r = await dlGet('https://nekos.life/api/v2/img/' + (cat === 'megumin' ? 'neko' : cat), { timeout: 15000 });
+              img = r?.data?.url;
+            }
+            if (img) {
+              const buf = await fetchBuffer(img);
+              await sock.sendMessage(from, { image: buf, caption: `🌸 *${cmd}*\n${config.BOT_NAME}` });
+            } else await reply('❌ Could not fetch image');
+          } catch (e) {
+            await reply('❌ Anime API error');
+          }
+          continue;
+        }
+
+        // ===================== TEXTMAKER (simple canvas-style via APIs) =====================
+        const textFx = ['neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'devil', 'sand',
+          'blackpink', 'metallic', 'light', 'hacker', 'snow', 'purple', 'leaves', 'impressive',
+          '1917', 'arena'];
+        if (textFx.includes(cmd)) {
+          if (!text) { await reply(`Usage: ${config.PREFIX}${cmd} your text`); continue; }
+          await reply('⏳ Creating...');
+          const q = encodeURIComponent(text.slice(0, 40));
+          const apis = [
+            `https://api.siputzx.my.id/api/canvas/${cmd}?text=${q}`,
+            `https://api.agatz.xyz/api/textpro?text=${q}&effect=${cmd}`,
+            `https://vreden.my.id/api/textpro?text=${q}&theme=${cmd}`
+          ];
+          let ok = false;
+          for (const ep of apis) {
+            try {
+              const res = await dlGet(ep, { timeout: 30000, responseType: 'arraybuffer' });
+              if (res.status < 400 && res.data && res.data.byteLength > 500) {
+                await sock.sendMessage(from, { image: Buffer.from(res.data), caption: `🖋️ *${cmd}*\n${text}` });
+                ok = true;
+                break;
+              }
+              // JSON with url
+              try {
+                const j = typeof res.data === 'object' && res.data.url ? res.data : JSON.parse(Buffer.from(res.data).toString());
+                const url = j?.url || j?.result || j?.data;
+                if (url && String(url).startsWith('http')) {
+                  const buf = await fetchBuffer(url);
+                  await sock.sendMessage(from, { image: buf, caption: `🖋️ *${cmd}*\n${text}` });
+                  ok = true;
+                  break;
+                }
+              } catch {}
+            } catch {}
+          }
+          if (!ok) {
+            // fallback styled text
+            await reply(`🖋️ *${cmd.toUpperCase()}*\n\n*${text}*\n\n_Image API offline — text fallback_`);
+          }
+          continue;
+        }
+
+        // ===================== FUN =====================
+        if (cmd === 'joke') {
+          try {
+            const r = await dlGet('https://official-joke-api.appspot.com/random_joke', { timeout: 15000 });
+            const d = r.data;
+            await reply(`😂 *${d.setup}*\n\n_${d.punchline}_`);
+          } catch {
+            await reply('😂 Why did the bot go to therapy? Too many Bad MAC errors.');
+          }
+          continue;
+        }
+        if (cmd === 'meme') {
+          try {
+            const r = await dlGet('https://meme-api.com/gimme', { timeout: 15000 });
+            const url = r?.data?.url;
+            if (url) {
+              const buf = await fetchBuffer(url);
+              await sock.sendMessage(from, { image: buf, caption: r.data.title || 'Meme' });
+            } else await reply('❌ No meme');
+          } catch { await reply('❌ Meme API error'); }
+          continue;
+        }
+        if (cmd === 'quote') {
+          try {
+            const r = await dlGet('https://api.quotable.io/random', { timeout: 15000 });
+            await reply(`💬 *"${r.data.content}"*\n— ${r.data.author}`);
+          } catch { await reply('💬 Stay hungry, stay foolish.'); }
+          continue;
+        }
+        if (cmd === 'fact') {
+          try {
+            const r = await dlGet('https://uselessfacts.jsph.pl/api/v2/facts/random', { timeout: 15000 });
+            await reply(`📌 *Fact*\n${r.data.text}`);
+          } catch { await reply('📌 Water is wet.'); }
+          continue;
+        }
+        if (cmd === 'truth') {
+          const list = ['What is your biggest fear?','Who was your first crush?','What is a secret you never told?','Have you ever lied to your best friend?'];
+          await reply('🧠 *Truth*\n' + list[Math.floor(Math.random()*list.length)]);
+          continue;
+        }
+        if (cmd === 'dare') {
+          const list = ['Send a funny selfie','Text your crush hi','Change your status for 1 hour','Do 10 pushups'];
+          await reply('🔥 *Dare*\n' + list[Math.floor(Math.random()*list.length)]);
+          continue;
+        }
+        if (cmd === 'coinflip') {
+          await reply(Math.random() > 0.5 ? '🪙 Heads!' : '🪙 Tails!');
+          continue;
+        }
+        if (cmd === '8ball') {
+          const a = ['Yes','No','Maybe','Ask again','Definitely','Never','Sure','I doubt it'];
+          await reply(`🎱 ${a[Math.floor(Math.random()*a.length)]}`);
+          continue;
+        }
+        if (['gayrate','howgay','simprate','iqrate','rizzrate','toxicrate'].includes(cmd)) {
+          const n = Math.floor(Math.random()*101);
+          await reply(`📊 *${cmd}*\n@${(getMentioned(m)[0]||sender).split('@')[0]} → *${n}%*`);
+          continue;
+        }
+        if (cmd === 'ship') {
+          const u = getMentioned(m);
+          const a = u[0] || sender;
+          const b = u[1] || getOwnerJid() || sender;
+          const n = Math.floor(Math.random()*101);
+          await reply(`💕 Ship rate: *${n}%*\n@${a.split('@')[0]} ❤️ @${b.split('@')[0]}`);
+          continue;
+        }
+        if (cmd === 'compliment') {
+          const c = ['You light up the chat!','Your vibe is elite.','You are built different.','Main character energy.'];
+          await reply('✨ ' + c[Math.floor(Math.random()*c.length)]);
+          continue;
+        }
+        if (cmd === 'flirt') {
+          const c = ['Are you WiFi? Because I feel a connection.','Is your name Google? You have everything I search for.'];
+          await reply('💘 ' + c[Math.floor(Math.random()*c.length)]);
+          continue;
+        }
+        if (cmd === 'insult') {
+          const c = ['You bring everyone so much joy… when you leave.','Somewhere out there is a tree working hard to replace oxygen you waste.'];
+          await reply('😈 ' + c[Math.floor(Math.random()*c.length)]);
+          continue;
+        }
+
+        // ===================== UTILITY =====================
+        if (cmd === 'calc' || cmd === 'calculate') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'calc 2+2*5'); continue; }
+          try {
+            const safe = text.replace(/[^0-9+\-*/().%\s]/g, '');
+            // eslint-disable-next-line no-new-func
+            const result = Function('"use strict"; return (' + safe + ')')();
+            await reply(`🧮 *${safe}* = *${result}*`);
+          } catch { await reply('❌ Invalid expression'); }
+          continue;
+        }
+        if (cmd === 'translate' || cmd === 'tr') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'tr en|sw hello'); continue; }
+          try {
+            let lang = 'en', q = text;
+            const mtr = text.match(/^([a-z]{2})\|(.+)/i) || text.match(/^([a-z]{2})\s+(.+)/i);
+            if (mtr) { lang = mtr[1]; q = mtr[2]; }
+            const r = await dlGet(
+              `https://api.siputzx.my.id/api/tools/translate?text=${encodeURIComponent(q)}&target=${lang}`,
+              { timeout: 20000 }
+            );
+            const out = r?.data?.data || r?.data?.result || r?.data?.translated || r?.data;
+            await reply(`🌐 *Translate → ${lang}*\n${typeof out === 'string' ? out : JSON.stringify(out)}`);
+          } catch { await reply('❌ Translate failed'); }
+          continue;
+        }
+        if (cmd === 'weather') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'weather Nairobi'); continue; }
+          try {
+            const r = await dlGet(`https://wttr.in/${encodeURIComponent(text)}?format=3`, { timeout: 15000 });
+            await reply(`🌤️ ${String(r.data).trim()}`);
+          } catch { await reply('❌ Weather unavailable'); }
+          continue;
+        }
+        if (cmd === 'lyrics') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'lyrics faded alan walker'); continue; }
+          await reply('⏳ Searching lyrics...');
+          let lyrics = null, title = text;
+          const apis = [
+            `https://api.siputzx.my.id/api/s/lyrics?query=${encodeURIComponent(text)}`,
+            `https://vreden.my.id/api/lyrics?query=${encodeURIComponent(text)}`,
+            `https://api.agatz.xyz/api/lyrics?message=${encodeURIComponent(text)}`
+          ];
+          for (const ep of apis) {
+            try {
+              const r = await dlGet(ep, { timeout: 25000 });
+              const d = r?.data?.data || r?.data?.result || r?.data;
+              lyrics = d?.lyrics || d?.lyric || d?.text || (typeof d === 'string' ? d : null);
+              title = d?.title || d?.song || title;
+              if (lyrics) break;
+            } catch {}
+          }
+          if (lyrics) {
+            if (lyrics.length > 3500) lyrics = lyrics.slice(0, 3500) + '...';
+            await reply(`🎵 *${title}*\n\n${lyrics}`);
+          } else await reply('🎵 No lyrics available.');
+          continue;
+        }
+        if (['facebook', 'fb'].includes(cmd)) {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'fb <url>'); continue; }
+          await reply('⏳ Downloading FB...');
+          try {
+            const r = await dlGet(`https://api.siputzx.my.id/api/d/facebook?url=${encodeURIComponent(text)}`, { timeout: 40000 });
+            const d = r?.data?.data || r?.data?.result || r?.data;
+            const url = d?.url || d?.video || d?.hd || d?.sd;
+            if (url) {
+              const buf = await fetchBuffer(url);
+              await sock.sendMessage(from, { video: buf, caption: '📘 Facebook' });
+            } else await reply('❌ Failed');
+          } catch { await reply('❌ FB download failed'); }
+          continue;
+        }
+        if (['twitter', 'x', 'twdl'].includes(cmd)) {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'twitter <url>'); continue; }
+          await reply('⏳ Downloading...');
+          try {
+            const r = await dlGet(`https://api.siputzx.my.id/api/d/twitter?url=${encodeURIComponent(text)}`, { timeout: 40000 });
+            const d = r?.data?.data || r?.data?.result || r?.data;
+            const url = d?.url || d?.video || d?.media;
+            if (url) {
+              const buf = await fetchBuffer(String(url));
+              await sock.sendMessage(from, { video: buf, caption: '🐦 Twitter/X' });
+            } else await reply('❌ Failed');
+          } catch { await reply('❌ Twitter download failed'); }
+          continue;
+        }
+        if (cmd === 'pinterest' || cmd === 'pin') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'pinterest query'); continue; }
+          try {
+            const r = await dlGet(`https://api.siputzx.my.id/api/s/pinterest?query=${encodeURIComponent(text)}`, { timeout: 25000 });
+            const list = r?.data?.data || r?.data?.result || [];
+            const first = Array.isArray(list) ? list[0] : null;
+            const url = first?.url || first?.image || first?.img;
+            if (url) {
+              const buf = await fetchBuffer(url);
+              await sock.sendMessage(from, { image: buf, caption: '📌 ' + text });
+            } else await reply('❌ No results');
+          } catch { await reply('❌ Pinterest failed'); }
+          continue;
+        }
+        if (cmd === 'ssweb' || cmd === 'ss') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'ssweb https://google.com'); continue; }
+          try {
+            const url = `https://api.siputzx.my.id/api/tools/ssweb?url=${encodeURIComponent(text)}`;
+            const buf = await fetchBuffer(url);
+            await sock.sendMessage(from, { image: buf, caption: '📸 ' + text });
+          } catch { await reply('❌ Screenshot failed'); }
+          continue;
+        }
+        if (cmd === 'tts') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'tts hello world'); continue; }
+          try {
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=${encodeURIComponent(text.slice(0, 200))}`;
+            const buf = await fetchBuffer(url);
+            await sock.sendMessage(from, { audio: buf, mimetype: 'audio/mpeg', ptt: false });
+          } catch { await reply('❌ TTS failed'); }
+          continue;
+        }
+        if (cmd === 'attp') {
+          if (!text) { await reply('Usage: ' + config.PREFIX + 'attp text'); continue; }
+          try {
+            const url = `https://api.siputzx.my.id/api/m/attp?text=${encodeURIComponent(text.slice(0, 40))}`;
+            const res = await dlGet(url, { timeout: 25000, responseType: 'arraybuffer' });
+            let buf = null;
+            if (res.data && res.data.byteLength > 100) buf = Buffer.from(res.data);
+            else {
+              const j = JSON.parse(Buffer.from(res.data).toString());
+              if (j.url) buf = await fetchBuffer(j.url);
+            }
+            if (buf) {
+              const sticker = new Sticker(buf, { pack: config.BOT_NAME, author: 'Confronter', type: StickerTypes.FULL, quality: 80 });
+              await sock.sendMessage(from, { sticker: await sticker.toBuffer() });
+            } else await reply('❌ ATTP failed');
+          } catch { await reply('❌ ATTP failed'); }
+          continue;
+        }
+
+
       } catch (err) {
         console.log('Handler:', err.message);
       }
@@ -2009,66 +2485,124 @@ async function startBot() {
   sock.ev.on('messages.update', async (updates) => {
     for (const u of updates) {
       try {
-        if (u.update?.message === null || u.update?.messageStubType === 1 || u.update?.messageStubType === 2) {
-          const key = u.key;
-          const cached = msgCache.get(key.id);
-          if (!cached?.message) continue;
+        const isDeleted =
+          u.update?.message === null ||
+          u.update?.messageStubType === 1 ||
+          u.update?.messageStubType === 2 ||
+          u.update?.messageStubType === 68;
+        if (!isDeleted) continue;
 
-          const from = key.remoteJid;
-          const isStatus = from === 'status@broadcast';
-          if (isStatus && !config.ANTI_DELETE_STATUS) continue;
-          if (!isStatus && config.ANTI_DELETE === 'off') continue;
+        const key = u.key;
+        if (!key?.id) continue;
+        const cached = msgCache.get(key.id);
+        if (!cached?.message) continue;
 
-          const sender = key.participant || key.remoteJid;
-          const target = isStatus
-            ? getOwnerJid()
-            : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
-          if (!target) continue;
+        const from = key.remoteJid;
+        const isStatus = from === 'status@broadcast';
+        if (isStatus && !config.ANTI_DELETE_STATUS) continue;
+        if (!isStatus && config.ANTI_DELETE === 'off') continue;
 
-          const msg = cached.message;
-          const type = getContentType(msg);
-          let textContent = '';
+        const sender = key.participant || cached.participant || key.remoteJid;
+        const deleter = key.participant || sender;
+        const target = isStatus
+          ? getOwnerJid()
+          : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
+        if (!target) continue;
 
-          if (type === 'conversation') textContent = msg.conversation;
-          else if (type === 'extendedTextMessage') textContent = msg.extendedTextMessage?.text || '';
-          else if (type === 'imageMessage') textContent = '[Image] ' + (msg.imageMessage?.caption || '');
-          else if (type === 'videoMessage') textContent = '[Video] ' + (msg.videoMessage?.caption || '');
-          else if (type === 'stickerMessage') textContent = '[Sticker]';
-          else if (type === 'audioMessage') textContent = '[Audio]';
-          else textContent = `[${type || 'Media'}]`;
+        const msg = cached.message;
+        const type = getContentType(msg) || '';
+        const pushName = cached.pushName || 'Unknown';
+        const senderTag = '@' + String(sender).split('@')[0].split(':')[0];
+        const deleterTag = '@' + String(deleter).split('@')[0].split(':')[0];
+        const mentions = [];
+        try {
+          mentions.push(jidNormalizedUser(sender));
+          if (deleter !== sender) mentions.push(jidNormalizedUser(deleter));
+        } catch {}
 
-          const deletedAt = new Date().toLocaleString(undefined, {
-            weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', second: '2-digit'
-          });
-          const whoName = cached.pushName || 'Unknown';
-          const whoNum = jidToPhone(sender, cached);
-          const header =
-            `🗑️ *ANTI-DELETE*\n` +
-            `👤 Name: *${whoName}*\n` +
-            `📱 Number: *${whoNum}*\n` +
-            `💬 Chat: ${isGroup(from) ? 'Group' : 'Private'}\n` +
-            `🕒 Time: ${deletedAt}\n` +
-            `──────────────\n`;
-
-          if (['imageMessage', 'videoMessage'].includes(type)) {
-            try {
-              const dl = await downloadMediaMsg(msg);
-              if (dl) {
-                const mediaKey = type === 'imageMessage' ? 'image' : 'video';
-                await sock.sendMessage(target, {
-                  [mediaKey]: dl.buffer,
-                  caption: header + textContent
-                });
-                continue;
-              }
-            } catch {}
+        let groupName = 'Private';
+        let chatType = isStatus ? 'Status' : (isGroup(from) ? 'Group' : 'Private');
+        if (isGroup(from)) {
+          try {
+            const meta = await sock.groupMetadata(from);
+            groupName = meta?.subject || 'Group';
+          } catch {
+            groupName = 'Group';
           }
-          await sock.sendMessage(target, { text: header + textContent });
         }
-      } catch {}
+
+        // Extract text
+        let deletedText = '';
+        if (type === 'conversation') deletedText = msg.conversation || '';
+        else if (type === 'extendedTextMessage') deletedText = msg.extendedTextMessage?.text || '';
+        else if (type === 'imageMessage') deletedText = msg.imageMessage?.caption || '';
+        else if (type === 'videoMessage') deletedText = msg.videoMessage?.caption || '';
+        else if (type === 'documentMessage') deletedText = msg.documentMessage?.caption || msg.documentMessage?.fileName || '';
+        else if (type === 'buttonsMessage') deletedText = msg.buttonsMessage?.contentText || '';
+        else if (type === 'templateMessage') deletedText = '[Template]';
+        else if (type === 'stickerMessage') deletedText = '[Sticker]';
+        else if (type === 'audioMessage') deletedText = msg.audioMessage?.ptt ? '[Voice note]' : '[Audio]';
+        else deletedText = type ? `[${type.replace('Message', '')}]` : '[Message]';
+
+        // Keith-style caption
+        const botLabel = config.BOT_NAME || 'Deadpool V7';
+        let caption =
+          `✅ *${botLabel} antiDelete*\n` +
+          `• Deleted by: ${deleterTag}\n` +
+          `• Original sender: ${senderTag}\n`;
+        if (isGroup(from)) caption += `• Group: ${groupName}\n`;
+        caption += `• Chat type: ${chatType}\n`;
+        if (deletedText && !deletedText.startsWith('[')) {
+          caption += `\n📝 *Deleted Text:*\n${deletedText}`;
+        } else if (deletedText) {
+          caption += `\n${deletedText}`;
+        }
+
+        // Try forward media
+        const mediaTypes = {
+          imageMessage: 'image',
+          videoMessage: 'video',
+          audioMessage: 'audio',
+          stickerMessage: 'sticker',
+          documentMessage: 'document'
+        };
+
+        if (mediaTypes[type]) {
+          try {
+            const dl = await downloadMediaMsg(msg);
+            if (dl?.buffer) {
+              const mediaKey = mediaTypes[type];
+              const payload = { [mediaKey]: dl.buffer };
+              if (mediaKey === 'image' || mediaKey === 'video') {
+                payload.caption = caption;
+                payload.mimetype = type === 'videoMessage' ? 'video/mp4' : undefined;
+              } else if (mediaKey === 'audio') {
+                payload.mimetype = 'audio/ogg; codecs=opus';
+                payload.ptt = !!msg.audioMessage?.ptt;
+              } else if (mediaKey === 'document') {
+                payload.mimetype = msg.documentMessage?.mimetype || 'application/octet-stream';
+                payload.fileName = msg.documentMessage?.fileName || 'file';
+                payload.caption = caption;
+              }
+              await sock.sendMessage(target, payload, { mentions });
+              // also send text info for sticker/audio
+              if (mediaKey === 'sticker' || mediaKey === 'audio') {
+                await sock.sendMessage(target, { text: caption, mentions });
+              }
+              continue;
+            }
+          } catch (e) {
+            console.log('antidelete media:', e.message);
+          }
+        }
+
+        await sock.sendMessage(target, { text: caption, mentions });
+      } catch (e) {
+        console.log('antidelete:', e.message);
+      }
     }
   });
+
 }
 
 startBot().catch(e => {
