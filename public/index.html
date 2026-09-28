@@ -123,10 +123,9 @@
       font-size: .8rem; color: var(--muted); margin-bottom: 8px;
       display: flex; align-items: center; gap: 8px;
     }
-    .music select {
-      width: 100%; padding: 10px; border-radius: 10px;
-      border: 1px solid var(--line); background: var(--card);
-      color: var(--text); margin-bottom: 8px; font-size: .85rem;
+    .music-frame {
+      width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px;
+      background: #000; margin-bottom: 8px;
     }
     .music-controls { display: flex; gap: 8px; align-items: center; }
     .music-controls button {
@@ -136,7 +135,10 @@
     .music-controls button.secondary {
       background: transparent; border: 1px solid var(--line); color: var(--text);
     }
-    .music-now { font-size: .75rem; color: var(--ok); margin-top: 6px; min-height: 1em; }
+    .music-now {
+      font-size: .75rem; color: var(--ok); margin-top: 6px; min-height: 1.2em;
+      display: flex; align-items: center; gap: 6px;
+    }
   </style>
 </head>
 <body>
@@ -158,7 +160,6 @@
       <p class="hint">
         <i class="fa-solid fa-info-circle"></i>
         Generate QR → WhatsApp → Linked Devices → Link a device → Scan.
-        You can leave this page and open WhatsApp — session is sent to your PM when linking finishes.
       </p>
       <button class="action" id="btnQr" type="button">
         <i class="fa-solid fa-qrcode"></i> Generate QR
@@ -195,21 +196,21 @@
 
 
     <div class="music">
-      <div class="music-title"><i class="fa-solid fa-music"></i> Play music while you wait</div>
-      <select id="songSelect">
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3">Vybz Kartel vibe</option>
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3">Central Cee vibe</option>
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3">Lil Baby vibe</option>
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3">Kenyan trending vibe</option>
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3">Dancehall / Afrobeat</option>
-        <option value="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3">Chill wait mix</option>
-      </select>
+      <div class="music-title"><i class="fa-solid fa-music"></i> Music while you wait</div>
+      <iframe id="ytPlayer" class="music-frame"
+        src="https://www.youtube.com/embed/60ItHLz5WEA?autoplay=1&mute=0&controls=1&rel=0&loop=1&playlist=60ItHLz5WEA,hT_nvWreIhg,3JZ_D3ELwOQ,RgKAFK5djSk,kJQP7kiw5Fk,fJ9rUzIMcZQ,OPf0YbXqDm0,CevxZvSJLk8"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        allowfullscreen
+        title="Music"></iframe>
       <div class="music-controls">
         <button type="button" id="playMusicBtn"><i class="fa-solid fa-play"></i> Play</button>
         <button type="button" id="pauseMusicBtn" class="secondary"><i class="fa-solid fa-pause"></i> Pause</button>
+        <button type="button" id="nextMusicBtn" class="secondary"><i class="fa-solid fa-forward"></i> Next</button>
       </div>
-      <div class="music-now" id="musicNow"></div>
-      <audio id="bgAudio" preload="none"></audio>
+      <div class="music-now" id="musicNow">
+        <i class="fa-solid fa-compact-disc fa-spin"></i>
+        <span id="trackName">Alan Walker — Faded</span>
+      </div>
     </div>
 
     <p class="footer">
@@ -360,23 +361,49 @@
       });
     };
 
-    const audio = document.getElementById('bgAudio');
-    const songSelect = document.getElementById('songSelect');
+    // Real songs via YouTube playlist (autoplay)
+    const tracks = [
+      { id: '60ItHLz5WEA', name: 'Alan Walker — Faded' },
+      { id: 'hT_nvWreIhg', name: 'OneRepublic — Counting Stars' },
+      { id: '3JZ_D3ELwOQ', name: 'Mark Ronson — Uptown Funk' },
+      { id: 'RgKAFK5djSk', name: 'Wiz Khalifa — See You Again' },
+      { id: 'kJQP7kiw5Fk', name: 'Luis Fonsi — Despacito' },
+      { id: 'fJ9rUzIMcZQ', name: 'Queen — Bohemian Rhapsody' },
+      { id: 'OPf0YbXqDm0', name: 'Bruno Mars — Uptown Funk' },
+      { id: 'CevxZvSJLk8', name: 'Katy Perry — Roar' },
+      { id: '09R8_2nJtjg', name: 'Maroon 5 — Sugar' },
+      { id: 'JGwWNGJdvx8', name: 'Ed Sheeran — Shape of You' },
+      { id: '2Vv-BfVoq4g', name: 'Ed Sheeran — Perfect' },
+      { id: 'YQHsXMglC9A', name: 'Adele — Hello' }
+    ];
+    let trackIdx = 0;
+    const yt = document.getElementById('ytPlayer');
+    const trackName = document.getElementById('trackName');
     const musicNow = document.getElementById('musicNow');
-    if (audio && songSelect) {
-      document.getElementById('playMusicBtn').onclick = () => {
-        audio.src = songSelect.value;
-        audio.play().then(() => {
-          musicNow.textContent = '▶ ' + songSelect.options[songSelect.selectedIndex].text;
-        }).catch(() => {
-          musicNow.textContent = 'Tap Play again (browser blocked autoplay)';
-        });
-      };
-      document.getElementById('pauseMusicBtn').onclick = () => {
-        audio.pause();
-        musicNow.textContent = '⏸ Paused';
-      };
+
+    function loadTrack(i, autoplay) {
+      trackIdx = (i + tracks.length) % tracks.length;
+      const t = tracks[trackIdx];
+      const auto = autoplay ? 1 : 0;
+      yt.src = 'https://www.youtube.com/embed/' + t.id +
+        '?autoplay=' + auto + '&mute=0&controls=1&rel=0&enablejsapi=1';
+      if (trackName) trackName.textContent = t.name;
+      if (musicNow) {
+        musicNow.innerHTML = auto
+          ? '<i class="fa-solid fa-compact-disc fa-spin"></i> <span id="trackName">' + t.name + '</span>'
+          : '<i class="fa-solid fa-pause"></i> <span id="trackName">' + t.name + '</span>';
+      }
     }
+
+    document.getElementById('playMusicBtn').onclick = () => loadTrack(trackIdx, true);
+    document.getElementById('pauseMusicBtn').onclick = () => {
+      // stop by reloading without autoplay
+      loadTrack(trackIdx, false);
+    };
+    document.getElementById('nextMusicBtn').onclick = () => loadTrack(trackIdx + 1, true);
+
+    // Auto-start first track on page load (user gesture may be required on some browsers)
+    setTimeout(() => loadTrack(0, true), 600);
   </script>
 </body>
 </html>
