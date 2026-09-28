@@ -4,6 +4,12 @@ module.exports = {
   // Session
   SESSION: process.env.SESSION || '',
 
+  // Optional proxy rotation for downloads (comma-separated)
+  // Example: http://user:pass@ip:port,http://ip2:8080
+  PROXY_LIST: (process.env.PROXY_LIST || process.env.PROXIES || '')
+    .split(',').map(s => s.trim()).filter(Boolean),
+
+
   // Owner & Identity
   OWNER_NUMBER: (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, ''),
   // Developer numbers (broadcast & hidden owner tools) — comma-separated
@@ -18,8 +24,7 @@ module.exports = {
 
   // Startup message (sent to users when bot connects)
   // Use \n for new lines. You can edit this anytime.
-  START_MSG: process.env.START_MSG || 
-    `💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064`,
+  START_MSG: (process.env.START_MSG || '💀 *Deadpool V7* connected\n\nMade by *Confronter*\nAny issues: wa.me/254796283064').replace(/\\n/g, '\n'),
   SEND_START_MSG: (process.env.SEND_START_MSG || 'false').toLowerCase() === 'true',
 
   // Welcome / Goodbye
@@ -43,7 +48,11 @@ module.exports = {
   ANTI_DELETE: (process.env.ANTI_DELETE || 'pm').toLowerCase(),
 
   // Anti-viewonce: off | pm | chat
-  ANTI_VIEW_ONCE: (process.env.ANTI_VIEW_ONCE || 'pm').toLowerCase(),
+  ANTI_VIEW_ONCE: (() => {
+    let v = (process.env.ANTI_VIEW_ONCE || 'pm').toLowerCase();
+    if (v === 'private') v = 'pm';
+    return v;
+  })(),
 
   // Mode: public | private
   MODE: (process.env.MODE || 'public').toLowerCase(),
