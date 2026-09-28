@@ -75,22 +75,22 @@ function log(...a) {
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
   if (!me) return false;
-  const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : me;
-  const site = config.SITE_URL || process.env.SITE_URL || 'https://deadpoolv7.onrender.com';
-  const channel = config.CHANNEL_URL || process.env.CHANNEL_URL || '';
+  const jid = me.includes(':')
+    ? me.split(':')[0] + '@s.whatsapp.net'
+    : jidNormalizedUser(me);
 
-  // Message 1: ONLY the session string (easy long-press copy, no extra text mixed)
-  await sock.sendMessage(jid, { text: sessionId });
-
-  // Message 2: instructions
+  // 1) Plain session text first (easy select/copy) — Keith style
   await sock.sendMessage(jid, {
-    text:
-      `✅ *Deadpool V7* linked successfully!\n\n` +
-      `📋 *Copy Session* button below, or long-press the message above.\n` +
-      `⚠️ Do not share this with anyone.`
-  });
+    text: sessionId
+  }).catch(() => {});
 
+  const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
+  const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
+  const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
+
+  // 2) Buttons: Copy / Site / Channel
   try {
+    const { proto, generateWAMessageFromContent } = require('@whiskeysockets/baileys');
     const buttons = [
       {
         name: 'cta_copy',
@@ -132,13 +132,13 @@ async function sendSessionToPM(sock, sessionId) {
       viewOnce: true,
       interactiveMessage: proto.Message.InteractiveMessage.create({
         body: proto.Message.InteractiveMessage.Body.create({
-          text: '💀 *Deadpool V7 Session*\nChoose an action:'
+          text: '💀 *Deadpool V7 Session Ready*\nTap *Copy Session* or select the text above.'
         }),
         footer: proto.Message.InteractiveMessage.Footer.create({
           text: config.POWERED_BY || 'Powered by Confronter'
         }),
         header: proto.Message.InteractiveMessage.Header.create({
-          title: 'Session Ready',
+          title: 'Session ID',
           hasMediaAttachment: false
         }),
         nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
@@ -150,7 +150,11 @@ async function sendSessionToPM(sock, sessionId) {
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
   } catch {
     await sock.sendMessage(jid, {
-      text: `📋 *SESSION*\n\`\`\`${sessionId}\`\`\`\n\n🔗 ${site}\n👨‍💻 ${DEV_LINK}`
+      text:
+        '💀 *Deadpool V7 Session*\n\n' +
+        'Copy the session above and paste in Heroku *SESSION*.\n\n' +
+        '🔗 ' + site + '\n' +
+        '👨‍💻 ' + DEV_LINK
     }).catch(() => {});
   }
   return true;
@@ -203,8 +207,11 @@ async function startSocket(job) {
         if (job.mode === 'qr') {
           job.status = 'qr';
           job.error = null;
+          log(job.id, 'QR updated');
+        } else {
+          // code mode: ignore QR image
+          job.qrDataUrl = null;
         }
-        log(job.id, 'QR updated');
       } catch {}
 
       // ---- Pairing CODE: request when QR event fires (Baileys recommended) ----
@@ -225,6 +232,7 @@ async function startSocket(job) {
           }
           job.code = String(code || '').toUpperCase();
           job.status = 'code';
+          job.qrDataUrl = null; // pair-code mode: never show QR
           job.error = null;
           log(job.id, 'PAIR CODE', job.code, '- user can leave browser, session will still complete');
         } catch (e) {
