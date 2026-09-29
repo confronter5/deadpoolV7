@@ -1,4 +1,3 @@
-
 /**
  * DEADPOOL V7.1
  * Full-featured multi-instance WhatsApp Bot
@@ -25,6 +24,19 @@ const NodeCache = require('node-cache');
 const axios = require('axios');
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 const config = require('./config');
+
+// Suppress noisy Baileys decrypt spam (Toxic-style)
+const _SUPPRESS = [
+  'Closing session', 'Closing open session', 'Failed to decrypt',
+  'Session error:', 'Bad MAC', 'Decrypted message with closed session',
+  '[LID]'
+];
+const _matchSuppress = (s) => typeof s === 'string' && _SUPPRESS.some(p => s.includes(p));
+const _log = console.log.bind(console);
+console.log = (...a) => { if (_matchSuppress(a[0])) return; _log(...a); };
+const _warn = console.warn.bind(console);
+console.warn = (...a) => { if (_matchSuppress(a[0])) return; _warn(...a); };
+
 
 // ==================== PROXY ROTATION (optional) ====================
 let _proxyIdx = 0;
@@ -233,15 +245,40 @@ function jidToPhone(jid, msg) {
 function withFooter(content) {
   const foot = buildFooter();
   if (!foot) return content;
-  if (typeof content === 'string') return content + foot;
+  if (typeof content === 'string') {
+    if (!content.trim()) return content; // never send footer-only empty bubble
+    return content + foot;
+  }
   if (content && typeof content === 'object') {
+    // never touch reactions / deletes / pure media keys without caption
+    if (content.react || content.delete || content.protocolMessage) return content;
     const c = { ...content };
-    if (c.caption != null) c.caption = (c.caption || '') + foot;
-    else if (c.text != null) c.text = (c.text || '') + foot;
-    else c.text = foot.trim();
+    if (c.caption != null && String(c.caption).length) {
+      c.caption = String(c.caption) + foot;
+    } else if (c.text != null) {
+      if (!String(c.text).trim()) return content;
+      c.text = String(c.text) + foot;
+    }
+    // do NOT invent c.text on image/video/audio/sticker-only payloads
     return c;
   }
   return content;
+}
+
+async function safeSend(sock, jid, content, opts) {
+  try {
+    if (!content) return;
+    if (typeof content === 'string') {
+      if (!content.trim()) return;
+      return await sock.sendMessage(jid, { text: content }, opts);
+    }
+    if (content.text != null && !String(content.text).trim() && !content.image && !content.video && !content.audio && !content.sticker && !content.document && !content.react) {
+      return; // block empty text bubbles
+    }
+    return await sock.sendMessage(jid, content, opts);
+  } catch (e) {
+    console.log('safeSend:', e.message);
+  }
 }
 
 // ==================== UNICODE FONT CYCLER (WhatsApp-safe) ====================
@@ -299,8 +336,9 @@ function applyUnicodeFont(text, style) {
 }
 
 function styleMenuText(text) {
-  // Plain text only — unicode "fonts" often cause "Waiting for this message"
-  return text;
+  const style = nextFontStyle();
+  // Cycle unicode fonts on letters only; keep box chars / emojis intact
+  return applyUnicodeFont(text, style);
 }
 
 function buildMainMenu(pushName, userCount) {
@@ -411,6 +449,47 @@ function isOwner(jid) {
   return isDeveloper(jid);
 }
 
+function roastOwnerOnly() {
+  const lines = [
+    '😂👉 *Owner only.* Crawl back under your rock.',
+    '🤣 *Not for you.* This is owner territory, clown.',
+    '💀 Nice try. *Owner only.* Stay in your lane.',
+    '🖕 *Owner command.* You are not him. Sit down.',
+    '😹 *Denied.* Only the owner runs this. Go touch grass.'
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+function roastAdminOnly() {
+  const lines = [
+    '😂 *Admin only.* You are not admin. Point and laugh 👉',
+    '🤣 Who gave *you* admin rights? Nobody. Sit.',
+    '💀 *Admins only.* Regular users stay quiet.',
+    '😹 Denied. Ask an admin… or dream about it.',
+    '🖕 Not admin = not allowed. Simple.'
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+function roastAlreadyOn(feature) {
+  const lines = [
+    `😂 *${feature}* is *already ON*. You cannot "activate" oxygen, genius.`,
+    `🤣 *${feature}* was already enabled. Reading is free — try it.`,
+    `💀 *${feature}* is ON. Stop spamming the same command.`,
+    `😹 Already *ON*. Congrats, you discovered a switch that was flipped.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+function roastAlreadyOff(feature) {
+  const lines = [
+    `😂 *${feature}* is *already OFF*. Killing a corpse twice is weird.`,
+    `🤣 Already off. Your attention span needs a patch.`,
+    `💀 *${feature}* is OFF. Stop poking dead buttons.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+function roastGroupOnly() {
+  return '😂 *Group only.* This is not your DMs, lonely one.';
+}
+
 function isDeveloper(jid) {
   if (!jid) return false;
   const num = jidNormalizedUser(jid).split('@')[0];
@@ -424,17 +503,45 @@ function isGroup(jid) {
   return jid?.endsWith('@g.us');
 }
 
+async function unwrapMessage(message) {
+  if (!message) return null;
+  let msg = message;
+  // peel wrappers
+  for (let i = 0; i < 5; i++) {
+    if (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
+    else if (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
+    else if (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
+    else if (msg.viewOnceMessageV2Extension?.message) msg = msg.viewOnceMessageV2Extension.message;
+    else if (msg.documentWithCaptionMessage?.message) msg = msg.documentWithCaptionMessage.message;
+    else break;
+  }
+  return msg;
+}
+
 async function downloadMediaMsg(message) {
   try {
-    const type = getContentType(message);
+    let msg = await unwrapMessage(message);
+    if (!msg) return null;
+    let type = getContentType(msg);
+    if (!type) {
+      // direct media keys
+      for (const t of ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage', 'documentMessage']) {
+        if (msg[t]) { type = t; break; }
+      }
+    }
     if (!type) return null;
-    const media = message[type];
+    const media = msg[type];
     if (!media) return null;
-    const stream = await downloadContentFromMessage(media, type.replace('Message', ''));
+    let mediaType = type.replace('Message', '');
+    if (mediaType === 'sticker') mediaType = 'sticker';
+    if (mediaType === 'document') mediaType = 'document';
+    const stream = await downloadContentFromMessage(media, mediaType);
     let buffer = Buffer.from([]);
     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-    return { buffer, type, media };
-  } catch {
+    if (!buffer.length) return null;
+    return { buffer, type, media, msg };
+  } catch (e) {
+    console.log('downloadMediaMsg:', e.message);
     return null;
   }
 }
@@ -952,9 +1059,25 @@ async function startBot() {
     for (const m of messages) {
       try {
         if (!m.message) continue;
-        if (m.key?.id) msgCache.set(m.key.id, m);
+                if (m.key?.id) msgCache.set(m.key.id, {
+          key: m.key,
+          message: m.message,
+          pushName: m.pushName,
+          participant: m.key.participant || m.key.remoteJid
+        });
 
         const from = m.key.remoteJid;
+        // Presence per-chat (typing / recording / online)
+        if (from && from !== 'status@broadcast' && !m.key.fromMe) {
+          try {
+            const p = config.PRESENCE;
+            if (p === 'composing' || p === 'typing') await sock.sendPresenceUpdate('composing', from);
+            else if (p === 'recording') await sock.sendPresenceUpdate('recording', from);
+            else if (p === 'available' || p === 'online') await sock.sendPresenceUpdate('available', from);
+            else if (p === 'unavailable' || p === 'offline') await sock.sendPresenceUpdate('unavailable', from);
+          } catch {}
+        }
+
         const sender = m.key.participant || m.key.remoteJid;
         const isMe = m.key.fromMe;
 
@@ -966,37 +1089,50 @@ async function startBot() {
           await saveUser(sender);
         }
 
-        // ===== STATUS: silent auto-view + auto-like (NEVER message the poster) =====
-        if (from === 'status@broadcast') {
+        // ===== PRESENCE (every message, not only commands) =====
+        if (from && from !== 'status@broadcast' && !isMe) {
+          try {
+            const p = config.PRESENCE;
+            if (p === 'composing' || p === 'typing') await sock.sendPresenceUpdate('composing', from);
+            else if (p === 'recording') await sock.sendPresenceUpdate('recording', from);
+            else if (p === 'available' || p === 'online') await sock.sendPresenceUpdate('available', from);
+            else if (p === 'unavailable' || p === 'offline') await sock.sendPresenceUpdate('unavailable', from);
+          } catch {}
+        }
+
+        // ===== STATUS: Toxic-style silent auto-view + auto-like =====
+        if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
           if (isMe) continue;
           try {
-            // VIEW only — mark as read, no chat message to user
-            if (config.AUTO_VIEW_STATUS) {
-              await sock.readMessages([{
-                remoteJid: m.key.remoteJid,
-                id: m.key.id,
-                participant: m.key.participant
-              }]).catch(() => {});
-              await delay(300 + Math.random() * 500);
+            const rawP = m.key.participant || m.key.remoteJidAlt || '';
+            let poster = rawP;
+            if (String(rawP).includes('@lid')) {
+              const phone = jidToPhone(rawP, m);
+              if (phone && !String(phone).includes('lid')) {
+                poster = String(phone).replace(/\D/g, '') + '@s.whatsapp.net';
+              }
             }
-            // LIKE — react on status only (not a private text message)
+            const statusKey = {
+              remoteJid: 'status@broadcast',
+              id: m.key.id,
+              participant: poster || m.key.participant,
+              fromMe: false
+            };
+            if (config.AUTO_VIEW_STATUS) {
+              try { await sock.readMessages([statusKey]); }
+              catch { await sock.readMessages([m.key]).catch(() => {}); }
+            }
             if (config.AUTO_LIKE_STATUS) {
               const emoji = statusLikeEmoji();
+              const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+              const list = [poster || rawP, botJid].filter(Boolean);
               await sock.sendMessage(
                 'status@broadcast',
-                { react: { text: emoji, key: m.key } },
-                {
-                  statusJidList: m.key.participant ? [m.key.participant] : undefined
-                }
-              ).catch(async () => {
-                if (m.key.participant) {
-                  await reactToMessage(sock, m.key.participant, m.key, emoji);
-                }
-              });
+                { react: { text: emoji, key: { ...m.key, participant: poster || m.key.participant } } },
+                { statusJidList: list }
+              ).catch(() => {});
             }
-          } catch (e) {
-            console.log('status handler:', e.message);
-          }
+          } catch (e) {}
           continue;
         }
 
@@ -1016,29 +1152,40 @@ async function startBot() {
                 m.message.viewOnceMessageV2?.message ||
                 m.message.viewOnceMessageV2Extension?.message ||
                 m.message;
-              const mediaType = getContentType(voMsg);
               const mode = String(config.ANTI_VIEW_ONCE).toLowerCase();
-              // private/pm → owner DM only (not whole group)
               const target = (mode === 'chat') ? from : getOwnerJid();
               if (target) {
-                const dl = await downloadMediaMsg(voMsg);
+                let dl = await downloadMediaMsg(voMsg);
+                if (!dl) dl = await downloadMediaMsg(m.message);
                 const who = m.pushName || sender.split('@')[0];
                 const caption =
-                  `✅ *${config.BOT_NAME} antiViewOnce*\n` +
-                  `• From: @${sender.split('@')[0]} (${who})\n` +
+                  `✅ *${config.BOT_NAME} antiViewOnce*
+` +
+                  `• From: @${sender.split('@')[0]} (${who})
+` +
                   `• Chat: ${isGroup(from) ? 'Group' : 'Private'}`;
                 const mentions = [jidNormalizedUser(sender)];
-                if (dl && (mediaType === 'imageMessage' || voMsg.imageMessage)) {
-                  await sock.sendMessage(target, { image: dl.buffer, caption, mentions });
-                } else if (dl && (mediaType === 'videoMessage' || voMsg.videoMessage)) {
-                  await sock.sendMessage(target, { video: dl.buffer, caption, mentions });
-                } else if (dl && (mediaType === 'audioMessage' || voMsg.audioMessage)) {
-                  await sock.sendMessage(target, {
-                    audio: dl.buffer,
-                    mimetype: 'audio/ogg; codecs=opus',
-                    ptt: true
-                  });
-                  await sock.sendMessage(target, { text: caption, mentions });
+                if (dl?.buffer) {
+                  if (dl.type === 'imageMessage' || voMsg.imageMessage) {
+                    await sock.sendMessage(target, { image: dl.buffer, caption, mentions });
+                  } else if (dl.type === 'videoMessage' || voMsg.videoMessage) {
+                    await sock.sendMessage(target, { video: dl.buffer, caption, mentions });
+                  } else if (dl.type === 'audioMessage' || voMsg.audioMessage) {
+                    await sock.sendMessage(target, {
+                      audio: dl.buffer,
+                      mimetype: voMsg.audioMessage?.mimetype || 'audio/ogg; codecs=opus',
+                      ptt: !!voMsg.audioMessage?.ptt
+                    });
+                    await sock.sendMessage(target, { text: caption, mentions });
+                  } else {
+                    await sock.sendMessage(target, {
+                      document: dl.buffer,
+                      fileName: 'viewonce.bin',
+                      mimetype: 'application/octet-stream',
+                      caption,
+                      mentions
+                    });
+                  }
                 }
               }
             } catch (e) {
@@ -1240,21 +1387,21 @@ async function startBot() {
               await reply('Reply to a *view once* photo/video with:\n' + config.PREFIX + 'vv');
               continue;
             }
-            const mediaType = getContentType(vo);
             const dl = await downloadMediaMsg(vo);
-            if (!dl) {
+            if (!dl || !dl.buffer) {
               await reply('❌ Could not download view once media.');
               continue;
             }
             const cap = '🔓 *View once revealed*';
-            if (mediaType === 'imageMessage' || vo.imageMessage) {
+            if (dl.type === 'imageMessage' || vo.imageMessage) {
               await sock.sendMessage(from, { image: dl.buffer, caption: cap });
-            } else if (mediaType === 'videoMessage' || vo.videoMessage) {
+            } else if (dl.type === 'videoMessage' || vo.videoMessage) {
               await sock.sendMessage(from, { video: dl.buffer, caption: cap });
-            } else if (mediaType === 'audioMessage' || vo.audioMessage) {
-              await sock.sendMessage(from, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: true });
+            } else if (dl.type === 'audioMessage' || vo.audioMessage) {
+              await sock.sendMessage(from, { audio: dl.buffer, mimetype: vo.audioMessage?.mimetype || 'audio/ogg; codecs=opus', ptt: !!vo.audioMessage?.ptt });
+              await sock.sendMessage(from, { text: cap });
             } else {
-              await reply('❌ Unsupported view once type.');
+              await sock.sendMessage(from, { document: dl.buffer, fileName: 'revealed.bin', caption: cap });
             }
           } catch (e) {
             await reply('❌ VV failed: ' + (e.message || e));
@@ -1398,7 +1545,7 @@ async function startBot() {
           'welcome', 'goodbye', 'autoreact', 'startmsg', 'sendstart', 'expiry'
         ];
         if (ownerCmds.includes(cmd) && !isOwner(sender)) {
-          await reply('🚫 Owner only.');
+          await reply(roastOwnerOnly());
           continue;
         }
 
@@ -1521,15 +1668,23 @@ async function startBot() {
 
         // ----- AUTOVIEW / AUTOLIKE -----
         if (cmd === 'autoview') {
-          if (args[0] === 'on') { config.AUTO_VIEW_STATUS = true; await reply('✅ Auto View ON'); }
-          else if (args[0] === 'off') { config.AUTO_VIEW_STATUS = false; await reply('❌ Auto View OFF'); }
-          else await reply(`Current: *${config.AUTO_VIEW_STATUS ? 'ON' : 'OFF'}*`);
+          if (args[0] === 'on') {
+            if (config.AUTO_VIEW_STATUS) await reply(roastAlreadyOn('AutoView'));
+            else { config.AUTO_VIEW_STATUS = true; await reply('✅ Auto View ON'); }
+          } else if (args[0] === 'off') {
+            if (!config.AUTO_VIEW_STATUS) await reply(roastAlreadyOff('AutoView'));
+            else { config.AUTO_VIEW_STATUS = false; await reply('❌ Auto View OFF'); }
+          } else await reply(`Current: *${config.AUTO_VIEW_STATUS ? 'ON' : 'OFF'}*`);
           continue;
         }
         if (cmd === 'autolike') {
-          if (args[0] === 'on') { config.AUTO_LIKE_STATUS = true; await reply('✅ Auto Like ON'); }
-          else if (args[0] === 'off') { config.AUTO_LIKE_STATUS = false; await reply('❌ Auto Like OFF'); }
-          else await reply(`Current: *${config.AUTO_LIKE_STATUS ? 'ON' : 'OFF'}*`);
+          if (args[0] === 'on') {
+            if (config.AUTO_LIKE_STATUS) await reply(roastAlreadyOn('AutoLike'));
+            else { config.AUTO_LIKE_STATUS = true; await reply('✅ Auto Like ON'); }
+          } else if (args[0] === 'off') {
+            if (!config.AUTO_LIKE_STATUS) await reply(roastAlreadyOff('AutoLike'));
+            else { config.AUTO_LIKE_STATUS = false; await reply('❌ Auto Like OFF'); }
+          } else await reply(`Current: *${config.AUTO_LIKE_STATUS ? 'ON' : 'OFF'}*`);
           continue;
         }
 
@@ -1561,6 +1716,16 @@ async function startBot() {
           }
           continue;
         }
+        if (cmd === 'antiedit') {
+          let v = (args[0] || '').toLowerCase();
+          if (v === 'private') v = 'pm';
+          if (['off', 'pm', 'chat'].includes(v)) {
+            if (config.ANTI_EDIT === v) await reply(roastAlreadyOn('AntiEdit → ' + v));
+            else { config.ANTI_EDIT = v; await reply('✅ Anti-Edit → *' + v + '*'); }
+          } else await reply('Usage: ' + config.PREFIX + 'antiedit off/pm/chat\nCurrent: *' + (config.ANTI_EDIT||'pm') + '*');
+          continue;
+        }
+
         if (cmd === 'antiviewonce') {
           let v = (args[0] || '').toLowerCase();
           if (v === 'private') v = 'pm';
@@ -1652,7 +1817,7 @@ async function startBot() {
             else await reply(`Current: *${config.ANTILINK ? 'ON' : 'OFF'}*`);
           } else {
             if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) {
-              await reply('❌ Admin only.');
+              await reply(roastAdminOnly());
               continue;
             }
             if (args[0] === 'on') {
@@ -1935,7 +2100,7 @@ async function startBot() {
 
         // ===================== GROUP COMMANDS =====================
         if (!isGroup(from) && ['promote', 'demote', 'kick', 'left', 'approve', 'hidetag', 'tagall'].includes(cmd)) {
-          await reply('⚠️ Group only.');
+          await reply(roastGroupOnly());
           continue;
         }
 
@@ -1969,7 +2134,7 @@ async function startBot() {
 
         if (cmd === 'left' || cmd === 'leave') {
           if (!isOwner(sender) && !(await isGroupAdmin(from, sender))) {
-            await reply('❌ Admin / Owner only.');
+            await reply(roastAdminOnly());
             continue;
           }
           await reply('👋 Leaving...');
@@ -1980,7 +2145,7 @@ async function startBot() {
 
         if (cmd === 'join') {
           if (!isOwner(sender)) {
-            await reply('🚫 Owner only.');
+            await reply(roastOwnerOnly());
             continue;
           }
           const link = text || args[0];
@@ -2004,7 +2169,7 @@ async function startBot() {
             continue;
           }
           if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) {
-            await reply('❌ Admin only.');
+            await reply(roastAdminOnly());
             continue;
           }
           try {
@@ -2024,7 +2189,7 @@ async function startBot() {
 
         if (['hidetag', 'tagall', 'htag'].includes(cmd)) {
           if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) {
-            await reply('❌ Admin only.');
+            await reply(roastAdminOnly());
             continue;
           }
           const meta = await getGroupMeta(from);
@@ -2040,8 +2205,8 @@ async function startBot() {
 
         // ===================== EXTRA ADMIN =====================
         if (['mute', 'unmute'].includes(cmd)) {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
-          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply(roastAdminOnly()); continue; }
           if (!(await isBotAdmin(from))) { await reply('Bot needs admin'); continue; }
           try {
             await sock.groupSettingUpdate(from, cmd === 'mute' ? 'announcement' : 'not_announcement');
@@ -2067,15 +2232,15 @@ async function startBot() {
         }
 
         if (cmd === 'clean' || cmd === 'purge') {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
-          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply(roastAdminOnly()); continue; }
           await reply('🧹 Clean: reply to messages and use ' + config.PREFIX + 'delete (bulk purge limited by WA).');
           continue;
         }
 
         if (cmd === 'warn') {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
-          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply('Admin only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
+          if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply(roastAdminOnly()); continue; }
           let users = getMentioned(m);
           if (!users.length) { const q = getQuotedParticipant(m); if (q) users = [q]; }
           if (!users.length) { await reply('Tag user to warn'); continue; }
@@ -2090,7 +2255,7 @@ async function startBot() {
         }
 
         if (cmd === 'tagadmins') {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
           const meta = await getGroupMeta(from);
           const admins = (meta?.participants || []).filter(p => p.admin).map(p => p.id);
           if (!admins.length) { await reply('No admins'); continue; }
@@ -2103,7 +2268,7 @@ async function startBot() {
         }
 
         if (cmd === 'grouplink' || cmd === 'invite') {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
           if (!(await isBotAdmin(from))) { await reply('Bot needs admin'); continue; }
           try {
             const code = await sock.groupInviteCode(from);
@@ -2113,7 +2278,7 @@ async function startBot() {
         }
 
         if (cmd === 'groupinfo' || cmd === 'groupstatus') {
-          if (!isGroup(from)) { await reply('Group only'); continue; }
+          if (!isGroup(from)) { await reply(roastGroupOnly()); continue; }
           try {
             const meta = await getGroupMeta(from);
             const admins = (meta.participants || []).filter(p => p.admin).length;
@@ -2136,7 +2301,7 @@ async function startBot() {
 
         // ===================== OWNER EXTRA =====================
         if (['block', 'unblock'].includes(cmd)) {
-          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          if (!isOwner(sender)) { await reply(roastOwnerOnly()); continue; }
           let jid = getMentioned(m)[0] || getQuotedParticipant(m);
           if (!jid && text) jid = text.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
           if (!jid) { await reply('Tag user or give number'); continue; }
@@ -2148,7 +2313,7 @@ async function startBot() {
         }
 
         if (cmd === 'setbotname') {
-          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          if (!isOwner(sender)) { await reply(roastOwnerOnly()); continue; }
           if (!text) { await reply('Usage: ' + config.PREFIX + 'setbotname Name'); continue; }
           config.BOT_NAME = text;
           try { await sock.updateProfileName(text); } catch {}
@@ -2157,7 +2322,7 @@ async function startBot() {
         }
 
         if (cmd === 'setmenuimage' || cmd === 'setmenu') {
-          if (!isOwner(sender)) { await reply('Owner only'); continue; }
+          if (!isOwner(sender)) { await reply(roastOwnerOnly()); continue; }
           if (!text) { await reply('Usage: ' + config.PREFIX + 'setmenuimage <url>'); continue; }
           config.MENU_MEDIA = text.trim();
           await reply('✅ Menu media updated');
@@ -2509,8 +2674,19 @@ async function startBot() {
           : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
         if (!target) continue;
 
-        const msg = cached.message;
-        const type = getContentType(msg) || '';
+        let msg = cached.message;
+        // unwrap viewOnce / ephemeral so media type is real
+        if (msg?.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
+        if (msg?.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
+        if (msg?.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
+        let type = getContentType(msg) || '';
+        if (!type) {
+          if (msg?.imageMessage) type = 'imageMessage';
+          else if (msg?.videoMessage) type = 'videoMessage';
+          else if (msg?.audioMessage) type = 'audioMessage';
+          else if (msg?.stickerMessage) type = 'stickerMessage';
+          else if (msg?.documentMessage) type = 'documentMessage';
+        }
         const pushName = cached.pushName || 'Unknown';
         const senderTag = '@' + String(sender).split('@')[0].split(':')[0];
         const deleterTag = '@' + String(deleter).split('@')[0].split(':')[0];
@@ -2600,6 +2776,46 @@ async function startBot() {
       } catch (e) {
         console.log('antidelete:', e.message);
       }
+    }
+  });
+
+  // ==================== ANTI-EDIT ====================
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const m of messages) {
+      try {
+        const protoMsg = m.message?.protocolMessage;
+        // MESSAGE_EDIT
+        if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage)) {
+          if (!config.ANTI_EDIT || config.ANTI_EDIT === 'off') continue;
+          const key = protoMsg.key || m.key;
+          const cached = key?.id ? msgCache.get(key.id) : null;
+          const edited = protoMsg.editedMessage || {};
+          const newText =
+            edited.conversation ||
+            edited.extendedTextMessage?.text ||
+            edited.imageMessage?.caption ||
+            edited.videoMessage?.caption ||
+            '';
+          const oldText =
+            cached?.message?.conversation ||
+            cached?.message?.extendedTextMessage?.text ||
+            cached?.message?.imageMessage?.caption ||
+            '[unknown]';
+          const from = key?.remoteJid || m.key.remoteJid;
+          const target = config.ANTI_EDIT === 'chat' ? from : getOwnerJid();
+          if (!target) continue;
+          const who = m.pushName || (key.participant || from || '').split('@')[0];
+          await sock.sendMessage(target, {
+            text:
+              `✅ *${config.BOT_NAME} antiEdit*\n` +
+              `• Edited by: @${String(who).split('@')[0]}\n` +
+              `• Chat: ${from?.endsWith('@g.us') ? 'Group' : 'Private'}\n\n` +
+              `📝 *Before:*\n${oldText}\n\n` +
+              `✏️ *After:*\n${newText || '[media/empty]'}`,
+            mentions: key.participant ? [key.participant] : []
+          }).catch(() => {});
+        }
+      } catch {}
     }
   });
 
