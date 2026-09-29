@@ -324,7 +324,7 @@
 
     btnCode.onclick = async () => {
       const num = document.getElementById('phone').value.trim();
-      if (!num) return alert('Enter number');
+      if (!num) { statusBox.classList.add('show'); statusText.innerHTML = '<span class="err"><i class="fa-solid fa-circle-exclamation"></i> Enter your number with country code (e.g. 2547…)</span>'; return; }
       btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
       pairMode = 'code'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
@@ -385,11 +385,17 @@
           return;
         }
         playlistLen = Math.max(playlistLen, (data.next || 0) + 1);
-        audio.src = data.url;
+        const src = data.url || data.static || ('/api/music/stream/' + i);
+        audio.src = src;
+        audio.load();
         setNow(data.name, !!autoplay);
         if (autoplay) {
-          try { await audio.play(); setNow(data.name, true); }
-          catch { setNow(data.name + ' — tap Play', false); }
+          try {
+            await audio.play();
+            setNow(data.name, true);
+          } catch {
+            setNow(data.name + ' — tap Play', false);
+          }
         }
       } catch (e) {
         setNow('Error — tap Next', false);
