@@ -22,6 +22,8 @@ const path = require('path');
 const { Boom } = require('@hapi/boom');
 const NodeCache = require('node-cache');
 const axios = require('axios');
+let y2mateDl = null;
+try { y2mateDl = require('y2mate-dl'); } catch (_) {}
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 const config = require('./config');
 
@@ -337,83 +339,106 @@ function applyUnicodeFont(text, style) {
 
 function styleMenuText(text) {
   const style = nextFontStyle();
-  // Cycle unicode fonts on letters only; keep box chars / emojis intact
-  return applyUnicodeFont(text, style);
+  if (!text || style === 'normal') return text;
+  const map = FONT_MAPS[style];
+  if (!map) return text;
+  // Font ONLY on a-z A-Z 0-9 — box lines ┌─┐└┘│ stay plain so edges stay equal
+  return [...text].map(ch => {
+    if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) {
+      return map[ch] || ch;
+    }
+    return ch;
+  }).join('');
 }
 
 function buildMainMenu(pushName, userCount) {
-  const name = pushName || 'User';
+  const name = (pushName || 'User').slice(0, 16);
   const expInfo = (config.BOT_EXPIRY_DAYS > 0)
     ? (config.BOT_EXPIRY_DAYS + ' days pass')
     : (config.BOT_EXPIRY_DATE || 'Unlimited');
   const p = config.PREFIX;
 
-  let menu = '';
-  menu += '▬▬▬▬▬▬▬▬▬▬▬▬\n';
-  menu += '│➤ 💀 *' + config.BOT_NAME + '*\n';
-  menu += '│➤ 👋 Hi *' + name + '*!\n';
-  menu += '│➤ 👥 Users: *' + (userCount || 0) + '*\n';
-  menu += '│➤ 🎉 Active: *' + expInfo + '*\n';
-  menu += '▬▬▬▬▬▬▬▬▬▬▬▬\n\n';
+  // Same width for TOP and BOTTOM on every box
+  const W = 28; // inner text width
+  const top = () => '┌' + '─'.repeat(W + 2) + '┐';
+  const bot = () => '└' + '─'.repeat(W + 2) + '┘';
+  const mid = () => '├' + '─'.repeat(W + 2) + '┤';
+  const row = (s) => {
+    let t = String(s || '');
+    // strip for length count without wide emoji bias as much as possible
+    if (t.length > W) t = t.slice(0, W);
+    return '│ ' + t + ' '.repeat(Math.max(0, W - t.length)) + ' │';
+  };
 
-  menu += '┏━━ *📥 DOWNLOADS* ━━┓\n';
-  menu += '┃ ' + p + 'play / song / video / yt\n';
-  menu += '┃ ' + p + 'tiktok / ig / fb / twitter\n';
-  menu += '┃ ' + p + 'lyrics <song>\n';
-  menu += '┃ ' + p + 'pinterest <query>\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  let m = '';
 
-  menu += '┏━━ *🎨 STICKER* ━━┓\n';
-  menu += '┃ ' + p + 'sticker / s / toimg / take\n';
-  menu += '┃ ' + p + 'attp <text> / tts <text>\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  // Header box — top and bottom equal
+  m += top() + '\n';
+  m += row('💀 ' + config.BOT_NAME) + '\n';
+  m += row('👋 Hi ' + name + '!') + '\n';
+  m += row('👥 Users: ' + (userCount || 0)) + '\n';
+  m += row('🎉 Active: ' + expInfo) + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *🤖 AI* ━━┓\n';
-  menu += '┃ ' + p + 'gpt / ai / ask\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('📥 DOWNLOADS') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'play / song  (mp3)') + '\n';
+  m += row(p + 'video / yt   (mp4)') + '\n';
+  m += row(p + 'tiktok / ig / fb') + '\n';
+  m += row(p + 'lyrics <song>') + '\n';
+  m += row(p + 'pinterest <query>') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *👥 ADMIN* ━━┓\n';
-  menu += '┃ ' + p + 'promote / demote / kick / warn\n';
-  menu += '┃ ' + p + 'mute / unmute / delete / clean\n';
-  menu += '┃ ' + p + 'tagall / hidetag / tagadmins\n';
-  menu += '┃ ' + p + 'antilink / antibot / antispam\n';
-  menu += '┃ ' + p + 'welcome / goodbye / grouplink\n';
-  menu += '┃ ' + p + 'groupinfo / approve / left\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('🎨 STICKER') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'sticker / s / toimg') + '\n';
+  m += row(p + 'attp / tts <text>') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *👑 OWNER* ━━┓\n';
-  menu += '┃ ' + p + 'settings / mode / prefix\n';
-  menu += '┃ ' + p + 'block / unblock / broadcast\n';
-  menu += '┃ ' + p + 'setbotname / setmenuimage\n';
-  menu += '┃ ' + p + 'autoview / autolike / autoreact\n';
-  menu += '┃ ' + p + 'anticall / antidelete / antiviewonce\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('🤖 AI') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'gpt / ai / ask') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *👾 ANIME* ━━┓\n';
-  menu += '┃ ' + p + 'waifu / neko / megumin\n';
-  menu += '┃ ' + p + 'shinobu / husbu / loli\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('👥 ADMIN') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'promote demote kick') + '\n';
+  m += row(p + 'mute unmute delete') + '\n';
+  m += row(p + 'tagall hidetag') + '\n';
+  m += row(p + 'antilink welcome') + '\n';
+  m += row(p + 'groupinfo left') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *🖋️ TEXTMAKER* ━━┓\n';
-  menu += '┃ ' + p + 'neon / fire / glitch / ice\n';
-  menu += '┃ ' + p + 'matrix / thunder / devil / sand\n';
-  menu += '┃ ' + p + 'blackpink / metallic / light\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('👑 OWNER') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'settings mode prefix') + '\n';
+  m += row(p + 'block unblock') + '\n';
+  m += row(p + 'autoview autolike') + '\n';
+  m += row(p + 'anticall antidelete') + '\n';
+  m += row(p + 'antiviewonce presence') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *🎭 FUN* ━━┓\n';
-  menu += '┃ ' + p + 'joke / meme / quote / fact\n';
-  menu += '┃ ' + p + 'truth / dare / ship / gayrate\n';
-  menu += '┃ ' + p + 'dice / slot / coinflip / 8ball\n';
-  menu += '┃ ' + p + 'compliment / flirt / insult\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('👾 ANIME / FUN') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'waifu neko megumin') + '\n';
+  m += row(p + 'joke meme truth dare') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '┏━━ *🔧 UTILITY* ━━┓\n';
-  menu += '┃ ' + p + 'translate / calc / weather\n';
-  menu += '┃ ' + p + 'owner / ping / uptime / ssweb\n';
-  menu += '┗━━━━━━━━━━━━━━┛\n\n';
+  m += top() + '\n';
+  m += row('🔧 UTILITY') + '\n';
+  m += mid() + '\n';
+  m += row(p + 'translate calc weather') + '\n';
+  m += row(p + 'owner ping uptime') + '\n';
+  m += bot() + '\n\n';
 
-  menu += '💡 Type *' + p + 'menu* anytime\n';
-  return menu;
+  m += '💡 Type *' + p + 'menu* anytime';
+  return m;
 }
 
 
@@ -442,11 +467,18 @@ function getOwnerJid() {
   return jidNormalizedUser(config.OWNER_NUMBER + '@s.whatsapp.net');
 }
 
+function digitsOnly(v) {
+  return String(v || '').replace(/\D/g, '');
+}
 function isOwner(jid) {
   if (!jid) return false;
-  const num = jidNormalizedUser(jid).split('@')[0];
-  if (config.OWNER_NUMBER && num === config.OWNER_NUMBER) return true;
-  return isDeveloper(jid);
+  const num = digitsOnly(jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
+  if (!num) return false;
+  const owners = [];
+  if (config.OWNER_NUMBER) owners.push(digitsOnly(config.OWNER_NUMBER));
+  for (const d of (config.DEVELOPERS || [])) owners.push(digitsOnly(d));
+  // match exact or suffix (country code variants)
+  return owners.filter(Boolean).some(o => num === o || num.endsWith(o) || o.endsWith(num));
 }
 
 function roastOwnerOnly() {
@@ -454,7 +486,7 @@ function roastOwnerOnly() {
     '😂👉 *Owner only.* Crawl back under your rock.',
     '🤣 *Not for you.* This is owner territory, clown.',
     '💀 Nice try. *Owner only.* Stay in your lane.',
-    '🖕 *Owner command.* You are not him. Sit down.',
+    '💀 *Owner command.* You are not him. Sit down.',
     '😹 *Denied.* Only the owner runs this. Go touch grass.'
   ];
   return lines[Math.floor(Math.random() * lines.length)];
@@ -465,7 +497,7 @@ function roastAdminOnly() {
     '🤣 Who gave *you* admin rights? Nobody. Sit.',
     '💀 *Admins only.* Regular users stay quiet.',
     '😹 Denied. Ask an admin… or dream about it.',
-    '🖕 Not admin = not allowed. Simple.'
+    '💀 Not admin = not allowed. Simple.'
   ];
   return lines[Math.floor(Math.random() * lines.length)];
 }
@@ -492,10 +524,13 @@ function roastGroupOnly() {
 
 function isDeveloper(jid) {
   if (!jid) return false;
-  const num = jidNormalizedUser(jid).split('@')[0];
-  const list = config.DEVELOPERS || [];
-  if (list.includes(num)) return true;
-  if (config.OWNER_NUMBER && num === config.OWNER_NUMBER) return true;
+  const num = digitsOnly(jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
+  const list = (config.DEVELOPERS || []).map(digitsOnly).filter(Boolean);
+  if (list.some(o => num === o || num.endsWith(o) || o.endsWith(num))) return true;
+  if (config.OWNER_NUMBER) {
+    const o = digitsOnly(config.OWNER_NUMBER);
+    if (o && (num === o || num.endsWith(o) || o.endsWith(num))) return true;
+  }
   return false;
 }
 
@@ -652,6 +687,81 @@ async function downloadYouTube(query, audioOnly = false) {
     }
   }
   if (!videoUrl) return null;
+
+  // --- y2mate-dl npm (jsdelivr package) first ---
+  if (y2mateDl && videoUrl) {
+    try {
+      const fn = y2mateDl.default || y2mateDl.y2mate || y2mateDl.download || y2mateDl;
+      if (typeof fn === 'function') {
+        const r = await Promise.race([
+          fn(videoUrl, audioOnly ? 'mp3' : 'mp4'),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('y2mate-dl timeout')), 45000))
+        ]);
+        const link = r?.url || r?.dl || r?.link || r?.download || r?.result?.url || r?.medias?.[0]?.url;
+        const title = r?.title || r?.result?.title || q;
+        if (link && String(link).startsWith('http')) {
+          console.log('y2mate-dl hit');
+          return { url: String(link), title, audioOnly };
+        }
+      }
+    } catch (e) {
+      console.log('y2mate-dl:', e.message);
+    }
+  }
+
+  // --- y2mate.com analyze API ---
+  try {
+    if (videoUrl) {
+      const an = await axios.post(
+        'https://www.y2mate.com/mates/analyzeV2/ajax',
+        new URLSearchParams({ k_query: videoUrl, k_page: 'home', hl: 'en', q_auto: '0' }).toString(),
+        {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0',
+            Origin: 'https://www.y2mate.com',
+            Referer: 'https://www.y2mate.com/'
+          },
+          validateStatus: () => true
+        }
+      );
+      const links = an.data?.links || {};
+      let pick = null;
+      if (audioOnly) {
+        const mp3 = links.mp3 || links.audio || {};
+        const keys = Object.keys(mp3);
+        pick = keys.length ? mp3[keys[0]] : null;
+      } else {
+        const mp4 = links.mp4 || links.video || {};
+        // prefer 360p/720p
+        pick = mp4['360'] || mp4['720'] || mp4[Object.keys(mp4)[0]];
+      }
+      if (pick?.k) {
+        const conv = await axios.post(
+          'https://www.y2mate.com/mates/convertV2/index',
+          new URLSearchParams({ vid: an.data.vid, k: pick.k }).toString(),
+          {
+            timeout: 45000,
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'Mozilla/5.0',
+              Origin: 'https://www.y2mate.com',
+              Referer: 'https://www.y2mate.com/'
+            },
+            validateStatus: () => true
+          }
+        );
+        const dlink = conv.data?.dlink || conv.data?.url;
+        if (dlink) {
+          console.log('y2mate.com hit');
+          return { url: dlink, title: an.data?.title || q, audioOnly };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('y2mate.com:', e.message);
+  }
 
   // --- y2mate / vidmate style download APIs ---
   const endpoints = audioOnly
@@ -1274,15 +1384,32 @@ async function startBot() {
         await reactToMessage(sock, from, m.key, cmdReactEmoji());
 
         const reply = async (content) => {
-          let payload = typeof content === 'string' ? { text: String(content) } : { ...content };
-          payload = withFooter(payload);
-          // Prefer NO quote — quoting + media caption often shows "Waiting for this message"
+          // Always quote the user command (swipe-reply style)
+          const qopts = { quoted: m };
           try {
-            return await sock.sendMessage(from, payload);
+            if (typeof content === 'string') {
+              const body = String(content).trim();
+              if (!body) return;
+              // Footer as plain text only — no fancy unicode
+              const foot = (typeof buildFooter === 'function' ? buildFooter() : '') || '';
+              return await sock.sendMessage(from, { text: body + foot }, qopts);
+            }
+            const payload = { ...content };
+            // strip empty text
+            if (payload.text != null && !String(payload.text).trim()) delete payload.text;
+            if (payload.caption != null) {
+              const foot = (typeof buildFooter === 'function' ? buildFooter() : '') || '';
+              if (foot && !String(payload.caption).includes('Powered')) {
+                payload.caption = String(payload.caption) + foot;
+              }
+            }
+            return await sock.sendMessage(from, payload, qopts);
           } catch (e) {
             try {
-              const plain = typeof content === 'string' ? { text: String(content) } : content;
-              return await sock.sendMessage(from, plain);
+              if (typeof content === 'string') {
+                return await sock.sendMessage(from, { text: String(content) }, qopts);
+              }
+              return await sock.sendMessage(from, content, qopts);
             } catch (e2) {
               console.log('reply fail:', e2.message);
             }
@@ -1392,11 +1519,11 @@ async function startBot() {
               await reply('❌ Could not download view once media.');
               continue;
             }
-            const cap = '🔓 *View once revealed*';
+            const cap = ''; // no caption
             if (dl.type === 'imageMessage' || vo.imageMessage) {
-              await sock.sendMessage(from, { image: dl.buffer, caption: cap });
+              await sock.sendMessage(from, cap ? { image: dl.buffer, caption: cap } : { image: dl.buffer });
             } else if (dl.type === 'videoMessage' || vo.videoMessage) {
-              await sock.sendMessage(from, { video: dl.buffer, caption: cap });
+              await sock.sendMessage(from, cap ? { video: dl.buffer, caption: cap } : { video: dl.buffer });
             } else if (dl.type === 'audioMessage' || vo.audioMessage) {
               await sock.sendMessage(from, { audio: dl.buffer, mimetype: vo.audioMessage?.mimetype || 'audio/ogg; codecs=opus', ptt: !!vo.audioMessage?.ptt });
               await sock.sendMessage(from, { text: cap });
@@ -1544,7 +1671,7 @@ async function startBot() {
           'antidelete', 'antiviewonce', 'antibot', 'broadcast', 'bc', 'users',
           'welcome', 'goodbye', 'autoreact', 'startmsg', 'sendstart', 'expiry'
         ];
-        if (ownerCmds.includes(cmd) && !isOwner(sender)) {
+        if (ownerCmds.includes(cmd) && !isOwner(sender) && !isMe) {
           await reply(roastOwnerOnly());
           continue;
         }
