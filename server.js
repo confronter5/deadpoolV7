@@ -432,70 +432,164 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 
-// ==================== MUSIC (y2mate / vidmate style YT→MP3 + always-play fallback) ====================
+// ==================== MUSIC via y2mate (pair page) ====================
+let y2mateDl = null;
+try { y2mateDl = require('y2mate-dl'); } catch (_) {}
+
+const MUSIC_DIR = path.join(__dirname, 'public', 'music');
+
 const MUSIC_TRACKS = [
-  { q: 'Alan Walker Faded official', name: 'Alan Walker — Faded', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Beach%20Disco.mp3' },
-  { q: 'Vybz Kartel Fever official audio', name: 'Vybz Kartel — Fever', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Celebration.mp3' },
-  { q: 'Central Cee Doja official', name: 'Central Cee — Doja', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Crystal.mp3' },
-  { q: 'Lil Baby Woah official', name: 'Lil Baby — Woah', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Deep%20Hat.mp3' },
-  { q: 'Burna Boy Last Last official', name: 'Burna Boy — Last Last', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Back%20and%20Forth.mp3' },
-  { q: 'Sauti Sol Suzanna official', name: 'Sauti Sol — Suzanna', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Clear%20Eyes.mp3' },
-  { q: 'Diamond Platnumz Jeje official', name: 'Diamond Platnumz — Jeje', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Boat%20Floating.mp3' },
-  { q: 'Ed Sheeran Shape of You official', name: 'Ed Sheeran — Shape of You', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Celebration.mp3' },
-  { q: 'The Weeknd Blinding Lights official', name: 'The Weeknd — Blinding Lights', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Crystal.mp3' },
-  { q: 'Rema Calm Down official', name: 'Rema — Calm Down', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Deep%20Hat.mp3' }
+  { q: 'Alan Walker Faded official audio', name: 'Alan Walker — Faded', local: 'track1.mp3' },
+  { q: 'Vybz Kartel Fever official audio', name: 'Vybz Kartel — Fever', local: 'track2.mp3' },
+  { q: 'Central Cee Doja official audio', name: 'Central Cee — Doja', local: 'track3.mp3' },
+  { q: 'Lil Baby Woah official audio', name: 'Lil Baby — Woah', local: 'track4.mp3' },
+  { q: 'Burna Boy Last Last official audio', name: 'Burna Boy — Last Last', local: 'track5.mp3' },
+  { q: 'Sauti Sol Suzanna official', name: 'Sauti Sol — Suzanna', local: 'track1.mp3' },
+  { q: 'Diamond Platnumz Jeje official', name: 'Diamond Platnumz — Jeje', local: 'track2.mp3' },
+  { q: 'Ed Sheeran Shape of You official', name: 'Ed Sheeran — Shape of You', local: 'track3.mp3' },
+  { q: 'The Weeknd Blinding Lights official', name: 'The Weeknd — Blinding Lights', local: 'track4.mp3' },
+  { q: 'Rema Calm Down official', name: 'Rema — Calm Down', local: 'track5.mp3' }
 ];
 
-const musicCache = new Map(); // name -> { url, ts }
+const musicCache = new Map(); // name -> { url, ts, source }
 
-async function resolveYoutubeMp3(query) {
-  let videoUrl = null;
-  const searchApis = [
+async function ytSearchFirst(query) {
+  const apis = [
     `https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(query)}`,
     `https://api.agatz.xyz/api/ytsearch?message=${encodeURIComponent(query)}`
   ];
-  for (const ep of searchApis) {
+  for (const ep of apis) {
     try {
       const res = await axios.get(ep, { timeout: 20000, validateStatus: () => true });
       const raw = res?.data?.data || res?.data?.result || res?.data?.videos || res?.data || [];
       const arr = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-      const first = arr[0];
+      const first = arr.find(x => x && (x.url || x.videoId || x.id || x.link));
       if (!first) continue;
-      videoUrl = first.url || first.link ||
+      const url = first.url || first.link ||
         (first.videoId ? `https://www.youtube.com/watch?v=${first.videoId}` : null) ||
         (first.id && String(first.id).length >= 10 ? `https://www.youtube.com/watch?v=${first.id}` : null);
-      if (videoUrl) break;
+      if (url) return { url, title: first.title || query };
     } catch {}
   }
-  if (!videoUrl) return null;
+  // fallback: treat query as search URL
+  return { url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, title: query };
+}
 
-  const dlApis = [
-    `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://ytmp3down.com/api/convert` // POST body
-  ];
-
-  for (const ep of dlApis) {
-    try {
-      let res;
-      if (ep.includes('ytmp3down.com')) {
-        res = await axios.post(ep, { url: videoUrl }, {
-          timeout: 45000,
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          validateStatus: () => true
-        });
-      } else {
-        res = await axios.get(ep, { timeout: 45000, validateStatus: () => true });
+/** y2mate.com analyze + convert → direct mp3 link */
+async function y2mateMp3(videoUrl) {
+  try {
+    const an = await axios.post(
+      'https://www.y2mate.com/mates/analyzeV2/ajax',
+      new URLSearchParams({ k_query: videoUrl, k_page: 'home', hl: 'en', q_auto: '0' }).toString(),
+      {
+        timeout: 30000,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Origin: 'https://www.y2mate.com',
+          Referer: 'https://www.y2mate.com/en68'
+        },
+        validateStatus: () => true
       }
-      const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data;
-      if (!d) continue;
-      let url = typeof d === 'string' && d.startsWith('http') ? d
-        : (d.url || d.dl || d.download || d.downloadUrl || d.download_url || d.audio || d.mp3 || d.link || d.dl_url || d.medias?.[0]?.url);
-      if (url && String(url).startsWith('http')) return String(url);
-    } catch {}
+    );
+    if (!an.data || an.data.status !== 'ok') return null;
+    const links = an.data.links || {};
+    const mp3map = links.mp3 || {};
+    // pick highest quality mp3 key
+    let pick = null;
+    for (const k of Object.keys(mp3map)) {
+      const item = mp3map[k];
+      if (item && item.k) { pick = item; break; }
+    }
+    if (!pick || !an.data.vid) return null;
+
+    const conv = await axios.post(
+      'https://www.y2mate.com/mates/convertV2/index',
+      new URLSearchParams({ vid: an.data.vid, k: pick.k }).toString(),
+      {
+        timeout: 60000,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Origin: 'https://www.y2mate.com',
+          Referer: 'https://www.y2mate.com/'
+        },
+        validateStatus: () => true
+      }
+    );
+    const dlink = conv.data?.dlink || conv.data?.url;
+    if (dlink && String(dlink).startsWith('http')) {
+      return { url: String(dlink), title: an.data.title || '' };
+    }
+  } catch (e) {
+    console.log('y2mate.com fail:', e.message);
   }
+  return null;
+}
+
+/** npm y2mate-dl package */
+async function y2mateDlMp3(videoUrl) {
+  if (!y2mateDl) return null;
+  try {
+    const fn = y2mateDl.default || y2mateDl.y2mate || y2mateDl.download || y2mateDl;
+    if (typeof fn !== 'function') return null;
+    const r = await Promise.race([
+      fn(videoUrl, 'mp3'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000))
+    ]);
+    const link = r?.url || r?.dl || r?.link || r?.download || r?.result?.url || r?.medias?.[0]?.url;
+    if (link && String(link).startsWith('http')) {
+      return { url: String(link), title: r?.title || r?.result?.title || '' };
+    }
+  } catch (e) {
+    console.log('y2mate-dl fail:', e.message);
+  }
+  return null;
+}
+
+async function resolveTrackAudio(track) {
+  const key = track.name;
+  const hit = musicCache.get(key);
+  if (hit && Date.now() - hit.ts < 25 * 60 * 1000 && hit.url) return hit;
+
+  // 1) search YT
+  let videoUrl = null;
+  try {
+    const found = await ytSearchFirst(track.q);
+    // prefer real watch URL
+    if (found?.url && found.url.includes('watch')) videoUrl = found.url;
+  } catch {}
+
+  // 2) y2mate.com
+  if (videoUrl) {
+    const r1 = await y2mateMp3(videoUrl);
+    if (r1?.url) {
+      const entry = { url: r1.url, ts: Date.now(), source: 'y2mate.com', title: r1.title || track.name };
+      musicCache.set(key, entry);
+      return entry;
+    }
+  }
+
+  // 3) y2mate-dl npm
+  if (videoUrl) {
+    const r2 = await y2mateDlMp3(videoUrl);
+    if (r2?.url) {
+      const entry = { url: r2.url, ts: Date.now(), source: 'y2mate-dl', title: r2.title || track.name };
+      musicCache.set(key, entry);
+      return entry;
+    }
+  }
+
+  // 4) local file fallback (always works if public/music exists)
+  if (track.local) {
+    const fp = path.join(MUSIC_DIR, track.local);
+    if (fs.existsSync(fp)) {
+      const entry = { url: '/api/music/stream/' + MUSIC_TRACKS.indexOf(track), ts: Date.now(), source: 'local', title: track.name, localFile: fp };
+      musicCache.set(key, entry);
+      return entry;
+    }
+  }
+
   return null;
 }
 
@@ -508,39 +602,87 @@ app.get('/api/music/:index', async (req, res) => {
     const idx = Number(req.params.index) || 0;
     const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
     const track = MUSIC_TRACKS[i];
-
-    const cached = musicCache.get(track.name);
-    if (cached && Date.now() - cached.ts < 20 * 60 * 1000 && cached.url) {
-      return res.json({ i, name: track.name, url: cached.url, next: (i + 1) % MUSIC_TRACKS.length, source: cached.source || 'cache' });
-    }
-
-    // Try YT→MP3 (may fail when public APIs are down)
-    let url = null;
-    let source = 'fallback';
-    try {
-      url = await resolveYoutubeMp3(track.q);
-      if (url) source = 'youtube';
-    } catch {}
-
-    // Always-play fallback so pair page is never silent
-    if (!url) {
-      url = track.fallback;
-      source = 'fallback';
-    }
-
-    if (!url) {
-      return res.status(502).json({
-        error: 'No audio URL',
-        i,
-        name: track.name,
-        next: (i + 1) % MUSIC_TRACKS.length
-      });
-    }
-
-    musicCache.set(track.name, { url, ts: Date.now(), source });
-    res.json({ i, name: track.name, url, next: (i + 1) % MUSIC_TRACKS.length, source });
+    // Always expose same-origin stream path (server resolves y2mate behind the scenes)
+    res.json({
+      i,
+      name: track.name,
+      url: '/api/music/stream/' + i,
+      next: (i + 1) % MUSIC_TRACKS.length
+    });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Music error' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/music/stream/:index', async (req, res) => {
+  try {
+    const idx = Number(req.params.index) || 0;
+    const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+    const track = MUSIC_TRACKS[i];
+
+    const resolved = await resolveTrackAudio(track);
+
+    // Local file
+    if (resolved?.localFile && fs.existsSync(resolved.localFile)) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return fs.createReadStream(resolved.localFile).pipe(res);
+    }
+
+    // Local by name
+    if (track.local) {
+      const fp = path.join(MUSIC_DIR, track.local);
+      if (fs.existsSync(fp) && (!resolved || resolved.source === 'local')) {
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return fs.createReadStream(fp).pipe(res);
+      }
+    }
+
+    // Proxy y2mate / remote URL (same-origin so browser can play)
+    if (resolved?.url && String(resolved.url).startsWith('http')) {
+      const upstream = await axios.get(resolved.url, {
+        responseType: 'stream',
+        timeout: 90000,
+        validateStatus: () => true,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          Referer: 'https://www.y2mate.com/'
+        },
+        maxRedirects: 5
+      });
+      if (upstream.status >= 400) {
+        // last resort local
+        if (track.local && fs.existsSync(path.join(MUSIC_DIR, track.local))) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          return fs.createReadStream(path.join(MUSIC_DIR, track.local)).pipe(res);
+        }
+        return res.status(502).json({ error: 'y2mate upstream failed' });
+      }
+      res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return upstream.data.pipe(res);
+    }
+
+    // pure local fallback
+    if (track.local && fs.existsSync(path.join(MUSIC_DIR, track.local))) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      return fs.createReadStream(path.join(MUSIC_DIR, track.local)).pipe(res);
+    }
+
+    res.status(404).json({ error: 'No audio from y2mate' });
+  } catch (e) {
+    console.log('stream error', e.message);
+    // try local on any error
+    try {
+      const idx = Number(req.params.index) || 0;
+      const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+      const track = MUSIC_TRACKS[i];
+      if (track.local && fs.existsSync(path.join(MUSIC_DIR, track.local))) {
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return fs.createReadStream(path.join(MUSIC_DIR, track.local)).pipe(res);
+      }
+    } catch {}
+    res.status(500).json({ error: e.message || 'stream error' });
   }
 });
 
