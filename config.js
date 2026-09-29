@@ -48,6 +48,8 @@ module.exports = {
   ANTI_DELETE: (process.env.ANTI_DELETE || 'pm').toLowerCase(),
 
   // Anti-viewonce: off | pm | chat
+  ANTI_EDIT: (process.env.ANTI_EDIT || 'pm').toLowerCase() === 'private' ? 'pm' : (process.env.ANTI_EDIT || 'pm').toLowerCase(),
+
   ANTI_VIEW_ONCE: (() => {
     let v = (process.env.ANTI_VIEW_ONCE || 'pm').toLowerCase();
     if (v === 'private') v = 'pm';
