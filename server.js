@@ -432,28 +432,26 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 
-// ==================== MUSIC (y2mate / vidmate style YT→MP3) ====================
+// ==================== MUSIC (y2mate / vidmate style YT→MP3 + always-play fallback) ====================
 const MUSIC_TRACKS = [
-  { q: 'Alan Walker Faded official', name: 'Alan Walker — Faded' },
-  { q: 'Vybz Kartel Fever official audio', name: 'Vybz Kartel — Fever' },
-  { q: 'Central Cee Doja official', name: 'Central Cee — Doja' },
-  { q: 'Lil Baby Woah official', name: 'Lil Baby — Woah' },
-  { q: 'Burna Boy Last Last official', name: 'Burna Boy — Last Last' },
-  { q: 'Sauti Sol Suzanna official', name: 'Sauti Sol — Suzanna' },
-  { q: 'Diamond Platnumz Jeje official', name: 'Diamond Platnumz — Jeje' },
-  { q: 'Ed Sheeran Shape of You official', name: 'Ed Sheeran — Shape of You' },
-  { q: 'The Weeknd Blinding Lights official', name: 'The Weeknd — Blinding Lights' },
-  { q: 'Rema Calm Down official', name: 'Rema — Calm Down' }
+  { q: 'Alan Walker Faded official', name: 'Alan Walker — Faded', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Beach%20Disco.mp3' },
+  { q: 'Vybz Kartel Fever official audio', name: 'Vybz Kartel — Fever', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Celebration.mp3' },
+  { q: 'Central Cee Doja official', name: 'Central Cee — Doja', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Crystal.mp3' },
+  { q: 'Lil Baby Woah official', name: 'Lil Baby — Woah', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Deep%20Hat.mp3' },
+  { q: 'Burna Boy Last Last official', name: 'Burna Boy — Last Last', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Back%20and%20Forth.mp3' },
+  { q: 'Sauti Sol Suzanna official', name: 'Sauti Sol — Suzanna', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Clear%20Eyes.mp3' },
+  { q: 'Diamond Platnumz Jeje official', name: 'Diamond Platnumz — Jeje', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Boat%20Floating.mp3' },
+  { q: 'Ed Sheeran Shape of You official', name: 'Ed Sheeran — Shape of You', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Celebration.mp3' },
+  { q: 'The Weeknd Blinding Lights official', name: 'The Weeknd — Blinding Lights', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Crystal.mp3' },
+  { q: 'Rema Calm Down official', name: 'Rema — Calm Down', fallback: 'https://archive.org/download/free-copyright-music-vol-1-audio-library/Deep%20Hat.mp3' }
 ];
 
 const musicCache = new Map(); // name -> { url, ts }
 
 async function resolveYoutubeMp3(query) {
-  // 1) search → youtube url
   let videoUrl = null;
   const searchApis = [
     `https://api.siputzx.my.id/api/s/youtube?query=${encodeURIComponent(query)}`,
-    `https://vreden.my.id/api/ytsearch?query=${encodeURIComponent(query)}`,
     `https://api.agatz.xyz/api/ytsearch?message=${encodeURIComponent(query)}`
   ];
   for (const ep of searchApis) {
@@ -471,40 +469,33 @@ async function resolveYoutubeMp3(query) {
   }
   if (!videoUrl) return null;
 
-  // 2) y2mate / vidmate style mp3 endpoints
   const dlApis = [
     `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://vreden.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
     `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
     `https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`
+    `https://api.nyxs.pw/dl/yt-mp3?url=${encodeURIComponent(videoUrl)}`,
+    `https://ytmp3down.com/api/convert` // POST body
   ];
+
   for (const ep of dlApis) {
     try {
-      const res = await axios.get(ep, { timeout: 45000, validateStatus: () => true });
+      let res;
+      if (ep.includes('ytmp3down.com')) {
+        res = await axios.post(ep, { url: videoUrl }, {
+          timeout: 45000,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          validateStatus: () => true
+        });
+      } else {
+        res = await axios.get(ep, { timeout: 45000, validateStatus: () => true });
+      }
       const d = res?.data?.data || res?.data?.result || res?.data?.BK9 || res?.data;
       if (!d) continue;
       let url = typeof d === 'string' && d.startsWith('http') ? d
-        : (d.url || d.dl || d.download || d.audio || d.mp3 || d.link || d.dl_url || d.medias?.[0]?.url);
+        : (d.url || d.dl || d.download || d.downloadUrl || d.download_url || d.audio || d.mp3 || d.link || d.dl_url || d.medias?.[0]?.url);
       if (url && String(url).startsWith('http')) return String(url);
     } catch {}
   }
-
-  // cobalt fallback
-  try {
-    const res = await axios.post('https://api.cobalt.tools/api/json', {
-      url: videoUrl,
-      downloadMode: 'audio',
-      audioFormat: 'mp3'
-    }, {
-      timeout: 40000,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      validateStatus: () => true
-    });
-    const url = res.data?.url || res.data?.audio;
-    if (url) return String(url);
-  } catch {}
-
   return null;
 }
 
@@ -519,21 +510,39 @@ app.get('/api/music/:index', async (req, res) => {
     const track = MUSIC_TRACKS[i];
 
     const cached = musicCache.get(track.name);
-    if (cached && Date.now() - cached.ts < 25 * 60 * 1000 && cached.url) {
-      return res.json({ i, name: track.name, url: cached.url, next: (i + 1) % MUSIC_TRACKS.length });
+    if (cached && Date.now() - cached.ts < 20 * 60 * 1000 && cached.url) {
+      return res.json({ i, name: track.name, url: cached.url, next: (i + 1) % MUSIC_TRACKS.length, source: cached.source || 'cache' });
     }
 
-    const url = await resolveYoutubeMp3(track.q);
+    // Try YT→MP3 (may fail when public APIs are down)
+    let url = null;
+    let source = 'fallback';
+    try {
+      url = await resolveYoutubeMp3(track.q);
+      if (url) source = 'youtube';
+    } catch {}
+
+    // Always-play fallback so pair page is never silent
     if (!url) {
-      return res.status(502).json({ error: 'Could not resolve audio. Try next track.', i, name: track.name, next: (i + 1) % MUSIC_TRACKS.length });
+      url = track.fallback;
+      source = 'fallback';
     }
-    musicCache.set(track.name, { url, ts: Date.now() });
-    res.json({ i, name: track.name, url, next: (i + 1) % MUSIC_TRACKS.length });
+
+    if (!url) {
+      return res.status(502).json({
+        error: 'No audio URL',
+        i,
+        name: track.name,
+        next: (i + 1) % MUSIC_TRACKS.length
+      });
+    }
+
+    musicCache.set(track.name, { url, ts: Date.now(), source });
+    res.json({ i, name: track.name, url, next: (i + 1) % MUSIC_TRACKS.length, source });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Music error' });
   }
 });
-
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, active: jobs.size });
