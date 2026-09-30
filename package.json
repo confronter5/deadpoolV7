@@ -1,26 +1,17 @@
 {
   "name": "deadpoolv7",
-  "version": "7.2.0",
-  "description": "Deadpool V7 - Full WhatsApp Bot | Auto Status, Anti-Delete, Media DL, Welcome, Broadcast, Group tools",
+  "version": "7.3.0",
+  "description": "Deadpool V7 - Full WhatsApp Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "pair": "node pair.js",
     "pair:web": "node server.js",
     "start:pair": "node server.js",
-    "start:bot": "node index.js"
+    "start:bot": "node index.js",
+    "postinstall": "node -e \"require('ffmpeg-static')\""
   },
-  "engines": {
-    "node": "22.x"
-  },
-  "keywords": [
-    "whatsapp-bot",
-    "baileys",
-    "deadpool",
-    "autostatus",
-    "antidelete",
-    "viewonce"
-  ],
+  "engines": { "node": "22.x" },
   "author": "DeadpoolV7",
   "license": "MIT",
   "dependencies": {
@@ -32,7 +23,11 @@
     "fs-extra": "^11.2.0",
     "node-cache": "^5.1.2",
     "axios": "^1.7.7",
-    "y2mate-dl": "^1.0.4",
+    "@distube/ytdl-core": "^4.16.0",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "youtube-sr": "^4.3.11",
+    "rcspotlr": "^1.0.1",
     "wa-sticker-formatter": "^4.4.4",
     "express": "^4.21.2",
     "qrcode": "^1.5.4"
