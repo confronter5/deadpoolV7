@@ -1,26 +1,26 @@
 const axios = require('axios');
-const RcSpotLR = require('rcspotlr');
-
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
-const lyricsClient = new RcSpotLR();
 
 async function getLyrics(query) {
   const q = String(query || '').trim();
   if (!q) return null;
-  let track = q, artist = null;
-  const dash = q.split(/\s*[-–—]\s*/);
-  if (dash.length === 2) { track = dash[0].trim(); artist = dash[1].trim(); }
   try {
-    let res = await lyricsClient.getLyrics(track, artist);
-    if (!res) res = await lyricsClient.getLyrics(q);
-    if (res?.plainLyrics) {
-      return {
-        title: res.trackName || track,
-        artist: res.artistName || artist || '',
-        lyrics: res.plainLyrics
-      };
-    }
-  } catch (e) { console.log('rcspotlr:', e.message); }
+    const r = await axios.get(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`,
+      { timeout: 20000, headers: { 'User-Agent': UA } });
+    const arr = Array.isArray(r.data) ? r.data : [];
+    const hit = arr.find(x => x.plainLyrics && x.plainLyrics.length > 20);
+    if (hit) return { title: hit.trackName || q, artist: hit.artistName || '', lyrics: hit.plainLyrics };
+  } catch (e) { console.log('lrclib:', e.message); }
+  try {
+    let artist = '', title = q;
+    const dash = q.split(/\s*[-–—]\s*/);
+    if (dash.length === 2) { title = dash[0].trim(); artist = dash[1].trim(); }
+    const url = artist
+      ? `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
+      : `https://api.lyrics.ovh/v1/${encodeURIComponent(title)}/${encodeURIComponent(title)}`;
+    const r = await axios.get(url, { timeout: 20000, headers: { 'User-Agent': UA } });
+    if (r.data?.lyrics) return { title, artist, lyrics: r.data.lyrics.replace(/\r/g, '').trim() };
+  } catch (e) { console.log('lyrics.ovh:', e.message); }
   return null;
 }
 
@@ -32,7 +32,17 @@ async function askAI(prompt) {
       { timeout: 30000, headers: { 'User-Agent': UA } });
     if (typeof r.data === 'string' && r.data.trim().length > 1) return r.data.trim();
     if (r.data?.choices?.[0]?.message?.content) return r.data.choices[0].message.content.trim();
-  } catch (e) { console.log('pollinations text:', e.message); }
+  } catch (e) { console.log('poll1:', e.message); }
+  try {
+    const r = await axios.post('https://text.pollinations.ai/openai',
+      { model: 'openai', messages: [
+        { role: 'system', content: 'You are a helpful WhatsApp assistant. Keep replies short.' },
+        { role: 'user', content: q }
+      ] },
+      { timeout: 30000, headers: { 'Content-Type': 'application/json', 'User-Agent': UA } });
+    const t = r.data?.choices?.[0]?.message?.content;
+    if (t && t.trim()) return t.trim();
+  } catch (e) { console.log('poll2:', e.message); }
   try {
     const r = await axios.post('https://api.deepinfra.com/v1/openai/chat/completions',
       { model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
@@ -41,17 +51,6 @@ async function askAI(prompt) {
     const t = r.data?.choices?.[0]?.message?.content;
     if (t && t.trim()) return t.trim();
   } catch (e) { console.log('deepinfra:', e.message); }
-  try {
-    const r = await axios.post('https://text.pollinations.ai/openai',
-      { model: 'openai',
-        messages: [
-          { role: 'system', content: 'You are a helpful WhatsApp assistant. Keep replies short and clear.' },
-          { role: 'user', content: q }
-        ] },
-      { timeout: 30000, headers: { 'Content-Type': 'application/json', 'User-Agent': UA } });
-    const t = r.data?.choices?.[0]?.message?.content;
-    if (t && t.trim()) return t.trim();
-  } catch (e) { console.log('pollinations openai:', e.message); }
   return null;
 }
 
@@ -76,27 +75,47 @@ const EFFECT_PROMPTS = {
 function textMakerUrl(effect, text) {
   const t = String(text || '').slice(0, 40).replace(/"/g, '');
   const fn = EFFECT_PROMPTS[effect] || EFFECT_PROMPTS.neon;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(fn(t))}?width=1000&height=500&nologo=true&seed=${Date.now()}`;
+  const seed = Math.floor(Math.random() * 999999);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(fn(t))}?width=1024&height=512&nologo=true&seed=${seed}`;
+}
+
+async function generateTextImage(effect, text) {
+  const url = textMakerUrl(effect, text);
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await axios.get(url, {
+        responseType: 'arraybuffer', timeout: 75000,
+        maxContentLength: 20 * 1024 * 1024,
+        headers: { 'User-Agent': UA, Accept: 'image/*' }
+      });
+      if (r.data && r.data.byteLength > 3000) return Buffer.from(r.data);
+    } catch (e) { console.log('tm try', i + 1, e.message); }
+  }
+  return null;
 }
 
 async function searchSong(query) {
   const q = String(query || '').trim();
   if (!q) return null;
-  try {
-    const r = await axios.get(
-      `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(q)}&app_name=DeadpoolV7`,
-      { timeout: 20000, headers: { 'User-Agent': UA } });
-    const tracks = r.data?.data;
-    if (Array.isArray(tracks) && tracks.length) {
-      const t = tracks[0];
-      return {
-        id: t.id, title: t.title, artist: t.user?.name || '',
-        streamUrl: `https://discoveryprovider.audius.co/v1/tracks/${t.id}/stream?app_name=DeadpoolV7`,
-        artwork: t.artwork?.['480x480'] || null
-      };
-    }
-  } catch (e) { console.log('audius search:', e.message); }
+  const nodes = ['https://discoveryprovider.audius.co', 'https://audius-discovery-1.cultur3stake.com'];
+  for (const base of nodes) {
+    try {
+      const r = await axios.get(
+        `${base}/v1/tracks/search?query=${encodeURIComponent(q)}&app_name=DeadpoolV7`,
+        { timeout: 20000, headers: { 'User-Agent': UA } }
+      );
+      const tracks = r.data?.data;
+      if (Array.isArray(tracks) && tracks.length) {
+        const t = tracks[0];
+        return {
+          id: t.id, title: t.title, artist: t.user?.name || '',
+          streamUrl: `${base}/v1/tracks/${t.id}/stream?app_name=DeadpoolV7`,
+          artwork: t.artwork?.['480x480'] || null
+        };
+      }
+    } catch (e) { console.log('audius', base, e.message); }
+  }
   return null;
 }
 
-module.exports = { askAI, getLyrics, textMakerUrl, searchSong, EFFECT_PROMPTS };
+module.exports = { askAI, getLyrics, textMakerUrl, generateTextImage, searchSong, EFFECT_PROMPTS };
