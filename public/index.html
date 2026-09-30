@@ -36,7 +36,6 @@
     .qr-wrap { text-align:center; margin:10px 0; }
     .qr-wrap img { width:240px; max-width:100%; border-radius:12px; background:#fff; padding:8px; }
     .session { word-break:break-all; font-size:.68rem; background:#000; color:#e2e8f0; padding:10px; border-radius:8px; max-height:100px; overflow:auto; margin-top:8px; }
-    [data-theme="light"] .session { background:#0f172a; }
     .footer { text-align:center; margin-top:16px; font-size:.78rem; color:var(--muted); }
     .footer a { color:var(--accent2); text-decoration:none; }
     .music { margin-top:16px; padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--input); }
@@ -50,7 +49,7 @@
 </head>
 <body>
   <div class="card">
-    <button class="theme-btn" id="themeBtn" type="button" title="Toggle theme"><i class="fa-solid fa-moon"></i></button>
+    <button class="theme-btn" id="themeBtn" type="button"><i class="fa-solid fa-moon"></i></button>
     <div class="logo"><i class="fa-solid fa-skull"></i></div>
     <h1>Deadpool V7</h1>
     <p class="sub">Link device · Get session</p>
@@ -61,12 +60,12 @@
     </div>
 
     <div id="panel-qr" class="panel active">
-      <p class="hint"><i class="fa-solid fa-info-circle"></i> Generate QR → WhatsApp → Linked Devices → Link a device → Scan.</p>
+      <p class="hint"><i class="fa-solid fa-info-circle"></i> Generate QR → WhatsApp → Linked Devices → Scan.</p>
       <button class="action" id="btnQr" type="button"><i class="fa-solid fa-qrcode"></i> Generate QR</button>
     </div>
 
     <div id="panel-code" class="panel">
-      <label for="phone"><i class="fa-solid fa-phone"></i> Number (country code, no +)</label>
+      <label for="phone"><i class="fa-solid fa-phone"></i> Number (with country code)</label>
       <input id="phone" type="tel" placeholder="254712345678" />
       <button class="action" id="btnCode" type="button"><i class="fa-solid fa-key"></i> Get Pairing Code</button>
     </div>
@@ -96,8 +95,7 @@
       <div class="music-now" id="musicNow"><i class="fa-solid fa-compact-disc"></i> <span id="trackName">Loading…</span></div>
     </div>
 
-    <p class="footer">
-      Powered by Confronter<br />
+    <p class="footer">Powered by Confronter<br />
       <a href="https://wa.me/254796283064" target="_blank"><i class="fa-brands fa-whatsapp"></i> Support</a>
     </p>
   </div>
@@ -134,8 +132,7 @@
     const sessionEl = document.getElementById('sessionEl');
     const btnQr = document.getElementById('btnQr');
     const btnCode = document.getElementById('btnCode');
-    let pollTimer = null;
-    let pairMode = 'qr';
+    let pollTimer = null, pairMode = 'qr';
 
     function resetUI() {
       statusBox.classList.add('show');
@@ -156,13 +153,13 @@
             qrImg.src = data.qr;
             qrWrap.style.display = 'block';
             codeRow.style.display = 'none';
-            statusText.innerHTML = '<i class="fa-solid fa-camera"></i> Scan QR · you may switch to WhatsApp';
+            statusText.innerHTML = '<i class="fa-solid fa-camera"></i> Scan QR';
           }
           if (pairMode === 'code' && data.code) {
             codeEl.textContent = data.code;
             codeRow.style.display = 'flex';
             qrWrap.style.display = 'none';
-            statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter <b>code</b> on phone · Linked Devices → Link with phone number';
+            statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter code on phone';
           }
           if (data.status === 'connected') statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-spinner fa-spin"></i> Linked · building session…</span>';
           if (data.status === 'done' && data.session) {
@@ -171,21 +168,18 @@
             codeRow.style.display = 'none';
             sessionWrap.style.display = 'block';
             sessionEl.textContent = data.session;
-            statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-circle-check"></i> Done · also sent to your WhatsApp PM</span>';
-            btnQr.disabled = false;
-            btnCode.disabled = false;
+            statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-circle-check"></i> Done · also sent to your PM</span>';
+            btnQr.disabled = false; btnCode.disabled = false;
           }
           if (data.status === 'error') {
             clearInterval(pollTimer);
             statusText.innerHTML = '<span class="err"><i class="fa-solid fa-circle-xmark"></i> ' + (data.error || 'Failed') + '</span>';
-            btnQr.disabled = false;
-            btnCode.disabled = false;
+            btnQr.disabled = false; btnCode.disabled = false;
           }
         } catch (e) {
           clearInterval(pollTimer);
           statusText.innerHTML = '<span class="err">' + e.message + '</span>';
-          btnQr.disabled = false;
-          btnCode.disabled = false;
+          btnQr.disabled = false; btnCode.disabled = false;
         }
       }, 1200);
     }
@@ -207,7 +201,7 @@
 
     btnCode.onclick = async () => {
       const num = document.getElementById('phone').value.trim();
-      if (!num) { statusBox.classList.add('show'); statusText.innerHTML = '<span class="err"><i class="fa-solid fa-circle-exclamation"></i> Enter your number with country code (e.g. 2547…)</span>'; return; }
+      if (!num) { statusBox.classList.add('show'); statusText.innerHTML = '<span class="err">Enter number with country code</span>'; return; }
       btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
       pairMode = 'code'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
@@ -233,7 +227,7 @@
       });
     };
 
-    // ============ MUSIC (Audius — no uploads needed) ============
+    // Music (Audius)
     const QUERIES = [
       'Alan Walker Faded','Vybz Kartel Fever','Central Cee Doja','Lil Baby Woah',
       'Burna Boy Last Last','Sauti Sol Suzanna','Diamond Platnumz Jeje',
@@ -243,12 +237,9 @@
     const audio = document.getElementById('bgAudio');
     const trackName = document.getElementById('trackName');
     const musicNow = document.getElementById('musicNow');
-    let currentUrl = null;
-
     function setNow(name, playing) {
       musicNow.innerHTML = (playing ? '<i class="fa-solid fa-compact-disc fa-spin"></i> ' : '<i class="fa-solid fa-pause"></i> ') + '<span id="trackName">' + (name || 'Music') + '</span>';
     }
-
     async function loadSong(i, autoplay) {
       ti = ((i % QUERIES.length) + QUERIES.length) % QUERIES.length;
       trackName.textContent = 'Loading…';
@@ -257,23 +248,16 @@
         const r = await fetch('/api/stream-song/' + encodeURIComponent(QUERIES[ti]));
         const d = await r.json();
         if (d.streamUrl) {
-          currentUrl = d.streamUrl;
           audio.src = d.streamUrl;
           audio.load();
           const label = (d.title || QUERIES[ti]) + (d.artist ? ' — ' + d.artist : '');
           setNow(label, false);
           if (autoplay) audio.play().then(() => setNow(label, true)).catch(() => setNow(label + ' — tap Play', false));
-        } else {
-          setNow('Not found — tap Next', false);
-        }
-      } catch (e) {
-        setNow('Tap Play to start', false);
-      }
+        } else setNow('Not found — tap Next', false);
+      } catch (e) { setNow('Tap Play to start', false); }
     }
-
     audio.addEventListener('ended', () => loadSong(ti + 1, true));
     audio.addEventListener('error', () => { if (audio.dataset.retried !== '1') { audio.dataset.retried = '1'; loadSong(ti, true); } });
-
     document.getElementById('playMusicBtn').onclick = () => {
       audio.dataset.retried = '';
       if (!audio.src) loadSong(ti, true);
@@ -281,8 +265,7 @@
     };
     document.getElementById('pauseMusicBtn').onclick = () => { audio.pause(); setNow(trackName.textContent, false); };
     document.getElementById('nextMusicBtn').onclick = () => { audio.dataset.retried = ''; loadSong(ti + 1, true); };
-
     loadSong(0, false);
   </script>
 </body>
-  </html>
+</html>
