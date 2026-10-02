@@ -53,53 +53,94 @@ async function downloadYouTube(query, audioOnly = false) {
   const title = info.videoDetails?.title || 'media';
 
   if (audioOnly) {
-    let fmt = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' }) ||
-              ytdl.chooseFormat(info.formats, { quality: 'highestaudio' });
+    // Prefer M4A (best audio) then any audio
+    let fmt = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly', container: 'mp4' })
+           || ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
     if (!fmt) return null;
+
     let buffer;
     try { buffer = await _streamToBuffer(ytdl.downloadFromInfo(info, { format: fmt })); }
     catch (e) { console.log('audio stream:', e.message); return null; }
     if (!buffer || buffer.length < 5000) return null;
-    return { buffer, title, audioOnly: true, mimetype: fmt.mimeType || 'audio/mp4', ext: (fmt.container || 'mp4').toLowerCase() };
+
+    return {
+      buffer,
+      title,
+      audioOnly: true,
+      mimetype: 'audio/mpeg',      // ← force MP3 mime so all devices play
+      ext: 'mp3'                    // ← force .mp3 filename
+    };
   }
 
-  let fmt = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' && (f.height || 0) <= 720 }) ||
-            ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' }) ||
-            ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
+  let fmt = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' && (f.height || 0) <= 720 })
+         || ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' })
+         || ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
   if (!fmt) return null;
 
   let buffer;
   try { buffer = await _streamToBuffer(ytdl.downloadFromInfo(info, { format: fmt }), 180000); }
   catch (e) { console.log('video stream:', e.message); return null; }
   if (!buffer || buffer.length < 20000) return null;
-  return { buffer, title, audioOnly: false, mimetype: fmt.mimeType || 'video/mp4', ext: 'mp4' };
+  return { buffer, title, audioOnly: false, mimetype: 'video/mp4', ext: 'mp4' };
 }
 
+// ============ SEND AS MP3 ============
+// Tries audio player first. If it fails, sends as document MP3 (always works).
 async function sendAsMp3(sock, jid, data) {
   if (!data?.buffer) return false;
-  const name = _safeName(data.title);
-  const ext = data.ext === 'webm' ? 'webm' : 'm4a';
+  const name = _safeName(data.title) || 'audio';
+
+  // 1) Try as playable audio (in-chat player)
   try {
-    await sock.sendMessage(jid, { audio: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: name + '.' + ext, ptt: false });
+    await sock.sendMessage(jid, {
+      audio: data.buffer,
+      mimetype: 'audio/mpeg',
+      fileName: name + '.mp3',
+      ptt: false
+    });
     return true;
-  } catch (e) {}
+  } catch (e) { console.log('audio inline:', e.message); }
+
+  // 2) Fallback: as document MP3 (WhatsApp Media Viewer, Music apps, etc.)
   try {
-    await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: name + '.' + ext, caption: '🎵 *' + (data.title || 'Audio') + '*' });
+    await sock.sendMessage(jid, {
+      document: data.buffer,
+      mimetype: 'audio/mpeg',
+      fileName: name + '.mp3',
+      caption: '🎵 *' + (data.title || 'Audio') + '*'
+    });
     return true;
-  } catch (e) { return false; }
+  } catch (e) { console.log('audio document:', e.message); }
+
+  // 3) Last resort: as WAV
+  try {
+    await sock.sendMessage(jid, {
+      document: data.buffer,
+      mimetype: 'audio/wav',
+      fileName: name + '.wav',
+      caption: '🎵 *' + (data.title || 'Audio') + '*'
+    });
+    return true;
+  } catch (e) { console.log('audio wav:', e.message); return false; }
 }
 
+// ============ SEND AS VIDEO ============
 async function sendAsVideo(sock, jid, data) {
   if (!data?.buffer) return false;
   const cap = '🎬 *' + (data.title || 'Video') + '*';
   try {
-    await sock.sendMessage(jid, { video: data.buffer, caption: cap, mimetype: data.mimetype || 'video/mp4' });
+    await sock.sendMessage(jid, { video: data.buffer, caption: cap, mimetype: 'video/mp4' });
     return true;
-  } catch (e) {}
+  } catch (e) { console.log('video inline:', e.message); }
   try {
-    await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'video/mp4', fileName: _safeName(data.title) + '.mp4', caption: cap });
+    await sock.sendMessage(jid, {
+      document: data.buffer,
+      mimetype: 'video/mp4',
+      fileName: _safeName(data.title) + '.mp4',
+      caption: cap
+    });
     return true;
-  } catch (e) { return false; }
+  } catch (e) { console.log('video document:', e.message); return false; }
 }
 
 module.exports = { downloadYouTube, sendAsMp3, sendAsVideo, ytSearch };
