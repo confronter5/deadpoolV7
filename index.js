@@ -187,14 +187,18 @@ function applyFont(text, style) {
 }
 
 function styleReplyText(text) {
-  // config.FONT = sans | sansitalic | bold | bolditalic | mono | italic | double | script | tiny | random
-  let style = String(config.FONT || 'sans').toLowerCase();
-  if (style === 'random' || style === 'auto') {
-    const pool = FONT_NAMES.filter(n => n !== 'normal');
-    style = pool[Math.floor(Math.random() * pool.length)];
+  try {
+    // config.FONT = sans | sansitalic | bold | bolditalic | mono | italic | double | script | tiny | random
+    let style = String(config.FONT || 'sans').toLowerCase();
+    if (style === 'random' || style === 'auto') {
+      const pool = FONT_NAMES.filter(n => n !== 'normal');
+      style = pool[Math.floor(Math.random() * pool.length)];
+    }
+    if (style === 'off' || style === 'normal') return text;
+    return applyFont(text, style);
+  } catch {
+    return text;
   }
-  if (style === 'off' || style === 'normal') return text;
-  return applyFont(text, style);
 }
 
 // ============ EXPIRY ============
@@ -680,29 +684,66 @@ async function startBot() {
 
   // ============ MESSAGES (instant parallel dispatch) ============
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    // Accept notify, append, and undefined — own messages often arrive as append
     if (type && type !== 'notify' && type !== 'append') return;
-    for (const m of messages) handleMessage(m).catch(e => console.log('msg err:', e.message));
+    for (const m of messages) {
+      handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
+    }
   });
+
+  // Unwrap nested message containers (ephemeral, viewOnce, etc.)
+  function unwrapMessage(msg) {
+    if (!msg) return null;
+    let cur = msg;
+    for (let i = 0; i < 6; i++) {
+      if (cur.ephemeralMessage?.message) cur = cur.ephemeralMessage.message;
+      else if (cur.viewOnceMessage?.message) cur = cur.viewOnceMessage.message;
+      else if (cur.viewOnceMessageV2?.message) cur = cur.viewOnceMessageV2.message;
+      else if (cur.viewOnceMessageV2Extension?.message) cur = cur.viewOnceMessageV2Extension.message;
+      else if (cur.documentWithCaptionMessage?.message) cur = cur.documentWithCaptionMessage.message;
+      else break;
+    }
+    return cur;
+  }
+
+  function extractText(msg) {
+    const u = unwrapMessage(msg) || msg;
+    if (!u) return '';
+    return (
+      u.conversation ||
+      u.extendedTextMessage?.text ||
+      u.imageMessage?.caption ||
+      u.videoMessage?.caption ||
+      u.documentMessage?.caption ||
+      u.buttonsResponseMessage?.selectedDisplayText ||
+      u.listResponseMessage?.title ||
+      u.templateButtonReplyMessage?.selectedDisplayText ||
+      ''
+    );
+  }
 
   async function handleMessage(m) {
     try {
-      if (!m.message) return;
+      if (!m?.message || !m?.key) return;
+      // Skip pure protocol noise early (but still handle delete/edit below)
       if (m.key?.id) {
         cacheLid(m.key, m);
-        msgCache.set(m.key.id, {
-          key: m.key,
-          message: JSON.parse(JSON.stringify(m.message)),
-          pushName: m.pushName,
-          participant: m.key.participant || m.key.remoteJid,
-          participantAlt: m.key.participantAlt || m.key.remoteJidAlt || null,
-          remoteJid: m.key.remoteJid,
-          timestamp: Date.now()
-        });
+        try {
+          msgCache.set(m.key.id, {
+            key: m.key,
+            message: JSON.parse(JSON.stringify(m.message)),
+            pushName: m.pushName,
+            participant: m.key.participant || m.key.remoteJid,
+            participantAlt: m.key.participantAlt || m.key.remoteJidAlt || null,
+            remoteJid: m.key.remoteJid,
+            timestamp: Date.now()
+          });
+        } catch {}
       }
 
       const from = m.key.remoteJid;
       const sender = m.key.participant || m.key.remoteJid;
-      const isMe = m.key.fromMe;
+      const isMe = !!m.key.fromMe;
 
       // Blue ticks — only when AUTO_READ is enabled (default OFF)
       if (config.AUTO_READ && !isMe && from && from !== 'status@broadcast') {
@@ -791,7 +832,7 @@ async function startBot() {
         }
       }
 
-      const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || '';
+      const body = extractText(m.message);
 
       // AUTO-REACT
       if (config.AUTO_REACT && !isMe) {
@@ -813,7 +854,9 @@ async function startBot() {
       }
 
       const cleanBody = (body || '').trim();
-      const prefix = config.PREFIX || '.';
+      const prefix = String(config.PREFIX || '.').trim() || '.';
+      if (!cleanBody) return;
+      // Accept prefix with optional invisible chars / zero-width trimmed
       if (!cleanBody.startsWith(prefix)) return;
       if (config.MODE === 'private' && !isOwner(sender) && !isMe) return;
       // Block non-owners when bot duration expired
@@ -825,7 +868,7 @@ async function startBot() {
       const args = cleanBody.slice(prefix.length).trim().split(/\s+/);
       const cmd = (args.shift() || '').toLowerCase();
       const text = args.join(' ');
-      console.log('CMD:', cmd, 'from:', (sender || '').split('@')[0]);
+      console.log('CMD:', cmd, '| fromMe:', isMe, '| from:', String(from || '').split('@')[0], '| body:', cleanBody.slice(0, 40));
       react(from, m.key, cmdReactEmoji());
 
       const reply = async (content) => {
@@ -834,26 +877,39 @@ async function startBot() {
           if (typeof content === 'string') {
             let b = String(content).trim();
             if (!b) return;
-            // Auto fancy font on every text reply
-            b = styleReplyText(b);
+            try { b = styleReplyText(b); } catch {}
             const hasCredit = /confronter|powered by|ᴄᴏɴғʀᴏɴᴛᴇʀ/i.test(b);
-            return await sock.sendMessage(from, { text: hasCredit ? b : b + foot });
+            const finalText = hasCredit ? b : b + foot;
+            const r = await sock.sendMessage(from, { text: finalText });
+            return r;
           }
           const payload = { ...content };
           if (payload.text != null) {
             const t = String(payload.text).trim();
             if (!t) delete payload.text;
-            else payload.text = styleReplyText(t);
+            else {
+              try { payload.text = styleReplyText(t); } catch { payload.text = t; }
+            }
           }
           if (payload.caption != null) {
             let cap = String(payload.caption);
-            cap = styleReplyText(cap);
+            try { cap = styleReplyText(cap); } catch {}
             if (foot && !/confronter|powered by/i.test(cap)) cap = cap.trimEnd() + foot;
             payload.caption = cap;
           }
           if (!payload.text && !payload.image && !payload.video && !payload.audio && !payload.document && !payload.sticker && !payload.react) return;
           return await sock.sendMessage(from, payload);
-        } catch (e) { console.log('reply:', e.message); }
+        } catch (e) {
+          console.log('reply error:', e?.message || e);
+          // Last resort: plain text without font/footer
+          try {
+            if (typeof content === 'string' && content.trim()) {
+              await sock.sendMessage(from, { text: content.trim() });
+            }
+          } catch (e2) {
+            console.log('reply fallback failed:', e2?.message || e2);
+          }
+        }
       };
 
       const pm = presenceMap(config.PRESENCE);
