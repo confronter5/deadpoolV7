@@ -683,11 +683,18 @@ async function startBot() {
   });
 
   // ============ MESSAGES (instant parallel dispatch) ============
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    // Accept notify, append, and undefined — own messages often arrive as append
-    if (type && type !== 'notify' && type !== 'append') return;
-    for (const m of messages) {
-      handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
+  sock.ev.on('messages.upsert', async (upsert) => {
+    try {
+      const { messages, type } = upsert || {};
+      console.log('UPSERT type:', type, 'count:', (messages && messages.length) || 0);
+      if (!messages || !messages.length) return;
+      // Do NOT filter by type — self-chat / multi-device often use non-notify types
+      for (const m of messages) {
+        if (!m) continue;
+        handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
+      }
+    } catch (e) {
+      console.log('upsert err:', e?.message || e);
     }
   });
 
