@@ -112,12 +112,35 @@ function buildFooter() {
 // WhatsApp can't load real Roboto; these maps look like different fonts.
 const FONT_MAPS = {
   normal: null,
+  // Sans upright (like clean web text — non-slanting)
+  sans: {
+    a:'𝖺',b:'𝖻',c:'𝖼',d:'𝖽',e:'𝖾',f:'𝖿',g:'𝗀',h:'𝗁',i:'𝗂',j:'𝗃',k:'𝗄',l:'𝗅',m:'𝗆',
+    n:'𝗇',o:'𝗈',p:'𝗉',q:'𝗊',r:'𝗋',s:'𝗌',t:'𝗍',u:'𝗎',v:'𝗏',w:'𝗐',x:'𝗑',y:'𝗒',z:'𝗓',
+    A:'𝖠',B:'𝖡',C:'𝖢',D:'𝖣',E:'𝖤',F:'𝖥',G:'𝖦',H:'𝖧',I:'𝖨',J:'𝖩',K:'𝖪',L:'𝖫',M:'𝖬',
+    N:'𝖭',O:'𝖮',P:'𝖯',Q:'𝖰',R:'𝖱',S:'𝖲',T:'𝖳',U:'𝖴',V:'𝖵',W:'𝖶',X:'𝖷',Y:'𝖸',Z:'𝖹',
+    '0':'𝟢','1':'𝟣','2':'𝟤','3':'𝟥','4':'𝟦','5':'𝟧','6':'𝟨','7':'𝟩','8':'𝟪','9':'𝟫'
+  },
+  // Sans slanted (italic sans — the tilting one)
+  sansitalic: {
+    a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',
+    n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'𝘶',v:'𝘷',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻',
+    A:'𝘈',B:'𝘉',C:'𝘊',D:'𝘋',E:'𝘌',F:'𝘍',G:'𝘎',H:'𝘏',I:'𝘐',J:'𝘑',K:'𝘒',L:'𝘓',M:'𝘔',
+    N:'𝘕',O:'𝘖',P:'𝘗',Q:'𝘘',R:'𝘙',S:'𝘚',T:'𝘛',U:'𝘜',V:'𝘝',W:'𝘞',X:'𝘟',Y:'𝘠',Z:'𝘡'
+  },
+  // Sans bold (heavy upright)
   bold: {
     a:'𝗮',b:'𝗯',c:'𝗰',d:'𝗱',e:'𝗲',f:'𝗳',g:'𝗴',h:'𝗵',i:'𝗶',j:'𝗷',k:'𝗸',l:'𝗹',m:'𝗺',
     n:'𝗻',o:'𝗼',p:'𝗽',q:'𝗾',r:'𝗿',s:'𝘀',t:'𝘁',u:'𝘂',v:'𝘃',w:'𝘄',x:'𝘅',y:'𝘆',z:'𝘇',
     A:'𝗔',B:'𝗕',C:'𝗖',D:'𝗗',E:'𝗘',F:'𝗙',G:'𝗚',H:'𝗛',I:'𝗜',J:'𝗝',K:'𝗞',L:'𝗟',M:'𝗠',
     N:'𝗡',O:'𝗢',P:'𝗣',Q:'𝗤',R:'𝗥',S:'𝗦',T:'𝗧',U:'𝗨',V:'𝗩',W:'𝗪',X:'𝗫',Y:'𝗬',Z:'𝗭',
     '0':'𝟬','1':'𝟭','2':'𝟮','3':'𝟯','4':'𝟰','5':'𝟱','6':'𝟲','7':'𝟳','8':'𝟴','9':'𝟵'
+  },
+  // Sans bold italic (heavy + slant)
+  bolditalic: {
+    a:'𝙖',b:'𝙗',c:'𝙘',d:'𝙙',e:'𝙚',f:'𝙛',g:'𝙜',h:'𝙝',i:'𝙞',j:'𝙟',k:'𝙠',l:'𝙡',m:'𝙢',
+    n:'𝙣',o:'𝙤',p:'𝙥',q:'𝙦',r:'𝙧',s:'𝙨',t:'𝙩',u:'𝙪',v:'𝙫',w:'𝙬',x:'𝙭',y:'𝙮',z:'𝙯',
+    A:'𝘼',B:'𝘽',C:'𝘾',D:'𝘿',E:'𝙀',F:'𝙁',G:'𝙂',H:'𝙃',I:'𝙄',J:'𝙅',K:'𝙆',L:'𝙇',M:'𝙈',
+    N:'𝙉',O:'𝙊',P:'𝙋',Q:'𝙌',R:'𝙍',S:'𝙎',T:'𝙏',U:'𝙐',V:'𝙑',W:'𝙒',X:'𝙓',Y:'𝙔',Z:'𝙕'
   },
   mono: {
     a:'𝚊',b:'𝚋',c:'𝚌',d:'𝚍',e:'𝚎',f:'𝚏',g:'𝚐',h:'𝚑',i:'𝚒',j:'𝚓',k:'𝚔',l:'𝚕',m:'𝚖',
@@ -164,8 +187,8 @@ function applyFont(text, style) {
 }
 
 function styleReplyText(text) {
-  // config.FONT = normal | bold | mono | italic | double | script | tiny | random
-  let style = String(config.FONT || 'bold').toLowerCase();
+  // config.FONT = sans | sansitalic | bold | bolditalic | mono | italic | double | script | tiny | random
+  let style = String(config.FONT || 'sans').toLowerCase();
   if (style === 'random' || style === 'auto') {
     const pool = FONT_NAMES.filter(n => n !== 'normal');
     style = pool[Math.floor(Math.random() * pool.length)];
@@ -175,21 +198,39 @@ function styleReplyText(text) {
 }
 
 // ============ EXPIRY ============
+// Supports: BOT_EXPIRY_DATE (YYYY-MM-DD), BOT_EXPIRY_DAYS + BOT_ACTIVATED_AT, or legacy EXPIRY
 function getExpiryInfo() {
-  // config.EXPIRY = '2026-12-31' or config.BOT_EXPIRE_DAYS = 30 (from first run / now)
-  const raw = config.EXPIRY || config.EXPIRE || config.BOT_EXPIRY || '';
-  if (!raw) return 'Unlimited';
+  const now = new Date();
   try {
-    const end = new Date(raw);
-    if (isNaN(end.getTime())) return String(raw);
-    const now = new Date();
-    const diff = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-    if (diff < 0) return '⛔ Expired';
-    if (diff === 0) return '⚠ Ends today';
-    return `${diff} day${diff === 1 ? '' : 's'} left`;
-  } catch {
-    return String(raw);
-  }
+    // Hard end date
+    const dateStr = config.BOT_EXPIRY_DATE || config.EXPIRY || config.EXPIRE || config.BOT_EXPIRY || '';
+    if (dateStr) {
+      const end = new Date(dateStr);
+      if (!isNaN(end.getTime())) {
+        const diff = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+        if (diff < 0) return '⛔ Expired';
+        if (diff === 0) return '⚠ Ends today';
+        return `${diff} day${diff === 1 ? '' : 's'} left`;
+      }
+    }
+    // Days from activation
+    const days = parseInt(config.BOT_EXPIRY_DAYS || '0', 10) || 0;
+    if (days > 0) {
+      let activated = config.BOT_ACTIVATED_AT ? new Date(config.BOT_ACTIVATED_AT) : null;
+      if (!activated || isNaN(activated.getTime())) activated = now;
+      const end = new Date(activated.getTime() + days * 24 * 60 * 60 * 1000);
+      const diff = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+      if (diff < 0) return '⛔ Expired';
+      if (diff === 0) return '⚠ Ends today';
+      return `${diff} day${diff === 1 ? '' : 's'} left`;
+    }
+  } catch {}
+  return 'Unlimited';
+}
+
+function isBotExpired() {
+  const info = getExpiryInfo();
+  return info === '⛔ Expired';
 }
 
 // ============ MENU (monospace command list, compact) ============
@@ -257,7 +298,7 @@ function buildMainMenu(pushName, userCount) {
     'autolike on/off',
     'autoreact on/off',
     'autoread on/off',
-    'font bold|mono|italic|random',
+    'font sans|sansitalic|bold|random',
     'antidelete off/pm/chat',
     'antiedit off/pm/chat',
     'antiviewonce off/pm/chat',
@@ -514,7 +555,7 @@ async function startBot() {
   await ensureData();
   // Ensure AUTO_READ exists (default OFF so blue ticks don't run unless you turn them on)
   if (typeof config.AUTO_READ === 'undefined') config.AUTO_READ = false;
-  if (typeof config.FONT === 'undefined') config.FONT = 'bold'; // auto fancy font on replies
+  if (typeof config.FONT === 'undefined') config.FONT = 'sans'; // upright sans (non-slanting)
 
   console.log('\n╔══════════════════════════════════════╗');
   console.log(`║     ${config.BOT_NAME.padEnd(28)} ║`);
@@ -626,10 +667,12 @@ async function startBot() {
       for (const p of participants) {
         const mention = '@' + p.split('@')[0];
         if (action === 'add' && config.WELCOME) {
-          await sock.sendMessage(id, { text: config.WELCOME_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname), mentions: [p] });
+          const raw = config.WELCOME_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname);
+          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: [p] });
         }
         if ((action === 'remove' || action === 'leave') && config.GOODBYE) {
-          await sock.sendMessage(id, { text: config.GOODBYE_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname), mentions: [p] });
+          const raw = config.GOODBYE_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname);
+          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: [p] });
         }
       }
     } catch {}
@@ -773,6 +816,11 @@ async function startBot() {
       const prefix = config.PREFIX || '.';
       if (!cleanBody.startsWith(prefix)) return;
       if (config.MODE === 'private' && !isOwner(sender) && !isMe) return;
+      // Block non-owners when bot duration expired
+      if (typeof isBotExpired === 'function' && isBotExpired() && !isOwner(sender) && !isMe) {
+        await sock.sendMessage(from, { text: config.EXPIRY_MSG || '⛔ Bot expired.' }).catch(() => {});
+        return;
+      }
 
       const args = cleanBody.slice(prefix.length).trim().split(/\s+/);
       const cmd = (args.shift() || '').toLowerCase();
@@ -1097,9 +1145,9 @@ async function startBot() {
       // ========== FONT (auto style on all replies) ==========
       if (cmd === 'font') {
         const v = String(args[0] || '').toLowerCase();
-        const allowed = ['normal', 'bold', 'mono', 'italic', 'double', 'script', 'tiny', 'random', 'off'];
+        const allowed = ['normal', 'sans', 'sansitalic', 'bold', 'bolditalic', 'mono', 'italic', 'double', 'script', 'tiny', 'random', 'off'];
         if (!v) {
-          await reply(`Font: *${config.FONT || 'bold'}*\nOptions: ${allowed.join(', ')}\nUsage: ${prefix}font bold`);
+          await reply(`Font: *${config.FONT || 'sans'}*\nOptions: ${allowed.join(', ')}\nUsage: ${prefix}font sans`);
           return;
         }
         if (!allowed.includes(v)) {
@@ -1107,8 +1155,7 @@ async function startBot() {
           return;
         }
         config.FONT = v === 'off' ? 'normal' : v;
-        // Preview without double-styling confusion
-        const sample = applyFont('Hello Confronter 123', config.FONT === 'random' ? 'bold' : config.FONT);
+        const sample = applyFont('Hello Confronter 123', config.FONT === 'random' ? 'sans' : config.FONT);
         await reply(`✅ Font → *${config.FONT}*\nPreview: ${sample}`);
         return;
       }
@@ -1186,7 +1233,7 @@ async function startBot() {
           `• AutoLike: ${on(config.AUTO_LIKE_STATUS)}\n` +
           `• AutoReact: ${on(config.AUTO_REACT)}\n` +
           `• AutoRead: ${on(config.AUTO_READ)}\n` +
-          `• Font: ${config.FONT || 'bold'}\n` +
+          `• Font: ${config.FONT || 'sans'}\n` +
           `• AntiDelete: ${config.ANTI_DELETE}\n` +
           `• AntiEdit: ${config.ANTI_EDIT}\n` +
           `• AntiViewOnce: ${config.ANTI_VIEW_ONCE}\n` +
