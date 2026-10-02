@@ -104,66 +104,210 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 function buildFooter() {
   const y = new Date().getFullYear();
   const p = (config.POWERED_BY || 'Powered by Confronter').replace(/©?\d{4}/g, '').trim();
-  return '\n\n—\n> *' + p + ' ©' + y + '*';
+  // Compact footer — no dash line, minimal spacing
+  return `\n_${p} ©${y}_`;
 }
 
-// ============ COMPACT MENU ============
-function buildMainMenu(pushName, userCount) {
-  const p = config.PREFIX;
-  const line = '▬▬▬▬▬▬▬▬▬▬▬▬▬';
-  let m = '';
-  m += line + '\n';
-  m += `💀 *${config.BOT_NAME}*\n`;
-  m += `👋 *${pushName || 'User'}*  •  👥 ${userCount || 0}\n`;
-  m += line + '\n';
+// ============ FANCY FONTS (Unicode) — auto style on every reply ============
+// WhatsApp can't load real Roboto; these maps look like different fonts.
+const FONT_MAPS = {
+  normal: null,
+  bold: {
+    a:'𝗮',b:'𝗯',c:'𝗰',d:'𝗱',e:'𝗲',f:'𝗳',g:'𝗴',h:'𝗵',i:'𝗶',j:'𝗷',k:'𝗸',l:'𝗹',m:'𝗺',
+    n:'𝗻',o:'𝗼',p:'𝗽',q:'𝗾',r:'𝗿',s:'𝘀',t:'𝘁',u:'𝘂',v:'𝘃',w:'𝘄',x:'𝘅',y:'𝘆',z:'𝘇',
+    A:'𝗔',B:'𝗕',C:'𝗖',D:'𝗗',E:'𝗘',F:'𝗙',G:'𝗚',H:'𝗛',I:'𝗜',J:'𝗝',K:'𝗞',L:'𝗟',M:'𝗠',
+    N:'𝗡',O:'𝗢',P:'𝗣',Q:'𝗤',R:'𝗥',S:'𝗦',T:'𝗧',U:'𝗨',V:'𝗩',W:'𝗪',X:'𝗫',Y:'𝗬',Z:'𝗭',
+    '0':'𝟬','1':'𝟭','2':'𝟮','3':'𝟯','4':'𝟰','5':'𝟱','6':'𝟲','7':'𝟳','8':'𝟴','9':'𝟵'
+  },
+  mono: {
+    a:'𝚊',b:'𝚋',c:'𝚌',d:'𝚍',e:'𝚎',f:'𝚏',g:'𝚐',h:'𝚑',i:'𝚒',j:'𝚓',k:'𝚔',l:'𝚕',m:'𝚖',
+    n:'𝚗',o:'𝚘',p:'𝚙',q:'𝚚',r:'𝚛',s:'𝚜',t:'𝚝',u:'𝚞',v:'𝚟',w:'𝚠',x:'𝚡',y:'𝚢',z:'𝚣',
+    A:'𝙰',B:'𝙱',C:'𝙲',D:'𝙳',E:'𝙴',F:'𝙵',G:'𝙶',H:'𝙷',I:'𝙸',J:'𝙹',K:'𝙺',L:'𝙻',M:'𝙼',
+    N:'𝙽',O:'𝙾',P:'𝙿',Q:'𝚀',R:'𝚁',S:'𝚂',T:'𝚃',U:'𝚄',V:'𝚅',W:'𝚆',X:'𝚇',Y:'𝚈',Z:'𝚉',
+    '0':'𝟶','1':'𝟷','2':'𝟸','3':'𝟹','4':'𝟺','5':'𝟻','6':'𝟼','7':'𝟽','8':'𝟾','9':'𝟿'
+  },
+  italic: {
+    a:'𝑎',b:'𝑏',c:'𝑐',d:'𝑑',e:'𝑒',f:'𝑓',g:'𝑔',h:'ℎ',i:'𝑖',j:'𝑗',k:'𝑘',l:'𝑙',m:'𝑚',
+    n:'𝑛',o:'𝑜',p:'𝑝',q:'𝑞',r:'𝑟',s:'𝑠',t:'𝑡',u:'𝑢',v:'𝑣',w:'𝑤',x:'𝑥',y:'𝑦',z:'𝑧',
+    A:'𝐴',B:'𝐵',C:'𝐶',D:'𝐷',E:'𝐸',F:'𝐹',G:'𝐺',H:'𝐻',I:'𝐼',J:'𝐽',K:'𝐾',L:'𝐿',M:'𝑀',
+    N:'𝑁',O:'𝑂',P:'𝑃',Q:'𝑄',R:'𝑅',S:'𝑆',T:'𝑇',U:'𝑈',V:'𝑉',W:'𝑊',X:'𝑋',Y:'𝑌',Z:'𝑍'
+  },
+  double: {
+    a:'𝕒',b:'𝕓',c:'𝕔',d:'𝕕',e:'𝕖',f:'𝕗',g:'𝕘',h:'𝕙',i:'𝕚',j:'𝕛',k:'𝕜',l:'𝕝',m:'𝕞',
+    n:'𝕟',o:'𝕠',p:'𝕡',q:'𝕢',r:'𝕣',s:'𝕤',t:'𝕥',u:'𝕦',v:'𝕧',w:'𝕨',x:'𝕩',y:'𝕪',z:'𝕫',
+    A:'𝔸',B:'𝔹',C:'ℂ',D:'𝔻',E:'𝔼',F:'𝔽',G:'𝔾',H:'ℍ',I:'𝕀',J:'𝕁',K:'𝕂',L:'𝕃',M:'𝕄',
+    N:'ℕ',O:'𝕆',P:'ℙ',Q:'ℚ',R:'ℝ',S:'𝕊',T:'𝕋',U:'𝕌',V:'𝕍',W:'𝕎',X:'𝕏',Y:'𝕐',Z:'ℤ',
+    '0':'𝟘','1':'𝟙','2':'𝟚','3':'𝟛','4':'𝟜','5':'𝟝','6':'𝟞','7':'𝟟','8':'𝟠','9':'𝟡'
+  },
+  script: {
+    a:'𝓪',b:'𝓫',c:'𝓬',d:'𝓭',e:'𝓮',f:'𝓯',g:'𝓰',h:'𝓱',i:'𝓲',j:'𝓳',k:'𝓴',l:'𝓵',m:'𝓶',
+    n:'𝓷',o:'𝓸',p:'𝓹',q:'𝓺',r:'𝓻',s:'𝓼',t:'𝓽',u:'𝓾',v:'𝓿',w:'𝔀',x:'𝔁',y:'𝔂',z:'𝔃',
+    A:'𝓐',B:'𝓑',C:'𝓒',D:'𝓓',E:'𝓔',F:'𝓕',G:'𝓖',H:'𝓗',I:'𝓘',J:'𝓙',K:'𝓚',L:'𝓛',M:'𝓜',
+    N:'𝓝',O:'𝓞',P:'𝓟',Q:'𝓠',R:'𝓡',S:'𝓢',T:'𝓣',U:'𝓤',V:'𝓥',W:'𝓦',X:'𝓧',Y:'𝓨',Z:'𝓩'
+  },
+  tiny: {
+    a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',
+    n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ',
+    A:'ᴀ',B:'ʙ',C:'ᴄ',D:'ᴅ',E:'ᴇ',F:'ғ',G:'ɢ',H:'ʜ',I:'ɪ',J:'ᴊ',K:'ᴋ',L:'ʟ',M:'ᴍ',
+    N:'ɴ',O:'ᴏ',P:'ᴘ',Q:'ǫ',R:'ʀ',S:'s',T:'ᴛ',U:'ᴜ',V:'ᴠ',W:'ᴡ',X:'x',Y:'ʏ',Z:'ᴢ'
+  }
+};
+const FONT_NAMES = Object.keys(FONT_MAPS);
 
-  const sec = (icon, title, cmds) => `╭─ ${icon} *${title}*\n` + cmds.map(c => '│ ' + c).join('\n') + '\n╰─────────────\n';
-  m += sec('📥', 'DOWNLOADS', [
-    p + 'play / song / video / yt',
-    p + 'tiktok / ig / lyrics <song>'
+function applyFont(text, style) {
+  if (!text || typeof text !== 'string') return text;
+  const map = FONT_MAPS[style];
+  if (!map) return text;
+  let out = '';
+  for (const ch of text) out += map[ch] || ch;
+  return out;
+}
+
+function styleReplyText(text) {
+  // config.FONT = normal | bold | mono | italic | double | script | tiny | random
+  let style = String(config.FONT || 'bold').toLowerCase();
+  if (style === 'random' || style === 'auto') {
+    const pool = FONT_NAMES.filter(n => n !== 'normal');
+    style = pool[Math.floor(Math.random() * pool.length)];
+  }
+  if (style === 'off' || style === 'normal') return text;
+  return applyFont(text, style);
+}
+
+// ============ EXPIRY ============
+function getExpiryInfo() {
+  // config.EXPIRY = '2026-12-31' or config.BOT_EXPIRE_DAYS = 30 (from first run / now)
+  const raw = config.EXPIRY || config.EXPIRE || config.BOT_EXPIRY || '';
+  if (!raw) return 'Unlimited';
+  try {
+    const end = new Date(raw);
+    if (isNaN(end.getTime())) return String(raw);
+    const now = new Date();
+    const diff = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+    if (diff < 0) return '⛔ Expired';
+    if (diff === 0) return '⚠ Ends today';
+    return `${diff} day${diff === 1 ? '' : 's'} left`;
+  } catch {
+    return String(raw);
+  }
+}
+
+// ============ MENU (monospace command list, compact) ============
+function buildMainMenu(pushName, userCount) {
+  const p = config.PREFIX || '.';
+  const exp = getExpiryInfo();
+
+  // Header (normal + bold)
+  let m = '';
+  m += `💀 *${config.BOT_NAME}*\n`;
+  m += `👋 ${pushName || 'User'}  ·  👥 ${userCount || 0}  ·  ⏳ ${exp}\n`;
+  m += `⚡ Prefix: *${p}*\n\n`;
+
+  // Commands in WhatsApp monospace (```) — looks like Roboto Mono / fixed-width
+  const block = (title, lines) => {
+    return `*${title}*\n\`\`\`\n${lines.map(c => p + c).join('\n')}\n\`\`\`\n`;
+  };
+
+  m += block('📥 DOWNLOADS', [
+    'play <song>',
+    'song <name>',
+    'video <url/name>',
+    'yt <url/name>',
+    'tiktok <url>',
+    'ig <url>',
+    'lyrics <song>'
   ]);
-  m += sec('🎨', 'STICKER', [
-    p + 'sticker / s / toimg / attp'
+  m += block('🎨 STICKER', [
+    'sticker  (reply media)',
+    's  (reply media)',
+    'toimg  (reply sticker)',
+    'vv  (viewonce → owner PM)'
   ]);
-  m += sec('🤖', 'AI', [
-    p + 'gpt / ai / ask'
+  m += block('🤖 AI', [
+    'gpt <question>',
+    'ai <question>',
+    'ask <question>'
   ]);
-  m += sec('👥', 'ADMIN', [
-    p + 'promote / demote / kick / warn',
-    p + 'mute / unmute / tagall / hidetag',
-    p + 'antilink / antistatusmention',
-    p + 'welcome / goodbye / grouplink / left'
+  m += block('👥 ADMIN', [
+    'promote @user',
+    'demote @user',
+    'kick @user',
+    'warn @user',
+    'mute',
+    'unmute',
+    'tagall',
+    'hidetag <text>',
+    'tagadmins',
+    'antilink on/off',
+    'antistatusmention on/off',
+    'grouplink',
+    'groupinfo',
+    'approve',
+    'left'
   ]);
-  m += sec('👑', 'OWNER', [
-    p + 'mode / prefix / settings / users',
-    p + 'broadcast / block / unblock',
-    p + 'autoview / autolike / autoreact',
-    p + 'antidelete / antiedit / antiviewonce',
-    p + 'presence <typing|recording|online|offline>'
+  m += block('👑 OWNER', [
+    'mode public/private',
+    'prefix <symbol>',
+    'settings',
+    'users',
+    'broadcast <text>',
+    'block @user',
+    'unblock @user',
+    'autoview on/off',
+    'autolike on/off',
+    'autoreact on/off',
+    'autoread on/off',
+    'font bold|mono|italic|random',
+    'antidelete off/pm/chat',
+    'antiedit off/pm/chat',
+    'antiviewonce off/pm/chat',
+    'anticall on/off',
+    'welcome on/off',
+    'goodbye on/off',
+    'presence typing|recording|online|offline',
+    'setbotname <name>'
   ]);
-  m += sec('🖋️', 'TEXTMAKER', [
-    p + 'neon / fire / glitch / ice / matrix',
-    p + 'thunder / devil / sand / metallic',
-    p + 'blackpink / light / hacker / luxury'
+  m += block('🖋️ TEXTMAKER', [
+    'neon <text>',
+    'fire <text>',
+    'glitch <text>',
+    'ice <text>',
+    'matrix <text>',
+    'thunder <text>',
+    'devil <text>',
+    'sand <text>',
+    'metallic <text>',
+    'blackpink <text>',
+    'light <text>',
+    'hacker <text>',
+    'luxury <text>'
   ]);
-  m += sec('🎭', 'FUN', [
-    p + 'joke / quote / dice / 8ball / coinflip'
+  m += block('🎭 FUN', [
+    'joke',
+    'quote',
+    'dice',
+    '8ball',
+    'coinflip'
   ]);
-  m += sec('🔧', 'UTILITY', [
-    p + 'lyrics / translate / calc / weather / ping'
+  m += block('🔧 UTILITY', [
+    'ping',
+    'alive',
+    'calc <expr>',
+    'weather <city>',
+    'owner'
   ]);
-  m += '〽️ *Made by Confronter* ©' + new Date().getFullYear();
+
+  m += `〽️ *Made by Confronter* ©${new Date().getFullYear()}`;
   return m;
 }
 
 // ============ SEND MENU (handles image/video from any URL) ============
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  const menuText = buildMainMenu(pushName, userCount);
-  const caption = menuText + buildFooter();
+  // Menu already includes credit line — no extra footer dash/spacing
+  const caption = buildMainMenu(pushName, userCount);
   const mediaUrl = config.MENU_MEDIA;
 
   if (!mediaUrl) {
-    // No media configured — send plain text menu
     await sock.sendMessage(jid, { text: caption });
     return;
   }
@@ -172,7 +316,6 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   const isGif = url.includes('.gif');
   const isVideo = isGif || url.includes('.mp4') || url.includes('.mkv') || url.includes('.mov') || url.includes('.webm') || url.includes('video');
 
-  // Fetch as buffer first (catbox/telegraph/imgur all work) — the send never fails
   try {
     const buffer = await fetchBuffer(mediaUrl, 60000);
     if (isVideo) {
@@ -187,7 +330,6 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
     console.log('Menu media fetch failed, falling back to URL:', e.message);
   }
 
-  // Fallback: send by URL (WhatsApp server fetches it)
   try {
     if (isVideo) {
       await sock.sendMessage(jid, { video: { url: mediaUrl }, caption, mimetype: 'video/mp4', gifPlayback: isGif });
@@ -203,9 +345,37 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
 // ============ START MESSAGE ============
 function buildStartMessage() {
   const p = config.PREFIX || '.';
-  return `💀 *${config.BOT_NAME}* is online\n` +
-         `⚡ Prefix: *${p}*  •  🌐 Mode: *${config.MODE}*\n` +
-         `👑 By: *Confronter*`;
+  const on = v => (v === true || v === 'on' || v === 'pm' || v === 'chat') ? '✅' : '❌';
+  const val = (v, fallback = '—') => (v === undefined || v === null || v === '') ? fallback : String(v);
+  const exp = typeof getExpiryInfo === 'function' ? getExpiryInfo() : 'Unlimited';
+  const line = '──────────────';
+
+  let m = '';
+  m += `╭${line}╮\n`;
+  m += `│ 💀 *${config.BOT_NAME}*\n`;
+  m += `│ ✅ *ONLINE*\n`;
+  m += `├${line}┤\n`;
+  m += `│ ⚡ Prefix    : *${p}*\n`;
+  m += `│ 🌐 Mode      : *${val(config.MODE, 'public')}*\n`;
+  m += `│ 👤 Owner     : *${val(config.OWNER_NUMBER)}*\n`;
+  m += `│ ⏳ Expiry    : *${exp}*\n`;
+  m += `├${line}┤\n`;
+  m += `│ 👁 AutoView  : ${on(config.AUTO_VIEW_STATUS)}\n`;
+  m += `│ ❤️ AutoLike  : ${on(config.AUTO_LIKE_STATUS)}\n`;
+  m += `│ 📖 AutoRead  : ${on(config.AUTO_READ)}\n`;
+  m += `│ ⚡ AutoReact : ${on(config.AUTO_REACT)}\n`;
+  m += `│ 🗑 AntiDelete: *${val(config.ANTI_DELETE, 'off')}*\n`;
+  m += `│ ✏️ AntiEdit  : *${val(config.ANTI_EDIT, 'off')}*\n`;
+  m += `│ 🔓 ViewOnce  : *${val(config.ANTI_VIEW_ONCE, 'off')}*\n`;
+  m += `│ 📞 AntiCall  : ${on(config.ANTI_CALL)}\n`;
+  m += `│ 🔗 Antilink  : ${on(config.ANTILINK)}\n`;
+  m += `│ 👋 Welcome   : ${on(config.WELCOME)}\n`;
+  m += `│ 🚪 Goodbye   : ${on(config.GOODBYE)}\n`;
+  m += `├${line}┤\n`;
+  m += `│ 👑 By *Confronter*\n`;
+  m += `│ 💬 Type *${p}menu* for commands\n`;
+  m += `╰${line}╯`;
+  return m;
 }
 
 // ============ AUTH ============
@@ -342,6 +512,10 @@ async function forwardDelete(key, cached) {
 // ============ MAIN BOT ============
 async function startBot() {
   await ensureData();
+  // Ensure AUTO_READ exists (default OFF so blue ticks don't run unless you turn them on)
+  if (typeof config.AUTO_READ === 'undefined') config.AUTO_READ = false;
+  if (typeof config.FONT === 'undefined') config.FONT = 'bold'; // auto fancy font on replies
+
   console.log('\n╔══════════════════════════════════════╗');
   console.log(`║     ${config.BOT_NAME.padEnd(28)} ║`);
   console.log('╚══════════════════════════════════════╝\n');
@@ -393,33 +567,30 @@ async function startBot() {
       console.log(`👤 Owner     : ${config.OWNER_NUMBER}`);
       console.log(`👁  AutoView  : ${config.AUTO_VIEW_STATUS}`);
       console.log(`❤️  AutoLike  : ${config.AUTO_LIKE_STATUS}`);
+      console.log(`📖 AutoRead  : ${config.AUTO_READ}`);
       console.log(`🗑  AntiDelete: ${config.ANTI_DELETE}`);
       console.log(`✏️  AntiEdit  : ${config.ANTI_EDIT}`);
       console.log(`🔓 ViewOnce  : ${config.ANTI_VIEW_ONCE}`);
       console.log(`🌐 Mode      : ${config.MODE}\n`);
 
-      // Set presence
+      // Presence — non-blocking
       try {
         const pm = presenceMap(config.PRESENCE);
-        if (pm) await sock.sendPresenceUpdate(pm);
+        if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
       } catch {}
 
-      // Send start message + menu to owner (async, doesn't block command handling)
-      (async () => {
+      // Start status box only — no auto menu (user runs .menu when needed)
+      setImmediate(async () => {
         try {
           const me = sock.user?.id;
           if (!me) return;
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
-
-          // 1) Quick start banner
           await sock.sendMessage(jid, { text: buildStartMessage() });
-
-          // 2) Full menu (with media if configured)
-          const users = await loadUsers();
-          await sendMenuWithMedia(jid, config.OWNER_NAME || 'Confronter', users.length);
-          console.log('📩 Start message + menu sent to owner');
-        } catch (e) { console.log('start/menu send:', e.message); }
-      })();
+          console.log('📩 Start message sent');
+        } catch (e) {
+          console.log('start send:', e.message);
+        }
+      });
     }
     if (connection === 'close') {
       const code = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error.output?.statusCode : 0;
@@ -490,8 +661,8 @@ async function startBot() {
       const sender = m.key.participant || m.key.remoteJid;
       const isMe = m.key.fromMe;
 
-      // Blue ticks (fire and forget, doesn't block)
-      if (!isMe && from && from !== 'status@broadcast') {
+      // Blue ticks — only when AUTO_READ is enabled (default OFF)
+      if (config.AUTO_READ && !isMe && from && from !== 'status@broadcast') {
         sock.readMessages([m.key]).catch(() => {});
       }
 
@@ -613,13 +784,25 @@ async function startBot() {
         try {
           const foot = buildFooter();
           if (typeof content === 'string') {
-            const b = String(content).trim();
+            let b = String(content).trim();
             if (!b) return;
-            return await sock.sendMessage(from, { text: b + foot });
+            // Auto fancy font on every text reply
+            b = styleReplyText(b);
+            const hasCredit = /confronter|powered by|ᴄᴏɴғʀᴏɴᴛᴇʀ/i.test(b);
+            return await sock.sendMessage(from, { text: hasCredit ? b : b + foot });
           }
           const payload = { ...content };
-          if (payload.text != null && !String(payload.text).trim()) delete payload.text;
-          if (payload.caption != null && foot && !String(payload.caption).includes('Powered')) payload.caption = String(payload.caption) + foot;
+          if (payload.text != null) {
+            const t = String(payload.text).trim();
+            if (!t) delete payload.text;
+            else payload.text = styleReplyText(t);
+          }
+          if (payload.caption != null) {
+            let cap = String(payload.caption);
+            cap = styleReplyText(cap);
+            if (foot && !/confronter|powered by/i.test(cap)) cap = cap.trimEnd() + foot;
+            payload.caption = cap;
+          }
           if (!payload.text && !payload.image && !payload.video && !payload.audio && !payload.document && !payload.sticker && !payload.react) return;
           return await sock.sendMessage(from, payload);
         } catch (e) { console.log('reply:', e.message); }
@@ -681,12 +864,22 @@ async function startBot() {
 
       // ========== PLAY ==========
       if (['play', 'song', 'ytmp3', 'music'].includes(cmd)) {
-        if (!text) { await reply(`Usage: ${prefix}play <song>`); return; }
+        if (!text) { await reply(`Usage: ${prefix}play <song name>`); return; }
         await reply('⏳ Searching & downloading…');
-        const data = await downloadYouTube(text, true);
-        if (!data?.buffer) { await reply('❌ Could not find that track.'); return; }
+        // Clean common typos / extra spaces
+        const q = text.replace(/\s+/g, ' ').trim();
+        let data = await downloadYouTube(q, true);
+        // One retry with simplified query (drop very short words)
+        if (!data?.buffer && q.split(' ').length > 2) {
+          const simple = q.split(' ').filter(w => w.length > 2).join(' ');
+          if (simple && simple !== q) data = await downloadYouTube(simple, true);
+        }
+        if (!data?.buffer) {
+          await reply('❌ Could not find that track.\nTry a clearer name or paste a YouTube link.');
+          return;
+        }
         const ok = await sendAsMp3(sock, from, data);
-        if (!ok) await reply('❌ Failed to send audio.');
+        if (!ok) await reply('❌ Downloaded but failed to send audio.');
         return;
       }
 
@@ -694,10 +887,18 @@ async function startBot() {
       if (['yt', 'youtube', 'ytmp4', 'video', 'ytv'].includes(cmd)) {
         if (!text) { await reply(`Usage: ${prefix}video <url or search>`); return; }
         await reply('⏳ Downloading video…');
-        const data = await downloadYouTube(text, false);
-        if (!data?.buffer) { await reply('❌ Could not download video.'); return; }
+        const q = text.replace(/\s+/g, ' ').trim();
+        let data = await downloadYouTube(q, false);
+        if (!data?.buffer && q.split(' ').length > 2) {
+          const simple = q.split(' ').filter(w => w.length > 2).join(' ');
+          if (simple && simple !== q) data = await downloadYouTube(simple, false);
+        }
+        if (!data?.buffer) {
+          await reply('❌ Could not download video.\nTry a direct YouTube link.');
+          return;
+        }
         const ok = await sendAsVideo(sock, from, data);
-        if (!ok) await reply('❌ Failed to send video.');
+        if (!ok) await reply('❌ Downloaded but failed to send video.');
         return;
       }
 
@@ -737,12 +938,26 @@ async function startBot() {
       // ========== TEXTMAKER ==========
       const fx = ['neon','fire','glitch','ice','matrix','thunder','devil','sand','blackpink','metallic','light','hacker','paper','luxury','fire2','glow','gold','rainbow'];
       if (fx.includes(cmd)) {
-        const q = text || m.pushName || 'Deadpool V7';
+        const q = (text || m.pushName || 'Deadpool').slice(0, 40);
         await reply(`🎨 Creating *${cmd}*…`);
-        const buf = await generateTextImage(cmd, q);
-        if (!buf) { await reply('❌ Effect failed, try again.'); return; }
-        try { await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` }); }
-        catch { await reply('❌ Send failed.'); }
+        let buf = null;
+        try {
+          buf = await Promise.race([
+            generateTextImage(cmd, q),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000))
+          ]);
+        } catch (e) {
+          console.log('textmaker:', e.message);
+        }
+        if (!buf || !Buffer.isBuffer(buf) || buf.length < 500) {
+          await reply('❌ Effect failed. Try again or shorter text.');
+          return;
+        }
+        try {
+          await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` });
+        } catch {
+          await reply('❌ Send failed.');
+        }
         return;
       }
 
@@ -772,7 +987,7 @@ async function startBot() {
         return;
       }
 
-      // ========== .vv (viewonce reveal → PM) ==========
+      // ========== .vv (viewonce reveal → ALWAYS owner PM only, never shown in chat) ==========
       if (cmd === 'vv' || cmd === 'viewonce' || cmd === 'rvo') {
         try {
           const ctx = m.message?.extendedTextMessage?.contextInfo;
@@ -781,15 +996,32 @@ async function startBot() {
           if (!vo && quoted && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage)) vo = quoted;
           if (!vo) vo = m.message?.viewOnceMessage?.message || m.message?.viewOnceMessageV2?.message;
           if (!vo) { await reply(`Reply to a view-once with ${prefix}vv`); return; }
+
+          // Always send only to owner PM — never display media in the chat where .vv was used
+          const ownerJid = getOwnerJid();
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-          const target = isOwner(sender) ? (me || from) : sender;
+          const target = ownerJid || me;
+          if (!target) { await reply('❌ Owner not configured.'); return; }
+
           const dl = await downloadMediaMsg(vo);
           if (!dl?.buffer) { await reply('❌ Could not download view-once.'); return; }
-          if (dl.type === 'imageMessage') await sock.sendMessage(target, { image: dl.buffer });
-          else if (dl.type === 'videoMessage') await sock.sendMessage(target, { video: dl.buffer, mimetype: 'video/mp4' });
-          else if (dl.type === 'audioMessage') await sock.sendMessage(target, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: !!vo.audioMessage?.ptt });
-          else await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin' });
-          if (target !== from) await reply('✅ Sent to your PM');
+
+          const phone = jidToPhone(sender, m);
+          const head = `🔓 *ViewOnce*\n• From: +${phone}\n• Chat: ${isGroup(from) ? 'Group' : 'Private'}`;
+
+          if (dl.type === 'imageMessage') {
+            await sock.sendMessage(target, { image: dl.buffer, caption: head });
+          } else if (dl.type === 'videoMessage') {
+            await sock.sendMessage(target, { video: dl.buffer, mimetype: 'video/mp4', caption: head });
+          } else if (dl.type === 'audioMessage') {
+            await sock.sendMessage(target, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: !!vo.audioMessage?.ptt });
+            await sock.sendMessage(target, { text: head });
+          } else {
+            await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin', caption: head });
+          }
+
+          // Only a short confirmation in the original chat — media never appears here
+          await reply('✅ View-once sent to owner PM');
         } catch (e) { await reply('❌ VV failed: ' + e.message); }
         return;
       }
@@ -846,9 +1078,9 @@ async function startBot() {
       }
 
       // ========== OWNER CMDS ==========
-      const ownerCmds = ['mode','prefix','settings','autoview','autolike','autoreact','anticall',
+      const ownerCmds = ['mode','prefix','settings','autoview','autolike','autoreact','autoread','anticall',
                          'antidelete','antiedit','antiviewonce','broadcast','bc','users',
-                         'welcome','goodbye','setbotname','startmsg'];
+                         'welcome','goodbye','setbotname','startmsg','font'];
       if (ownerCmds.includes(cmd) && !isOwner(sender) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
@@ -860,6 +1092,24 @@ async function startBot() {
         if (!args[0]) { await reply(`Current: *${config.PREFIX}*`); return; }
         config.PREFIX = args[0].slice(0, 3);
         await reply(`✅ Prefix → *${config.PREFIX}*`);
+        return;
+      }
+      // ========== FONT (auto style on all replies) ==========
+      if (cmd === 'font') {
+        const v = String(args[0] || '').toLowerCase();
+        const allowed = ['normal', 'bold', 'mono', 'italic', 'double', 'script', 'tiny', 'random', 'off'];
+        if (!v) {
+          await reply(`Font: *${config.FONT || 'bold'}*\nOptions: ${allowed.join(', ')}\nUsage: ${prefix}font bold`);
+          return;
+        }
+        if (!allowed.includes(v)) {
+          await reply(`Invalid. Use: ${allowed.join(', ')}`);
+          return;
+        }
+        config.FONT = v === 'off' ? 'normal' : v;
+        // Preview without double-styling confusion
+        const sample = applyFont('Hello Confronter 123', config.FONT === 'random' ? 'bold' : config.FONT);
+        await reply(`✅ Font → *${config.FONT}*\nPreview: ${sample}`);
         return;
       }
       if (cmd === 'autoview') {
@@ -878,6 +1128,13 @@ async function startBot() {
         if (args[0] === 'on') { config.AUTO_REACT = true; await reply('✅ AutoReact ON'); }
         else if (args[0] === 'off') { config.AUTO_REACT = false; await reply('❌ AutoReact OFF'); }
         else await reply(`AutoReact: *${config.AUTO_REACT ? 'ON' : 'OFF'}*`);
+        return;
+      }
+      // ========== AUTOREAD (blue ticks) ==========
+      if (cmd === 'autoread') {
+        if (args[0] === 'on') { config.AUTO_READ = true; await reply('✅ AutoRead (blue ticks) ON'); }
+        else if (args[0] === 'off') { config.AUTO_READ = false; await reply('❌ AutoRead (blue ticks) OFF'); }
+        else await reply(`AutoRead: *${config.AUTO_READ ? 'ON' : 'OFF'}*\nUsage: ${prefix}autoread on/off`);
         return;
       }
       if (cmd === 'anticall') {
@@ -928,6 +1185,8 @@ async function startBot() {
           `• AutoView: ${on(config.AUTO_VIEW_STATUS)}\n` +
           `• AutoLike: ${on(config.AUTO_LIKE_STATUS)}\n` +
           `• AutoReact: ${on(config.AUTO_REACT)}\n` +
+          `• AutoRead: ${on(config.AUTO_READ)}\n` +
+          `• Font: ${config.FONT || 'bold'}\n` +
           `• AntiDelete: ${config.ANTI_DELETE}\n` +
           `• AntiEdit: ${config.ANTI_EDIT}\n` +
           `• AntiViewOnce: ${config.ANTI_VIEW_ONCE}\n` +
