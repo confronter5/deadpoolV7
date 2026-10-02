@@ -53,6 +53,7 @@ function cacheLid(key, msg) {
     }
   } catch {}
 }
+// Best-effort: real phone for a jid (uses cache built from messages + metadata)
 function jidToPhone(jid, msg) {
   if (!jid) return 'hidden';
   const raw = String(jid);
@@ -64,6 +65,17 @@ function jidToPhone(jid, msg) {
   if (raw.includes('@lid')) return _lidMap.get(raw.split('@')[0]) || 'hidden';
   const n = raw.split('@')[0].split(':')[0];
   return /^\d{6,15}$/.test(n) ? n : 'hidden';
+}
+// Display name for welcome/goodbye mentions — never shows raw LID numbers
+function mentionLabel(jid) {
+  if (!jid) return 'someone';
+  const raw = String(jid);
+  if (raw.includes('@lid')) {
+    const ph = _lidMap.get(raw.split('@')[0]);
+    return ph ? '@' + ph : 'someone';
+  }
+  const n = raw.split('@')[0].split(':')[0];
+  return /^\d{6,15}$/.test(n) ? '@' + n : 'someone';
 }
 
 // ============ DATA ============
@@ -104,15 +116,12 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 function buildFooter() {
   const y = new Date().getFullYear();
   const p = (config.POWERED_BY || 'Powered by Confronter').replace(/©?\d{4}/g, '').trim();
-  // Compact footer — no dash line, minimal spacing
   return `\n_${p} ©${y}_`;
 }
 
-// ============ FANCY FONTS (Unicode) — auto style on every reply ============
-// WhatsApp can't load real Roboto; these maps look like different fonts.
+// ============ FANCY FONTS (Unicode) ============
 const FONT_MAPS = {
   normal: null,
-  // Sans upright (like clean web text — non-slanting)
   sans: {
     a:'𝖺',b:'𝖻',c:'𝖼',d:'𝖽',e:'𝖾',f:'𝖿',g:'𝗀',h:'𝗁',i:'𝗂',j:'𝗃',k:'𝗄',l:'𝗅',m:'𝗆',
     n:'𝗇',o:'𝗈',p:'𝗉',q:'𝗊',r:'𝗋',s:'𝗌',t:'𝗍',u:'𝗎',v:'𝗏',w:'𝗐',x:'𝗑',y:'𝗒',z:'𝗓',
@@ -120,14 +129,12 @@ const FONT_MAPS = {
     N:'𝖭',O:'𝖮',P:'𝖯',Q:'𝖰',R:'𝖱',S:'𝖲',T:'𝖳',U:'𝖴',V:'𝖵',W:'𝖶',X:'𝖷',Y:'𝖸',Z:'𝖹',
     '0':'𝟢','1':'𝟣','2':'𝟤','3':'𝟥','4':'𝟦','5':'𝟧','6':'𝟨','7':'𝟩','8':'𝟪','9':'𝟫'
   },
-  // Sans slanted (italic sans — the tilting one)
   sansitalic: {
     a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',
     n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'𝘶',v:'𝘷',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻',
     A:'𝘈',B:'𝘉',C:'𝘊',D:'𝘋',E:'𝘌',F:'𝘍',G:'𝘎',H:'𝘏',I:'𝘐',J:'𝘑',K:'𝘒',L:'𝘓',M:'𝘔',
     N:'𝘕',O:'𝘖',P:'𝘗',Q:'𝘘',R:'𝘙',S:'𝘚',T:'𝘛',U:'𝘜',V:'𝘝',W:'𝘞',X:'𝘟',Y:'𝘠',Z:'𝘡'
   },
-  // Sans bold (heavy upright)
   bold: {
     a:'𝗮',b:'𝗯',c:'𝗰',d:'𝗱',e:'𝗲',f:'𝗳',g:'𝗴',h:'𝗵',i:'𝗶',j:'𝗷',k:'𝗸',l:'𝗹',m:'𝗺',
     n:'𝗻',o:'𝗼',p:'𝗽',q:'𝗾',r:'𝗿',s:'𝘀',t:'𝘁',u:'𝘂',v:'𝘃',w:'𝘄',x:'𝘅',y:'𝘆',z:'𝘇',
@@ -135,7 +142,6 @@ const FONT_MAPS = {
     N:'𝗡',O:'𝗢',P:'𝗣',Q:'𝗤',R:'𝗥',S:'𝗦',T:'𝗧',U:'𝗨',V:'𝗩',W:'𝗪',X:'𝗫',Y:'𝗬',Z:'𝗭',
     '0':'𝟬','1':'𝟭','2':'𝟮','3':'𝟯','4':'𝟰','5':'𝟱','6':'𝟲','7':'𝟳','8':'𝟴','9':'𝟵'
   },
-  // Sans bold italic (heavy + slant)
   bolditalic: {
     a:'𝙖',b:'𝙗',c:'𝙘',d:'𝙙',e:'𝙚',f:'𝙛',g:'𝙜',h:'𝙝',i:'𝙞',j:'𝙟',k:'𝙠',l:'𝙡',m:'𝙢',
     n:'𝙣',o:'𝙤',p:'𝙥',q:'𝙦',r:'𝙧',s:'𝙨',t:'𝙩',u:'𝙪',v:'𝙫',w:'𝙬',x:'𝙭',y:'𝙮',z:'𝙯',
@@ -188,7 +194,6 @@ function applyFont(text, style) {
 
 function styleReplyText(text) {
   try {
-    // config.FONT = sans | sansitalic | bold | bolditalic | mono | italic | double | script | tiny | random
     let style = String(config.FONT || 'sans').toLowerCase();
     if (style === 'random' || style === 'auto') {
       const pool = FONT_NAMES.filter(n => n !== 'normal');
@@ -202,11 +207,9 @@ function styleReplyText(text) {
 }
 
 // ============ EXPIRY ============
-// Supports: BOT_EXPIRY_DATE (YYYY-MM-DD), BOT_EXPIRY_DAYS + BOT_ACTIVATED_AT, or legacy EXPIRY
 function getExpiryInfo() {
   const now = new Date();
   try {
-    // Hard end date
     const dateStr = config.BOT_EXPIRY_DATE || config.EXPIRY || config.EXPIRE || config.BOT_EXPIRY || '';
     if (dateStr) {
       const end = new Date(dateStr);
@@ -217,7 +220,6 @@ function getExpiryInfo() {
         return `${diff} day${diff === 1 ? '' : 's'} left`;
       }
     }
-    // Days from activation
     const days = parseInt(config.BOT_EXPIRY_DAYS || '0', 10) || 0;
     if (days > 0) {
       let activated = config.BOT_ACTIVATED_AT ? new Date(config.BOT_ACTIVATED_AT) : null;
@@ -231,24 +233,18 @@ function getExpiryInfo() {
   } catch {}
   return 'Unlimited';
 }
+function isBotExpired() { return getExpiryInfo() === '⛔ Expired'; }
 
-function isBotExpired() {
-  const info = getExpiryInfo();
-  return info === '⛔ Expired';
-}
-
-// ============ MENU (monospace command list, compact) ============
+// ============ MENU ============
 function buildMainMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
 
-  // Header (normal + bold)
   let m = '';
   m += `💀 *${config.BOT_NAME}*\n`;
   m += `👋 ${pushName || 'User'}  ·  👥 ${userCount || 0}  ·  ⏳ ${exp}\n`;
   m += `⚡ Prefix: *${p}*\n\n`;
 
-  // Commands in WhatsApp monospace (```) — looks like Roboto Mono / fixed-width
   const block = (title, lines) => {
     return `*${title}*\n\`\`\`\n${lines.map(c => p + c).join('\n')}\n\`\`\`\n`;
   };
@@ -302,6 +298,8 @@ function buildMainMenu(pushName, userCount) {
     'autolike on/off',
     'autoreact on/off',
     'autoread on/off',
+    'autotyping on/off',
+    'autorecording on/off',
     'font sans|sansitalic|bold|random',
     'antidelete off/pm/chat',
     'antiedit off/pm/chat',
@@ -310,77 +308,39 @@ function buildMainMenu(pushName, userCount) {
     'welcome on/off',
     'goodbye on/off',
     'presence typing|recording|online|offline',
-    'setbotname <name>'
+    'setbotname <name>',
+    'startmsg'
   ]);
   m += block('🖋️ TEXTMAKER', [
-    'neon <text>',
-    'fire <text>',
-    'glitch <text>',
-    'ice <text>',
-    'matrix <text>',
-    'thunder <text>',
-    'devil <text>',
-    'sand <text>',
-    'metallic <text>',
-    'blackpink <text>',
-    'light <text>',
-    'hacker <text>',
-    'luxury <text>'
+    'neon <text>', 'fire <text>', 'glitch <text>', 'ice <text>',
+    'matrix <text>', 'thunder <text>', 'devil <text>', 'sand <text>',
+    'metallic <text>', 'blackpink <text>', 'light <text>',
+    'hacker <text>', 'luxury <text>'
   ]);
-  m += block('🎭 FUN', [
-    'joke',
-    'quote',
-    'dice',
-    '8ball',
-    'coinflip'
-  ]);
-  m += block('🔧 UTILITY', [
-    'ping',
-    'alive',
-    'calc <expr>',
-    'weather <city>',
-    'owner'
-  ]);
+  m += block('🎭 FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip']);
+  m += block('🔧 UTILITY', ['ping', 'alive', 'calc <expr>', 'weather <city>', 'owner']);
 
   m += `〽️ *Made by Confronter* ©${new Date().getFullYear()}`;
   return m;
 }
 
-// ============ SEND MENU (handles image/video from any URL) ============
+// ============ SEND MENU ============
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // Menu already includes credit line — no extra footer dash/spacing
   const caption = buildMainMenu(pushName, userCount);
   const mediaUrl = config.MENU_MEDIA;
-
-  if (!mediaUrl) {
-    await sock.sendMessage(jid, { text: caption });
-    return;
-  }
-
+  if (!mediaUrl) { await sock.sendMessage(jid, { text: caption }); return; }
   const url = String(mediaUrl).toLowerCase();
   const isGif = url.includes('.gif');
   const isVideo = isGif || url.includes('.mp4') || url.includes('.mkv') || url.includes('.mov') || url.includes('.webm') || url.includes('video');
-
   try {
     const buffer = await fetchBuffer(mediaUrl, 60000);
-    if (isVideo) {
-      await sock.sendMessage(jid, {
-        video: buffer, caption, mimetype: 'video/mp4', gifPlayback: isGif
-      });
-    } else {
-      await sock.sendMessage(jid, { image: buffer, caption });
-    }
+    if (isVideo) await sock.sendMessage(jid, { video: buffer, caption, mimetype: 'video/mp4', gifPlayback: isGif });
+    else await sock.sendMessage(jid, { image: buffer, caption });
     return;
-  } catch (e) {
-    console.log('Menu media fetch failed, falling back to URL:', e.message);
-  }
-
+  } catch (e) { console.log('Menu media fetch failed:', e.message); }
   try {
-    if (isVideo) {
-      await sock.sendMessage(jid, { video: { url: mediaUrl }, caption, mimetype: 'video/mp4', gifPlayback: isGif });
-    } else {
-      await sock.sendMessage(jid, { image: { url: mediaUrl }, caption });
-    }
+    if (isVideo) await sock.sendMessage(jid, { video: { url: mediaUrl }, caption, mimetype: 'video/mp4', gifPlayback: isGif });
+    else await sock.sendMessage(jid, { image: { url: mediaUrl }, caption });
   } catch (e) {
     console.log('Menu media URL failed, sending text only:', e.message);
     await sock.sendMessage(jid, { text: caption });
@@ -392,9 +352,8 @@ function buildStartMessage() {
   const p = config.PREFIX || '.';
   const on = v => (v === true || v === 'on' || v === 'pm' || v === 'chat') ? '✅' : '❌';
   const val = (v, fallback = '—') => (v === undefined || v === null || v === '') ? fallback : String(v);
-  const exp = typeof getExpiryInfo === 'function' ? getExpiryInfo() : 'Unlimited';
+  const exp = getExpiryInfo();
   const line = '──────────────';
-
   let m = '';
   m += `╭${line}╮\n`;
   m += `│ 💀 *${config.BOT_NAME}*\n`;
@@ -425,15 +384,20 @@ function buildStartMessage() {
 
 // ============ AUTH ============
 async function loadAuthState() {
+  // IMPORTANT: only inject SESSION creds once (first boot).
+  // Re-writing stale creds over a live session breaks key sync → "Waiting for this message".
   if (config.SESSION && config.SESSION.length > 10) {
-    try {
-      let raw = config.SESSION.trim();
-      if (raw.toLowerCase().startsWith('deadpool~')) raw = raw.slice(raw.indexOf('~') + 1).trim();
-      const creds = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
-      await fs.ensureDir(AUTH_DIR);
-      await fs.writeJson(path.join(AUTH_DIR, 'creds.json'), creds, { spaces: 2 });
-      console.log('✅ Session loaded');
-    } catch (e) { console.error('❌ Invalid SESSION:', e.message); }
+    const credsPath = path.join(AUTH_DIR, 'creds.json');
+    if (!(await fs.pathExists(credsPath))) {
+      try {
+        let raw = config.SESSION.trim();
+        if (raw.toLowerCase().startsWith('deadpool~')) raw = raw.slice(raw.indexOf('~') + 1).trim();
+        const creds = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
+        await fs.ensureDir(AUTH_DIR);
+        await fs.writeJson(credsPath, creds, { spaces: 2 });
+        console.log('✅ Session loaded (first boot only)');
+      } catch (e) { console.error('❌ Invalid SESSION:', e.message); }
+    }
   }
   return useMultiFileAuthState(AUTH_DIR);
 }
@@ -557,9 +521,8 @@ async function forwardDelete(key, cached) {
 // ============ MAIN BOT ============
 async function startBot() {
   await ensureData();
-  // Ensure AUTO_READ exists (default OFF so blue ticks don't run unless you turn them on)
   if (typeof config.AUTO_READ === 'undefined') config.AUTO_READ = false;
-  if (typeof config.FONT === 'undefined') config.FONT = 'sans'; // upright sans (non-slanting)
+  if (typeof config.FONT === 'undefined') config.FONT = 'sans';
 
   console.log('\n╔══════════════════════════════════════╗');
   console.log(`║     ${config.BOT_NAME.padEnd(28)} ║`);
@@ -584,10 +547,12 @@ async function startBot() {
     emitOwnEvents: true,
     fireInitQueries: true,
     msgRetryCounterCache: new NodeCache(),
-    getMessage: async (key) => { const c = msgCache.get(key.id); return c?.message; }
+    getMessage: async (key) => {
+      const c = msgCache.get(key.id);
+      return c?.message || undefined;
+    }
   });
 
-  // Cache outgoing to prevent "Waiting for this message"
   const _origSend = sock.sendMessage.bind(sock);
   sock.sendMessage = async (jid, content, options) => {
     const r = await _origSend(jid, content, options);
@@ -617,14 +582,10 @@ async function startBot() {
       console.log(`✏️  AntiEdit  : ${config.ANTI_EDIT}`);
       console.log(`🔓 ViewOnce  : ${config.ANTI_VIEW_ONCE}`);
       console.log(`🌐 Mode      : ${config.MODE}\n`);
-
-      // Presence — non-blocking
       try {
         const pm = presenceMap(config.PRESENCE);
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
       } catch {}
-
-      // Start status box only — no auto menu (user runs .menu when needed)
       setImmediate(async () => {
         try {
           const me = sock.user?.id;
@@ -632,9 +593,7 @@ async function startBot() {
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
           await sock.sendMessage(jid, { text: buildStartMessage() });
           console.log('📩 Start message sent');
-        } catch (e) {
-          console.log('start send:', e.message);
-        }
+        } catch (e) { console.log('start send:', e.message); }
       });
     }
     if (connection === 'close') {
@@ -662,43 +621,40 @@ async function startBot() {
     }
   });
 
-  // ============ WELCOME / GOODBYE ============
+  // ============ WELCOME / GOODBYE (LID → phone labels) ============
   sock.ev.on('group-participants.update', async (u) => {
     try {
       const { id, participants, action } = u;
       const meta = await getMeta(id);
       const gname = meta?.subject || 'Group';
+      // Learn LID→phone mappings from group metadata when available
+      try {
+        for (const p of meta?.participants || []) {
+          if (p.id?.includes('@lid') && p.phoneNumber) _lidMap.set(p.id.split('@')[0], String(p.phoneNumber).split('@')[0]);
+        }
+      } catch {}
       for (const p of participants) {
-        const mention = '@' + p.split('@')[0];
+        const label = mentionLabel(p);
         if (action === 'add' && config.WELCOME) {
-          const raw = config.WELCOME_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: [p] });
+          const raw = config.WELCOME_MSG.replace(/@user/gi, label).replace(/@group/gi, gname);
+          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: label.startsWith('@') ? [p] : [] });
         }
         if ((action === 'remove' || action === 'leave') && config.GOODBYE) {
-          const raw = config.GOODBYE_MSG.replace(/@user/gi, mention).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: [p] });
+          const raw = config.GOODBYE_MSG.replace(/@user/gi, label).replace(/@group/gi, gname);
+          await sock.sendMessage(id, { text: styleReplyText(raw), mentions: label.startsWith('@') ? [p] : [] });
         }
       }
     } catch {}
   });
 
-  // ============ MESSAGES (instant parallel dispatch) ============
-  sock.ev.on('messages.upsert', async (upsert) => {
-    try {
-      const { messages, type } = upsert || {};
-      console.log('UPSERT type:', type, 'count:', (messages && messages.length) || 0);
-      if (!messages || !messages.length) return;
-      // Do NOT filter by type — self-chat / multi-device often use non-notify types
-      for (const m of messages) {
-        if (!m) continue;
-        handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
-      }
-    } catch (e) {
-      console.log('upsert err:', e?.message || e);
+  // ============ MESSAGES ============
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type && type !== 'notify' && type !== 'append') return;
+    for (const m of messages) {
+      handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
     }
   });
 
-  // Unwrap nested message containers (ephemeral, viewOnce, etc.)
   function unwrapMessage(msg) {
     if (!msg) return null;
     let cur = msg;
@@ -732,7 +688,6 @@ async function startBot() {
   async function handleMessage(m) {
     try {
       if (!m?.message || !m?.key) return;
-      // Skip pure protocol noise early (but still handle delete/edit below)
       if (m.key?.id) {
         cacheLid(m.key, m);
         try {
@@ -752,12 +707,10 @@ async function startBot() {
       const sender = m.key.participant || m.key.remoteJid;
       const isMe = !!m.key.fromMe;
 
-      // Blue ticks — only when AUTO_READ is enabled (default OFF)
       if (config.AUTO_READ && !isMe && from && from !== 'status@broadcast') {
         sock.readMessages([m.key]).catch(() => {});
       }
 
-      // ANTI-DELETE
       const proto = m.message?.protocolMessage;
       if (proto && (proto.type === 0 || proto.type === 'REVOKE' || proto.type === 1)) {
         const key = proto.key || m.key;
@@ -766,7 +719,6 @@ async function startBot() {
         return;
       }
 
-      // ANTI-EDIT
       if (proto && (proto.type === 14 || proto.type === 'MESSAGE_EDIT' || proto.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
@@ -841,13 +793,11 @@ async function startBot() {
 
       const body = extractText(m.message);
 
-      // AUTO-REACT
       if (config.AUTO_REACT && !isMe) {
         const isCmd = body && body.startsWith(config.PREFIX || '.');
         if (!isCmd) react(from, m.key, msgReactEmoji());
       }
 
-      // ANTILINK
       if (isGroup(from) && !isMe && (config.ANTILINK || (await getGroup(from, 'antilink')))) {
         if (hasLink(body) && !(await isGroupAdmin(from, sender)) && !isOwner(sender)) {
           try {
@@ -863,10 +813,8 @@ async function startBot() {
       const cleanBody = (body || '').trim();
       const prefix = String(config.PREFIX || '.').trim() || '.';
       if (!cleanBody) return;
-      // Accept prefix with optional invisible chars / zero-width trimmed
       if (!cleanBody.startsWith(prefix)) return;
       if (config.MODE === 'private' && !isOwner(sender) && !isMe) return;
-      // Block non-owners when bot duration expired
       if (typeof isBotExpired === 'function' && isBotExpired() && !isOwner(sender) && !isMe) {
         await sock.sendMessage(from, { text: config.EXPIRY_MSG || '⛔ Bot expired.' }).catch(() => {});
         return;
@@ -887,16 +835,13 @@ async function startBot() {
             try { b = styleReplyText(b); } catch {}
             const hasCredit = /confronter|powered by|ᴄᴏɴғʀᴏɴᴛᴇʀ/i.test(b);
             const finalText = hasCredit ? b : b + foot;
-            const r = await sock.sendMessage(from, { text: finalText });
-            return r;
+            return await sock.sendMessage(from, { text: finalText });
           }
           const payload = { ...content };
           if (payload.text != null) {
             const t = String(payload.text).trim();
             if (!t) delete payload.text;
-            else {
-              try { payload.text = styleReplyText(t); } catch { payload.text = t; }
-            }
+            else { try { payload.text = styleReplyText(t); } catch { payload.text = t; } }
           }
           if (payload.caption != null) {
             let cap = String(payload.caption);
@@ -908,14 +853,11 @@ async function startBot() {
           return await sock.sendMessage(from, payload);
         } catch (e) {
           console.log('reply error:', e?.message || e);
-          // Last resort: plain text without font/footer
           try {
             if (typeof content === 'string' && content.trim()) {
               await sock.sendMessage(from, { text: content.trim() });
             }
-          } catch (e2) {
-            console.log('reply fallback failed:', e2?.message || e2);
-          }
+          } catch (e2) { console.log('reply fallback failed:', e2?.message || e2); }
         }
       };
 
@@ -977,10 +919,8 @@ async function startBot() {
       if (['play', 'song', 'ytmp3', 'music'].includes(cmd)) {
         if (!text) { await reply(`Usage: ${prefix}play <song name>`); return; }
         await reply('⏳ Searching & downloading…');
-        // Clean common typos / extra spaces
         const q = text.replace(/\s+/g, ' ').trim();
         let data = await downloadYouTube(q, true);
-        // One retry with simplified query (drop very short words)
         if (!data?.buffer && q.split(' ').length > 2) {
           const simple = q.split(' ').filter(w => w.length > 2).join(' ');
           if (simple && simple !== q) data = await downloadYouTube(simple, true);
@@ -1055,20 +995,15 @@ async function startBot() {
         try {
           buf = await Promise.race([
             generateTextImage(cmd, q),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000))
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 50000))
           ]);
-        } catch (e) {
-          console.log('textmaker:', e.message);
-        }
+        } catch (e2) { console.log('textmaker:', e2.message); }
         if (!buf || !Buffer.isBuffer(buf) || buf.length < 500) {
           await reply('❌ Effect failed. Try again or shorter text.');
           return;
         }
-        try {
-          await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` });
-        } catch {
-          await reply('❌ Send failed.');
-        }
+        try { await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` }); }
+        catch { await reply('❌ Send failed.'); }
         return;
       }
 
@@ -1098,7 +1033,7 @@ async function startBot() {
         return;
       }
 
-      // ========== .vv (viewonce reveal → ALWAYS owner PM only, never shown in chat) ==========
+      // ========== .vv — silent: media goes to owner PM, only a ✅ react in chat ==========
       if (cmd === 'vv' || cmd === 'viewonce' || cmd === 'rvo') {
         try {
           const ctx = m.message?.extendedTextMessage?.contextInfo;
@@ -1108,7 +1043,6 @@ async function startBot() {
           if (!vo) vo = m.message?.viewOnceMessage?.message || m.message?.viewOnceMessageV2?.message;
           if (!vo) { await reply(`Reply to a view-once with ${prefix}vv`); return; }
 
-          // Always send only to owner PM — never display media in the chat where .vv was used
           const ownerJid = getOwnerJid();
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           const target = ownerJid || me;
@@ -1131,8 +1065,8 @@ async function startBot() {
             await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin', caption: head });
           }
 
-          // Only a short confirmation in the original chat — media never appears here
-          await reply('✅ View-once sent to owner PM');
+          // Silent confirmation — ✅ react only, NO text message in chat
+          react(from, m.key, '✅');
         } catch (e) { await reply('❌ VV failed: ' + e.message); }
         return;
       }
@@ -1160,7 +1094,7 @@ async function startBot() {
       if (cmd === 'calc') {
         if (!text) { await reply(`Usage: ${prefix}calc 2+2*5`); return; }
         try {
-          const safe = text.replace(/[^0-9+\-*/().%\s]/g, '');
+          const safe = text.replace(/[^0-9+\-*/().%\s]/g, '').slice(0, 60);
           const result = Function('"use strict"; return (' + safe + ')')();
           await reply(`🧮 *${safe}* = *${result}*`);
         } catch { await reply('❌ Invalid expression'); }
@@ -1188,6 +1122,24 @@ async function startBot() {
         return;
       }
 
+      // ========== AUTO PRESENCE toggles (owner only) ==========
+      if (cmd === 'autotyping' || cmd === 'autorecording') {
+        if (!isOwner(sender) && !isMe) { await reply(roast('owner')); return; }
+        const want = cmd === 'autotyping' ? 'composing' : 'recording';
+        if (args[0] === 'on') {
+          config.PRESENCE = want;
+          try { await sock.sendPresenceUpdate(want, from); } catch {}
+          await reply(`✅ ${cmd === 'autotyping' ? 'AutoTyping' : 'AutoRecording'} ON (presence → *${want}*)`);
+        } else if (args[0] === 'off') {
+          config.PRESENCE = 'unavailable';
+          try { await sock.sendPresenceUpdate('unavailable', from); } catch {}
+          await reply(`❌ ${cmd === 'autotyping' ? 'AutoTyping' : 'AutoRecording'} OFF`);
+        } else {
+          await reply(`Usage: ${prefix}${cmd} on/off\nCurrent presence: *${config.PRESENCE}*`);
+        }
+        return;
+      }
+
       // ========== OWNER CMDS ==========
       const ownerCmds = ['mode','prefix','settings','autoview','autolike','autoreact','autoread','anticall',
                          'antidelete','antiedit','antiviewonce','broadcast','bc','users',
@@ -1205,18 +1157,11 @@ async function startBot() {
         await reply(`✅ Prefix → *${config.PREFIX}*`);
         return;
       }
-      // ========== FONT (auto style on all replies) ==========
       if (cmd === 'font') {
         const v = String(args[0] || '').toLowerCase();
         const allowed = ['normal', 'sans', 'sansitalic', 'bold', 'bolditalic', 'mono', 'italic', 'double', 'script', 'tiny', 'random', 'off'];
-        if (!v) {
-          await reply(`Font: *${config.FONT || 'sans'}*\nOptions: ${allowed.join(', ')}\nUsage: ${prefix}font sans`);
-          return;
-        }
-        if (!allowed.includes(v)) {
-          await reply(`Invalid. Use: ${allowed.join(', ')}`);
-          return;
-        }
+        if (!v) { await reply(`Font: *${config.FONT || 'sans'}*\nOptions: ${allowed.join(', ')}\nUsage: ${prefix}font sans`); return; }
+        if (!allowed.includes(v)) { await reply(`Invalid. Use: ${allowed.join(', ')}`); return; }
         config.FONT = v === 'off' ? 'normal' : v;
         const sample = applyFont('Hello Confronter 123', config.FONT === 'random' ? 'sans' : config.FONT);
         await reply(`✅ Font → *${config.FONT}*\nPreview: ${sample}`);
@@ -1240,7 +1185,6 @@ async function startBot() {
         else await reply(`AutoReact: *${config.AUTO_REACT ? 'ON' : 'OFF'}*`);
         return;
       }
-      // ========== AUTOREAD (blue ticks) ==========
       if (cmd === 'autoread') {
         if (args[0] === 'on') { config.AUTO_READ = true; await reply('✅ AutoRead (blue ticks) ON'); }
         else if (args[0] === 'off') { config.AUTO_READ = false; await reply('❌ AutoRead (blue ticks) OFF'); }
@@ -1342,6 +1286,7 @@ async function startBot() {
         if (!(await isGroupAdmin(from, sender)) && !isOwner(sender)) { await reply(roast('admin')); return; }
         let users = getMentioned(m);
         if (!users.length) { const q = getQuoted(m); if (q) users = [q]; }
+        if (!users.length && /^\d{6,15}$/.test(dig(text))) users = [dig(text) + '@s.whatsapp.net'];
         if (!users.length) { await reply('Tag or reply to a user.'); return; }
         const action = cmd === 'promote' ? 'promote' : cmd === 'demote' ? 'demote' : 'remove';
         await sock.groupParticipantsUpdate(from, users, action);
@@ -1442,8 +1387,6 @@ async function startBot() {
         catch (e) { await reply('❌ ' + e.message); }
         return;
       }
-
-      // Unknown → silent
     } catch (err) { console.log('Handler:', err.message); }
   }
 
@@ -1451,7 +1394,7 @@ async function startBot() {
   sock.ev.on('messages.update', async (updates) => {
     for (const u of updates) {
       try {
-        const isDel = u.update?.message === null || u.update?.messageStubType === 1 || u.update?.messageStubType === 2 || u.update?.messageStubType === 68;
+        const isDel = u.update?.message === null;
         if (!isDel) continue;
         const key = u.key;
         if (!key?.id) continue;
