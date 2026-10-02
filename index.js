@@ -156,13 +156,56 @@ function buildMainMenu(pushName, userCount) {
   return m;
 }
 
-// ============ COMPACT START MESSAGE ============
+// ============ SEND MENU (handles image/video from any URL) ============
+async function sendMenuWithMedia(jid, pushName, userCount) {
+  const menuText = buildMainMenu(pushName, userCount);
+  const caption = menuText + buildFooter();
+  const mediaUrl = config.MENU_MEDIA;
+
+  if (!mediaUrl) {
+    // No media configured — send plain text menu
+    await sock.sendMessage(jid, { text: caption });
+    return;
+  }
+
+  const url = String(mediaUrl).toLowerCase();
+  const isGif = url.includes('.gif');
+  const isVideo = isGif || url.includes('.mp4') || url.includes('.mkv') || url.includes('.mov') || url.includes('.webm') || url.includes('video');
+
+  // Fetch as buffer first (catbox/telegraph/imgur all work) — the send never fails
+  try {
+    const buffer = await fetchBuffer(mediaUrl, 60000);
+    if (isVideo) {
+      await sock.sendMessage(jid, {
+        video: buffer, caption, mimetype: 'video/mp4', gifPlayback: isGif
+      });
+    } else {
+      await sock.sendMessage(jid, { image: buffer, caption });
+    }
+    return;
+  } catch (e) {
+    console.log('Menu media fetch failed, falling back to URL:', e.message);
+  }
+
+  // Fallback: send by URL (WhatsApp server fetches it)
+  try {
+    if (isVideo) {
+      await sock.sendMessage(jid, { video: { url: mediaUrl }, caption, mimetype: 'video/mp4', gifPlayback: isGif });
+    } else {
+      await sock.sendMessage(jid, { image: { url: mediaUrl }, caption });
+    }
+  } catch (e) {
+    console.log('Menu media URL failed, sending text only:', e.message);
+    await sock.sendMessage(jid, { text: caption });
+  }
+}
+
+// ============ START MESSAGE ============
 function buildStartMessage() {
   const p = config.PREFIX || '.';
   return `💀 *${config.BOT_NAME}* is online\n` +
          `⚡ Prefix: *${p}*  •  🌐 Mode: *${config.MODE}*\n` +
-         `👑 By: *Confronter*\n\n` +
-         `✨ Type *${p}menu* to begin`;
+         `👑 By: *Confronter*`;
 }
 
 // ============ AUTH ============
@@ -180,7 +223,7 @@ async function loadAuthState() {
   return useMultiFileAuthState(AUTH_DIR);
 }
 
-// ============ HELPERS ============
+// ============ BASIC HELPERS ============
 const dig = v => String(v || '').replace(/\D/g, '');
 const isGroup = j => j?.endsWith('@g.us');
 function getOwnerJid() { return config.OWNER_NUMBER ? jidNormalizedUser(config.OWNER_NUMBER + '@s.whatsapp.net') : null; }
@@ -199,7 +242,7 @@ function randEmoji(pool, fb) {
 const statusLikeEmoji = () => randEmoji(config.STATUS_LIKES);
 const msgReactEmoji = () => randEmoji(config.REACT_EMOJIS);
 const cmdReactEmoji = () => randEmoji(null, ['✅','⚡','🔥','💫','✨','🎯','👍','🤖','💜','🚀','⭐']);
-async function react(jid, key, emoji) { try { await sock.sendMessage(jid, { react: { text: emoji, key } }); } catch {} }
+function react(jid, key, emoji) { sock.sendMessage(jid, { react: { text: emoji, key } }).catch(() => {}); }
 function getMentioned(m) { return m.message?.extendedTextMessage?.contextInfo?.mentionedJid || []; }
 function getQuoted(m) { return m.message?.extendedTextMessage?.contextInfo?.participant || null; }
 async function getMeta(jid) { try { return await sock.groupMetadata(jid); } catch { return null; } }
@@ -247,7 +290,7 @@ function presenceMap(v) {
   return null;
 }
 
-// ============ ANTI-DELETE FORWARD ============
+// ============ ANTI-DELETE ============
 async function forwardDelete(key, cached) {
   try {
     const from = key.remoteJid;
@@ -256,14 +299,12 @@ async function forwardDelete(key, cached) {
     if (!isStatus && config.ANTI_DELETE === 'off') return;
     const target = isStatus ? getOwnerJid() : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
     if (!target) return;
-
     let msg = cached.message;
     if (msg?.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
     if (msg?.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
     if (msg?.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
     let type = getContentType(msg) || '';
     if (!type) for (const t of ['imageMessage','videoMessage','audioMessage','stickerMessage','documentMessage']) if (msg[t]) { type = t; break; }
-
     const phone = jidToPhone(key.participant || cached.participant, cached);
     let deletedText = '';
     if (type === 'conversation') deletedText = msg.conversation || '';
@@ -273,16 +314,13 @@ async function forwardDelete(key, cached) {
     else if (type === 'documentMessage') deletedText = msg.documentMessage?.fileName || '';
     else if (type === 'stickerMessage') deletedText = '[Sticker]';
     else if (type === 'audioMessage') deletedText = msg.audioMessage?.ptt ? '[Voice]' : '[Audio]';
-
     let groupName = 'Private';
     if (isGroup(from)) { try { groupName = (await sock.groupMetadata(from))?.subject || 'Group'; } catch {} }
-
     let cap = `✅ *${config.BOT_NAME} antiDelete*\n`;
     cap += `• Deleted by: +${phone}\n`;
     cap += `• Chat: ${isStatus ? 'Status' : (isGroup(from) ? 'Group: ' + groupName : 'Private')}\n`;
     if (deletedText && !deletedText.startsWith('[')) cap += `\n📝 *Deleted Text:*\n${deletedText}`;
     else if (deletedText) cap += `\n${deletedText}`;
-
     const media = { imageMessage: 'image', videoMessage: 'video', audioMessage: 'audio', stickerMessage: 'sticker', documentMessage: 'document' };
     if (media[type]) {
       const dl = await downloadMediaMsg(msg);
@@ -359,18 +397,29 @@ async function startBot() {
       console.log(`✏️  AntiEdit  : ${config.ANTI_EDIT}`);
       console.log(`🔓 ViewOnce  : ${config.ANTI_VIEW_ONCE}`);
       console.log(`🌐 Mode      : ${config.MODE}\n`);
+
+      // Set presence
       try {
         const pm = presenceMap(config.PRESENCE);
         if (pm) await sock.sendPresenceUpdate(pm);
       } catch {}
-      try {
-        const me = sock.user?.id;
-        if (me) {
+
+      // Send start message + menu to owner (async, doesn't block command handling)
+      (async () => {
+        try {
+          const me = sock.user?.id;
+          if (!me) return;
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
+
+          // 1) Quick start banner
           await sock.sendMessage(jid, { text: buildStartMessage() });
-          console.log('📩 Start message sent');
-        }
-      } catch (e) { console.log('Start msg error:', e.message); }
+
+          // 2) Full menu (with media if configured)
+          const users = await loadUsers();
+          await sendMenuWithMedia(jid, config.OWNER_NAME || 'Confronter', users.length);
+          console.log('📩 Start message + menu sent to owner');
+        } catch (e) { console.log('start/menu send:', e.message); }
+      })();
     }
     if (connection === 'close') {
       const code = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error.output?.statusCode : 0;
@@ -415,7 +464,7 @@ async function startBot() {
     } catch {}
   });
 
-  // ============ MESSAGES ============
+  // ============ MESSAGES (instant parallel dispatch) ============
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type && type !== 'notify' && type !== 'append') return;
     for (const m of messages) handleMessage(m).catch(e => console.log('msg err:', e.message));
@@ -441,19 +490,21 @@ async function startBot() {
       const sender = m.key.participant || m.key.remoteJid;
       const isMe = m.key.fromMe;
 
-      // Blue ticks
-      if (!isMe && from && from !== 'status@broadcast') { try { await sock.readMessages([m.key]); } catch {} }
+      // Blue ticks (fire and forget, doesn't block)
+      if (!isMe && from && from !== 'status@broadcast') {
+        sock.readMessages([m.key]).catch(() => {});
+      }
 
-      // ===== ANTI-DELETE =====
+      // ANTI-DELETE
       const proto = m.message?.protocolMessage;
       if (proto && (proto.type === 0 || proto.type === 'REVOKE' || proto.type === 1)) {
         const key = proto.key || m.key;
         const cached = key?.id ? msgCache.get(key.id) : null;
-        if (cached?.message) await forwardDelete(key, cached);
+        if (cached?.message) forwardDelete(key, cached).catch(() => {});
         return;
       }
 
-      // ===== ANTI-EDIT =====
+      // ANTI-EDIT
       if (proto && (proto.type === 14 || proto.type === 'MESSAGE_EDIT' || proto.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
@@ -465,7 +516,7 @@ async function startBot() {
             const target = config.ANTI_EDIT === 'chat' ? from : getOwnerJid();
             if (target) {
               const who = jidToPhone(key.participant || from, m);
-              await sock.sendMessage(target, {
+              sock.sendMessage(target, {
                 text: `✅ *${config.BOT_NAME} antiEdit*\n• Edited by: +${who}\n• Chat: ${isGroup(from) ? 'Group' : 'Private'}\n\n📝 *Before:*\n${oldText}\n\n✏️ *After:*\n${newText || '[media]'}`
               }).catch(() => {});
             }
@@ -474,9 +525,9 @@ async function startBot() {
         return;
       }
 
-      if (!isMe && from && !from.includes('status')) await saveUser(sender).catch(() => {});
+      if (!isMe && from && !from.includes('status')) saveUser(sender).catch(() => {});
 
-      // ===== STATUS =====
+      // STATUS
       if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
         if (isMe) return;
         const rawP = m.key.participant || m.participant || m.key.participantAlt || '';
@@ -499,7 +550,7 @@ async function startBot() {
         return;
       }
 
-      // ===== ANTI-VIEW-ONCE =====
+      // ANTI-VIEW-ONCE
       if (config.ANTI_VIEW_ONCE && config.ANTI_VIEW_ONCE !== 'off') {
         const ct = getContentType(m.message);
         const isVO = ['viewOnceMessage','viewOnceMessageV2','viewOnceMessageV2Extension'].includes(ct)
@@ -528,13 +579,13 @@ async function startBot() {
 
       const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || '';
 
-      // ===== AUTO-REACT =====
+      // AUTO-REACT
       if (config.AUTO_REACT && !isMe) {
         const isCmd = body && body.startsWith(config.PREFIX || '.');
         if (!isCmd) react(from, m.key, msgReactEmoji());
       }
 
-      // ===== ANTILINK =====
+      // ANTILINK
       if (isGroup(from) && !isMe && (config.ANTILINK || (await getGroup(from, 'antilink')))) {
         if (hasLink(body) && !(await isGroupAdmin(from, sender)) && !isOwner(sender)) {
           try {
@@ -581,7 +632,7 @@ async function startBot() {
       if (['menu', 'help', 'list'].includes(cmd)) {
         let userCount = 0;
         try { userCount = (await loadUsers()).length; } catch {}
-        await reply(buildMainMenu(m.pushName, userCount));
+        await sendMenuWithMedia(from, m.pushName, userCount);
         return;
       }
 
@@ -593,7 +644,7 @@ async function startBot() {
         return;
       }
 
-      // ========== ALIVE / UPTIME ==========
+      // ========== ALIVE ==========
       if (cmd === 'alive' || cmd === 'uptime') {
         const up = Math.floor(process.uptime());
         const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60), s = up % 60;
@@ -730,18 +781,14 @@ async function startBot() {
           if (!vo && quoted && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage)) vo = quoted;
           if (!vo) vo = m.message?.viewOnceMessage?.message || m.message?.viewOnceMessageV2?.message;
           if (!vo) { await reply(`Reply to a view-once with ${prefix}vv`); return; }
-
-          // Send to user's PM (or owner PM)
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           const target = isOwner(sender) ? (me || from) : sender;
-
           const dl = await downloadMediaMsg(vo);
           if (!dl?.buffer) { await reply('❌ Could not download view-once.'); return; }
           if (dl.type === 'imageMessage') await sock.sendMessage(target, { image: dl.buffer });
           else if (dl.type === 'videoMessage') await sock.sendMessage(target, { video: dl.buffer, mimetype: 'video/mp4' });
           else if (dl.type === 'audioMessage') await sock.sendMessage(target, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: !!vo.audioMessage?.ptt });
           else await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin' });
-
           if (target !== from) await reply('✅ Sent to your PM');
         } catch (e) { await reply('❌ VV failed: ' + e.message); }
         return;
@@ -1040,7 +1087,7 @@ async function startBot() {
         const key = u.key;
         if (!key?.id) continue;
         const cached = msgCache.get(key.id);
-        if (cached?.message) await forwardDelete(key, cached);
+        if (cached?.message) forwardDelete(key, cached);
       } catch {}
     }
   });
