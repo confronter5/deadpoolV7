@@ -1,314 +1,133 @@
-/**
- * Self-hosted yt-dlp downloader for WhatsApp bot
- * Requires: yt-dlp installed on the server + optional ffmpeg
- *
- * Install:
- *   pip install -U yt-dlp
- *   # or: sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp
- *   npm i youtube-dl-exec   (optional but recommended)
- *   # ffmpeg recommended for mp3 conversion:
- *   sudo apt install -y ffmpeg
- */
+// downloader.js — YouTube search + mp3/mp4 (multi-source fallbacks)
+const axios = require('axios');
 
-const { spawn } = require('child_process');
-const fs = require('fs-extra');
-const path = require('path');
-const os = require('os');
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36';
+const e = s => encodeURIComponent(String(s || ''));
 
-const TMP_DIR = path.join(os.tmpdir(), 'bot-ytdlp');
-fs.ensureDirSync(TMP_DIR);
-
-// Prefer youtube-dl-exec if installed, else raw yt-dlp binary
-let youtubedl = null;
-try {
-  youtubedl = require('youtube-dl-exec');
-} catch {
-  youtubedl = null;
-}
-
-const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
-
-function _safeName(t) {
-  return String(t || 'media')
-    .replace(/[^\w\s\-]/g, '')
-    .replace(/\s+/g, '_')
-    .slice(0, 60)
-    .trim() || 'media';
-}
-
-function _runYtDlp(args, timeoutMs = 120000) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(YTDLP_BIN, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' }
-    });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch {}
-      reject(new Error('yt-dlp timeout'));
-    }, timeoutMs);
-
-    child.stdout.on('data', d => { stdout += d.toString(); });
-    child.stderr.on('data', d => { stderr += d.toString(); });
-    child.on('error', err => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on('close', code => {
-      clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error((stderr || stdout).slice(-800) || `yt-dlp exit ${code}`));
-    });
+async function get(url, opts = {}) {
+  return axios.get(url, {
+    timeout: opts.timeout || 60000,
+    validateStatus: () => true,
+    responseType: opts.responseType || 'json',
+    headers: { 'User-Agent': UA, Accept: '*/*', ...(opts.headers || {}) },
+    ...(opts.extra || {})
   });
 }
+async function fetchBuffer(url, t = 120000) {
+  const r = await get(url, { responseType: 'arraybuffer', timeout: t, extra: { maxContentLength: 150 * 1024 * 1024 } });
+  if (r.status >= 400) throw new Error('HTTP ' + r.status);
+  return Buffer.from(r.data);
+}
 
+function sniffUrl(obj, keys = ['dl', 'download', 'url', 'link', 'result', 'data', 'audio', 'video', 'mp3', 'mp4', 'medialink']) {
+  if (!obj) return null;
+  if (typeof obj === 'string') return obj.startsWith('http') ? obj : null;
+  if (Array.isArray(obj)) { for (const i of obj) { const u = sniffUrl(i, keys); if (u) return u; } return null; }
+  if (typeof obj === 'object') {
+    for (const k of keys) if (typeof obj[k] === 'string' && obj[k].startsWith('http')) return obj[k];
+    for (const v of Object.values(obj)) { const u = sniffUrl(v, keys); if (u) return u; }
+  }
+  return null;
+}
+
+const isYtUrl = q => /(?:youtube\.com\/(?:watch|shorts|embed)|youtu\.be\/)/i.test(q);
+
+// ============ SEARCH ============
 async function ytSearch(query) {
-  const q = String(query || '').trim();
-  if (!q) return null;
-  if (/youtube\.com|youtu\.be|music\.youtube/i.test(q)) return q;
-
+  // 1) siputzx
   try {
-    const args = [
-      `ytsearch1:${q}`,
-      '--print', '%(webpage_url)s',
-      '--no-playlist',
-      '--skip-download',
-      '--no-warnings',
-      '--quiet'
-    ];
-    if (youtubedl) {
-      const out = await youtubedl(`ytsearch1:${q}`, {
-        print: '%(webpage_url)s',
-        noPlaylist: true,
-        skipDownload: true,
-        noWarnings: true,
-        quiet: true
-      });
-      const url = String(out || '').trim().split('\n')[0];
-      if (url && url.startsWith('http')) return url;
-    } else {
-      const { stdout } = await _runYtDlp(args, 35000);
-      const url = stdout.trim().split('\n')[0];
-      if (url && url.startsWith('http')) return url;
+    const r = await get(`https://api.siputzx.my.id/api/yt/search?q=${e(query)}`);
+    const items = r.data?.result || r.data?.data;
+    if (Array.isArray(items) && items.length) {
+      const v = items.find(x => (x.url || x.link || '').includes('youtube') || (x.id || x.videoId)) || items[0];
+      const url = v.url || v.link || (v.id || v.videoId ? `https://www.youtube.com/watch?v=${v.id || v.videoId}` : null);
+      if (url) return { url, title: v.title || query };
     }
-  } catch (e) {
-    console.log('ytSearch:', e.message);
-  }
-  return null;
-}
-
-async function _getTitle(url) {
-  try {
-    const { stdout } = await _runYtDlp(
-      [url, '--print', 'title', '--skip-download', '--no-warnings', '--quiet'],
-      20000
-    );
-    const t = stdout.trim().split('\n')[0];
-    if (t) return t;
   } catch {}
-  return 'media';
-}
-
-async function _findOutput(id) {
+  // 2) yanzbotz
   try {
-    const files = await fs.readdir(TMP_DIR);
-    const match = files.find(f => f.startsWith(id));
-    if (match) return path.join(TMP_DIR, match);
+    const r = await get(`https://api.yanzbotz.my.id/api/search/ytsearch?q=${e(query)}`);
+    const items = r.data?.result || r.data?.data;
+    const list = Array.isArray(items) ? items : items?.result || items?.data;
+    if (Array.isArray(list) && list.length) {
+      const v = list[0];
+      const url = v.url || v.link || (v.id || v.videoId ? `https://www.youtube.com/watch?v=${v.id || v.videoId}` : null);
+      if (url) return { url, title: v.title || query };
+    }
   } catch {}
   return null;
 }
 
-async function downloadYouTube(query, audioOnly = false) {
-  const url = await ytSearch(query);
-  if (!url) {
-    console.log('ytSearch failed:', query);
-    return null;
-  }
-  console.log('Resolved:', url);
-
-  const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-  const outTemplate = path.join(TMP_DIR, id + '.%(ext)s');
-
-  try {
-    if (audioOnly) {
-      const args = [
-        url,
-        '-f', 'bestaudio/best',
-        '-x',
-        '--audio-format', 'mp3',
-        '--audio-quality', '0',
-        '-o', outTemplate,
-        '--no-playlist',
-        '--no-warnings',
-        '--newline'
+// ============ DOWNLOAD (resolve direct media URL) ============
+async function ytResolve(videoUrl, audio) {
+  const eps = audio
+    ? [
+        `https://api.siputzx.my.id/api/d/ytmp3?url=${e(videoUrl)}`,
+        `https://api.siputzx.my.id/api/d/ytmp3v2?url=${e(videoUrl)}`,
+        `https://api.yanzbotz.my.id/api/download/ytmp3?url=${e(videoUrl)}`
+      ]
+    : [
+        `https://api.siputzx.my.id/api/d/ytmp4?url=${e(videoUrl)}`,
+        `https://api.yanzbotz.my.id/api/download/ytmp4?url=${e(videoUrl)}`
       ];
-
-      let filepath = null;
-
-      if (youtubedl) {
-        try {
-          await youtubedl(url, {
-            format: 'bestaudio/best',
-            extractAudio: true,
-            audioFormat: 'mp3',
-            audioQuality: 0,
-            output: outTemplate,
-            noPlaylist: true,
-            noWarnings: true
-          });
-          filepath = await _findOutput(id);
-        } catch (e) {
-          console.log('youtubedl audio:', e.message);
-        }
-      }
-
-      if (!filepath) {
-        await _runYtDlp(args, 150000);
-        filepath = await _findOutput(id);
-      }
-
-      if (!filepath || !(await fs.pathExists(filepath))) {
-        console.log('No audio file produced for', url);
-        return null;
-      }
-
-      const title = await _getTitle(url);
-      const buffer = await fs.readFile(filepath);
-      await fs.remove(filepath).catch(() => {});
-
-      if (!buffer || buffer.length < 3000) return null;
-
-      return {
-        buffer,
-        title,
-        audioOnly: true,
-        mimetype: 'audio/mpeg',
-        ext: 'mp3'
-      };
-    }
-
-    // VIDEO — prefer mp4 <=720p with audio
-    const args = [
-      url,
-      '-f', 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]/best',
-      '--merge-output-format', 'mp4',
-      '-o', outTemplate,
-      '--no-playlist',
-      '--no-warnings',
-      '--newline'
-    ];
-
-    let filepath = null;
-
-    if (youtubedl) {
-      try {
-        await youtubedl(url, {
-          format: 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]/best',
-          mergeOutputFormat: 'mp4',
-          output: outTemplate,
-          noPlaylist: true,
-          noWarnings: true
-        });
-        filepath = await _findOutput(id);
-      } catch (e) {
-        console.log('youtubedl video:', e.message);
-      }
-    }
-
-    if (!filepath) {
-      await _runYtDlp(args, 180000);
-      filepath = await _findOutput(id);
-    }
-
-    if (!filepath || !(await fs.pathExists(filepath))) {
-      console.log('No video file produced for', url);
-      return null;
-    }
-
-    const title = await _getTitle(url);
-    const buffer = await fs.readFile(filepath);
-    await fs.remove(filepath).catch(() => {});
-
-    if (!buffer || buffer.length < 15000) return null;
-
-    return {
-      buffer,
-      title,
-      audioOnly: false,
-      mimetype: 'video/mp4',
-      ext: 'mp4'
-    };
-  } catch (e) {
-    console.log('downloadYouTube:', e.message);
+  for (const ep of eps) {
     try {
-      const files = await fs.readdir(TMP_DIR);
-      for (const f of files) {
-        if (f.startsWith(id)) await fs.remove(path.join(TMP_DIR, f)).catch(() => {});
-      }
+      const r = await get(ep, { timeout: 60000 });
+      const u = sniffUrl(r.data);
+      if (u) return u;
     } catch {}
-    return null;
   }
+  return null;
 }
 
-// ============ SEND AS MP3 ============
-async function sendAsMp3(sock, jid, data) {
-  if (!data?.buffer) return false;
-  const name = _safeName(data.title) || 'audio';
-
+// ============ MAIN ENTRY ============
+async function downloadYouTube(query, isAudio) {
   try {
-    await sock.sendMessage(jid, {
-      audio: data.buffer,
-      mimetype: 'audio/mpeg',
-      fileName: name + '.mp3',
-      ptt: false
-    });
-    return true;
-  } catch (e) {
-    console.log('audio inline:', e.message);
-  }
-
-  try {
-    await sock.sendMessage(jid, {
-      document: data.buffer,
-      mimetype: 'audio/mpeg',
-      fileName: name + '.mp3',
-      caption: '🎵 *' + (data.title || 'Audio') + '*'
-    });
-    return true;
-  } catch (e) {
-    console.log('audio document:', e.message);
-  }
-
-  return false;
+    query = String(query || '').trim();
+    if (!query) return null;
+    let videoUrl = null, title = query;
+    if (isYtUrl(query)) {
+      videoUrl = query;
+    } else {
+      const s = await ytSearch(query);
+      if (!s?.url) return null;
+      videoUrl = s.url;
+      title = s.title;
+    }
+    const mediaUrl = await ytResolve(videoUrl, isAudio);
+    if (!mediaUrl) return null;
+    const buffer = await fetchBuffer(mediaUrl);
+    if (!buffer || buffer.length < 10000) return null;
+    return { buffer, title, url: videoUrl, mediaUrl };
+  } catch { return null; }
 }
 
-// ============ SEND AS VIDEO ============
-async function sendAsVideo(sock, jid, data) {
-  if (!data?.buffer) return false;
-  const cap = '🎬 *' + (data.title || 'Video') + '*';
+// ============ SENDERS (size-aware) ============
+async function sendAsMp3(sock, from, data) {
   try {
-    await sock.sendMessage(jid, {
-      video: data.buffer,
-      caption: cap,
-      mimetype: 'video/mp4'
-    });
+    const { buffer, title } = data;
+    const name = String(title || 'audio').replace(/[^\w\s-]/g, '').trim().slice(0, 60) || 'audio';
+    if (buffer.length > 15 * 1024 * 1024) {
+      await sock.sendMessage(from, { document: buffer, mimetype: 'audio/mpeg', fileName: name + '.mp3' });
+    } else {
+      await sock.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
+      await sock.sendMessage(from, { text: `🎵 *${name}*` }).catch(() => {});
+    }
     return true;
-  } catch (e) {
-    console.log('video inline:', e.message);
-  }
-  try {
-    await sock.sendMessage(jid, {
-      document: data.buffer,
-      mimetype: 'video/mp4',
-      fileName: _safeName(data.title) + '.mp4',
-      caption: cap
-    });
-    return true;
-  } catch (e) {
-    console.log('video document:', e.message);
-    return false;
-  }
+  } catch (e) { console.log('sendAsMp3:', e.message); return false; }
 }
 
-module.exports = { downloadYouTube, sendAsMp3, sendAsVideo, ytSearch };
+async function sendAsVideo(sock, from, data) {
+  try {
+    const { buffer, title } = data;
+    const name = String(title || 'video').replace(/[^\w\s-]/g, '').trim().slice(0, 60) || 'video';
+    if (buffer.length > 15 * 1024 * 1024) {
+      await sock.sendMessage(from, { document: buffer, mimetype: 'video/mp4', fileName: name + '.mp4' });
+    } else {
+      await sock.sendMessage(from, { video: buffer, mimetype: 'video/mp4', caption: `🎬 *${name}*` });
+    }
+    return true;
+  } catch (e) { console.log('sendAsVideo:', e.message); return false; }
+}
+
+module.exports = { downloadYouTube, sendAsMp3, sendAsVideo };
