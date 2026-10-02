@@ -9,18 +9,18 @@ async function ytSearch(query) {
     const r = await YouTube.search(q, { limit: 1, type: 'video', safeSearch: false });
     const first = Array.isArray(r) ? r[0] : (r?.results?.[0] || r?.[0]);
     if (first?.url) return first.url;
-    if (first?.id) return `https://www.youtube.com/watch?v=${first.id}`;
-  } catch (e) { console.log('youtube-sr:', e.message); }
+    if (first?.id) return 'https://www.youtube.com/watch?v=' + first.id;
+  } catch (e) {}
   try {
     const info = await ytdl.getBasicInfo('ytsearch1:' + q);
     const vid = info?.videoDetails?.videoId;
-    if (vid) return `https://www.youtube.com/watch?v=${vid}`;
-  } catch (e) { console.log('ytsearch:', e.message); }
+    if (vid) return 'https://www.youtube.com/watch?v=' + vid;
+  } catch (e) {}
   return null;
 }
 
 async function _getInfo(url) {
-  const tries = [{ playerClients: ['WEB','TV'] }, { playerClients: ['IOS'] }, { playerClients: ['ANDROID'] }, {}];
+  const tries = [{ playerClients: ['WEB', 'TV'] }, { playerClients: ['IOS'] }, { playerClients: ['ANDROID'] }, {}];
   for (const opts of tries) {
     try {
       const info = await Promise.race([
@@ -28,7 +28,7 @@ async function _getInfo(url) {
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 40000))
       ]);
       if (info?.formats?.length) return info;
-    } catch (e) { console.log('getInfo:', e.message); }
+    } catch (e) {}
   }
   return null;
 }
@@ -43,6 +43,8 @@ function _streamToBuffer(stream, timeoutMs = 120000) {
   });
 }
 
+function _safeName(t) { return String(t || 'media').replace(/[^\w\s\-]/g, '').slice(0, 50).trim() || 'media'; }
+
 async function downloadYouTube(query, audioOnly = false) {
   const url = await ytSearch(query);
   if (!url) return null;
@@ -51,8 +53,8 @@ async function downloadYouTube(query, audioOnly = false) {
   const title = info.videoDetails?.title || 'media';
 
   if (audioOnly) {
-    let fmt = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
-    if (!fmt) fmt = ytdl.chooseFormat(info.formats, { quality: 'highestaudio' });
+    let fmt = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' }) ||
+              ytdl.chooseFormat(info.formats, { quality: 'highestaudio' });
     if (!fmt) return null;
     let buffer;
     try { buffer = await _streamToBuffer(ytdl.downloadFromInfo(info, { format: fmt })); }
@@ -61,12 +63,9 @@ async function downloadYouTube(query, audioOnly = false) {
     return { buffer, title, audioOnly: true, mimetype: fmt.mimeType || 'audio/mp4', ext: (fmt.container || 'mp4').toLowerCase() };
   }
 
-  let fmt = ytdl.chooseFormat(info.formats, {
-    quality: 'highest',
-    filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' && (f.height || 0) <= 720
-  });
-  if (!fmt) fmt = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' });
-  if (!fmt) fmt = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
+  let fmt = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' && (f.height || 0) <= 720 }) ||
+            ytdl.chooseFormat(info.formats, { quality: 'highest', filter: f => f.hasVideo && f.hasAudio && f.container === 'mp4' }) ||
+            ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
   if (!fmt) return null;
 
   let buffer;
@@ -76,29 +75,31 @@ async function downloadYouTube(query, audioOnly = false) {
   return { buffer, title, audioOnly: false, mimetype: fmt.mimeType || 'video/mp4', ext: 'mp4' };
 }
 
-function _safeName(t) { return String(t || 'media').replace(/[^\w\s\-]/g, '').slice(0, 50).trim() || 'media'; }
-
 async function sendAsMp3(sock, jid, data) {
   if (!data?.buffer) return false;
-  const safeName = _safeName(data.title);
+  const name = _safeName(data.title);
   const ext = data.ext === 'webm' ? 'webm' : 'm4a';
   try {
-    await sock.sendMessage(jid, { audio: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: safeName + '.' + ext, ptt: false });
+    await sock.sendMessage(jid, { audio: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: name + '.' + ext, ptt: false });
     return true;
-  } catch (e) { console.log('audio inline:', e.message); }
+  } catch (e) {}
   try {
-    await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: safeName + '.' + ext, caption: '🎵 *' + (data.title || 'Audio') + '*' });
+    await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'audio/mp4', fileName: name + '.' + ext, caption: '🎵 *' + (data.title || 'Audio') + '*' });
     return true;
-  } catch (e) { console.log('audio doc:', e.message); return false; }
+  } catch (e) { return false; }
 }
 
 async function sendAsVideo(sock, jid, data) {
   if (!data?.buffer) return false;
   const cap = '🎬 *' + (data.title || 'Video') + '*';
-  try { await sock.sendMessage(jid, { video: data.buffer, caption: cap, mimetype: data.mimetype || 'video/mp4' }); return true; }
-  catch (e) { console.log('video inline:', e.message); }
-  try { await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'video/mp4', fileName: _safeName(data.title) + '.mp4', caption: cap }); return true; }
-  catch (e) { console.log('video doc:', e.message); return false; }
+  try {
+    await sock.sendMessage(jid, { video: data.buffer, caption: cap, mimetype: data.mimetype || 'video/mp4' });
+    return true;
+  } catch (e) {}
+  try {
+    await sock.sendMessage(jid, { document: data.buffer, mimetype: data.mimetype || 'video/mp4', fileName: _safeName(data.title) + '.mp4', caption: cap });
+    return true;
+  } catch (e) { return false; }
 }
 
 module.exports = { downloadYouTube, sendAsMp3, sendAsVideo, ytSearch };
