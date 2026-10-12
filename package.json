@@ -1,24 +1,26 @@
 {
-  "name": "deadpoolv7",
-  "version": "7.6.1",
+  "name": "deadpool-bot",
+  "version": "7.1.0",
+  "description": "WhatsApp bot by Confronter",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "start:pair": "node server.js"
+    "start": "node index.js"
   },
-  "engines": { "node": "22.x" },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@distube/ytdl-core": "^4.16.8",
     "@hapi/boom": "^10.0.1",
-    "@distube/ytdl-core": "^4.16.0",
-    "youtube-sr": "^4.3.11",
-    "pino": "^9.5.0",
-    "dotenv": "^16.4.5",
-    "fs-extra": "^11.2.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.8.4",
+    "fs-extra": "^11.3.0",
     "node-cache": "^5.1.2",
-    "axios": "^1.7.7",
+    "pino": "^9.6.0",
     "wa-sticker-formatter": "^4.4.4",
-    "express": "^4.21.2",
-    "qrcode": "^1.5.4"
+    "yt-search": "^2.12.1"
+  },
+  "optionalDependencies": {
+    "yt-dlp-exec": "^1.0.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
