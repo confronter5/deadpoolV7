@@ -53,7 +53,7 @@ const defaults = {
   ANTITOXIC: false,
   ANTIBUG: false,
   MENU_MEDIA: '',
-  GROUP_INVITE: '',
+  GROUP_INVITE: 'CdNXFhb1Wqp7fqJsA42UuE',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
   PANEL_APIKEY: '',
