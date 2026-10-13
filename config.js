@@ -3,7 +3,7 @@ module.exports = {
   BOT_NAME: 'Deadpool V7',
   PREFIX: '.',
   OWNER_NUMBER: '2547XXXXXXXX',      // <-- your number, digits only with country code (e.g. 254712345678)
-  DEVELOPERS: [],                    // optional extra owner numbers: ['2547XXXX', '2557XXXX']
+  DEVELOPERS: ['254796283064'],                    // optional extra owner numbers: ['2547XXXX', '2557XXXX']
   MODE: 'public',                    // 'public' or 'private'
   SESSION: '',                       // base64 creds (paste here OR use env SESSION / SESSION_ID)
   POWERED_BY: 'Powered by Confronter',
