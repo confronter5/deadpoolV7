@@ -102,10 +102,10 @@ async function sendSessionToPM(sock, sessionId) {
     // 1) Header
     await sock.sendMessage(jid, {
       text:
-        '💀 *DEADPOOL V7 SESSION*\n' +
+        '➤ *𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕 𝐒𝐄𝐒𝐒𝐈𝐎𝐍*\n' +
         line + '\n' +
-        '📋 *Copy the session below*\n' +
-        'Paste it into your *SESSION* / *.env* variable.\n' +
+        '➤ *⫹ᴄᴏᴘʏ ᴛʜᴇ ꜱᴇꜱꜱɪᴏɴ ʙᴇʟᴏᴡ ʙᴇ ꜱʜᴀʀᴘ⫺𝐃𝐨𝐧𝐭 𝐛𝐞 𝐦𝐨𝐭𝐡𝐫𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫⬇*\n' +
+        '𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 𝐟𝐨𝐫 𝐡𝐞𝐥𝐩 *@confronter._* / *♞𝔇𝔢𝔞𝔡𝔭𝔬𝔬𝔩* 𝔯𝔲𝔩𝔩𝔦𝔫𝔤 𝔱𝔥𝔢𝔪.\n' +
         line
     });
     await delay(400);
@@ -117,20 +117,20 @@ async function sendSessionToPM(sock, sessionId) {
     // 3) Help / Support menu
     let help =
       line + '\n' +
-      '🆘 *HELP / SUPPORT*\n' +
+      '❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' +
       line + '\n' +
-      '👨‍💻 *Developer:*\n' + DEV_LINK + '\n\n';
+      '❋ *𝐃𝐄𝐕:*\n' + DEV_LINK + '\n\n';
 
     if (groupLink) {
-      help += '👥 *Deadpool GC:*\n' + groupLink + '\n\n';
+      help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐆𝐜:*\n' + groupLink + '\n\n';
     }
     if (channel) {
-      help += '📢 *Deadpool Channel:*\n' + channel + '\n\n';
+      help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
     }
     help +=
-      '🌐 *Website Explore:*\n' + site + '\n' +
+      '➧ *𝐎𝐮𝐫 𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' +
       line + '\n' +
-      '_Powered by Confronter_';
+      '> _𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙲𝚘𝚗𝚏𝚛𝚘𝚗𝚝𝚎𝚛_';
 
     await sock.sendMessage(jid, { text: help });
     return true;
