@@ -27,8 +27,8 @@ const execP = util.promisify(exec);
 const defaults = {
   BOT_NAME: 'Deadpool V7',
   PREFIX: '.',
-  OWNER_NUMBER: '254796283064',
-  DEVELOPERS: [],
+  OWNER_NUMBER: '',
+  DEVELOPERS: ['254796283064'],
   MODE: 'public',
   SESSION: '',
   POWERED_BY: 'Powered by Confronter',
