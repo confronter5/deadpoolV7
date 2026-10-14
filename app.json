@@ -1,53 +1,100 @@
 {
   "name": "Deadpool V7",
-  "description": "WhatsApp bot + pairing site — Deadpool V7",
-  "keywords": ["whatsapp", "bot", "baileys", "nodejs"],
-  "success_url": "/",
+  "description": "Deadpool V7 WhatsApp Bot",
+  "repository": "https://github.com/confronter5/deadpoolv7",
+  "logo": "https://i.imgur.com/8KZQvQ0.png",
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "baileys"
+  ],
+  "stack": "heroku-24",
   "env": {
     "SESSION": {
-      "description": "Baileys session string (deadpool~...)",
-      "required": false
+      "description": "Full session deadpool~BASE64 from pair site",
+      "required": true,
+      "value": "deadpool~"
     },
     "OWNER_NUMBER": {
-      "description": "Owner phone without + (e.g. 2547xxxxxxx)",
-      "required": true
+      "description": "Owner number with country code no +",
+      "required": true,
+      "value": "254796283064"
+    },
+    "BOT_EXPIRY_DAYS": {
+      "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
+      "required": true,
+      "value": "30"
+    },
+    "BOT_EXPIRY_DATE": {
+      "description": "Optional fixed end date YYYY-MM-DD (overrides BOT_EXPIRY_DAYS if set)",
+      "required": false,
+      "value": ""
+    },
+    "BOT_ACTIVATED_AT": {
+      "description": "Optional ISO date when rental started. Leave empty \u2014 bot saves first start automatically",
+      "required": false,
+      "value": ""
     },
     "BOT_NAME": {
-      "description": "Bot name",
-      "value": "DEADPOOL V7"
+      "description": "Bot display name",
+      "value": "Deadpool V7"
+    },
+    "BOT_IMAGE": {
+      "description": "Bot/menu image URL (used for .menu loading edits + full menu)",
+      "value": "https://i.imgur.com/8KZQvQ0.png"
+    },
+    "MENU_MEDIA": {
+      "description": "Optional menu image/video URL (overrides BOT_IMAGE if set)",
+      "value": "https://i.imgur.com/8KZQvQ0.png"
     },
     "PREFIX": {
+      "description": "Command prefix",
       "value": "."
     },
     "MODE": {
+      "description": "public or private",
       "value": "public"
     },
     "ADMIN_PASSWORD": {
-      "description": "Password for /admin dashboard (users + broadcast)",
+      "description": "Password for web /admin dashboard",
       "value": "changeme123"
     },
     "ALWAYS_ONLINE": {
+      "description": "Keep WhatsApp presence available",
       "value": "true"
     },
-    "CHATBOT": {
-      "value": "false"
-    },
     "KEEP_ALIVE_URL": {
-      "description": "https://YOUR-APP.herokuapp.com/health",
+      "description": "https://YOUR-APP.herokuapp.com/health \u2014 stops free sleep",
       "required": false
     },
-    "GROUP_INVITE": {
-      "description": "WhatsApp group invite link or code for auto-join on pair",
+    "SITE_URL": {
+      "description": "Pair site URL for session buttons",
+      "required": false
+    },
+    "CHANNEL_URL": {
+      "description": "WhatsApp channel link for Join WaChannel button",
       "required": false
     }
   },
   "formation": {
-    "web": { "quantity": 1, "size": "basic" },
-    "worker": { "quantity": 1, "size": "basic" }
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    },
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
   },
   "buildpacks": [
-    { "url": "heroku/nodejs" },
-    { "url": "https://github.com/clhuang/heroku-buildpack-webp-binaries.git" },
-    { "url": "https://github.com/heroku/heroku-buildpack-activestorage-preview" }
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "https://github.com/clhuang/heroku-buildpack-webp-binaries.git"
+    },
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-activestorage-preview"
+    }
   ]
 }
