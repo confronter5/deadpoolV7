@@ -53,6 +53,7 @@ const defaults = {
   ANTITOXIC: false,
   ANTIBUG: false,
   MENU_MEDIA: '',
+  BOT_IMAGE: 'https://i.imgur.com/8KZQvQ0.png',
   GROUP_INVITE: '',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
@@ -97,7 +98,8 @@ const config = {
   GOODBYE_MSG: env.GOODBYE_MSG || fileConfig.GOODBYE_MSG || defaults.GOODBYE_MSG,
   GROUP_INVITE: env.GROUP_INVITE || fileConfig.GROUP_INVITE || defaults.GROUP_INVITE,
   CHANNEL_ID: env.CHANNEL_ID || fileConfig.CHANNEL_ID || defaults.CHANNEL_ID,
-  MENU_MEDIA: env.MENU_MEDIA || fileConfig.MENU_MEDIA || defaults.MENU_MEDIA,
+  MENU_MEDIA: env.MENU_MEDIA || env.BOT_IMAGE || fileConfig.MENU_MEDIA || fileConfig.BOT_IMAGE || defaults.MENU_MEDIA || defaults.BOT_IMAGE,
+  BOT_IMAGE: env.BOT_IMAGE || env.MENU_MEDIA || fileConfig.BOT_IMAGE || fileConfig.MENU_MEDIA || defaults.BOT_IMAGE || defaults.MENU_MEDIA,
   PANEL_DOMAIN: env.PANEL_DOMAIN || fileConfig.PANEL_DOMAIN || defaults.PANEL_DOMAIN,
   PANEL_APIKEY: env.PANEL_APIKEY || fileConfig.PANEL_APIKEY || defaults.PANEL_APIKEY,
   POWERED_BY: env.POWERED_BY || fileConfig.POWERED_BY || defaults.POWERED_BY,
@@ -424,45 +426,66 @@ function buildMainMenu(pushName, userCount) {
   return m;
 }
 
-async function sendMenuWithMedia(jid, pushName, userCount) {
+async function resolveMenuImageBuffer() {
+  // Priority: MENU_MEDIA → BOT_IMAGE → data/bot_pp.jpg → live profile pic
+  const urls = [
+    config.MENU_MEDIA,
+    config.BOT_IMAGE,
+    process.env.MENU_MEDIA,
+    process.env.BOT_IMAGE
+  ].filter(u => u && String(u).trim().startsWith('http'));
+  for (const u of urls) {
+    try {
+      const buf = await fetchBuffer(String(u).trim(), 60000);
+      if (buf && buf.length > 800) return { buffer: buf, url: u };
+    } catch (e) { console.log('menu img fail', e.message); }
+  }
+  try {
+    const ppPath = path.join(DATA_DIR, 'bot_pp.jpg');
+    if (await fs.pathExists(ppPath)) {
+      const buffer = await fs.readFile(ppPath);
+      if (buffer.length > 800) return { buffer, url: null };
+    }
+  } catch {}
+  try {
+    const botJid = jidNormalizedUser(sock.user?.id || '');
+    const ppUrl = await sock.profilePictureUrl(botJid, 'image');
+    if (ppUrl) {
+      const buffer = await fetchBuffer(ppUrl, 30000);
+      if (buffer && buffer.length > 800) return { buffer, url: ppUrl };
+    }
+  } catch {}
+  return null;
+}
+
+async function sendMenuWithMedia(jid, pushName, userCount, existingMsg = null, existingBuf = null) {
   let caption = buildMainMenu(pushName, userCount);
   try { caption = styleReplyText(caption); } catch {}
-  // spacing: caption already ends with Made by; footer added by reply() only for text — image caption gets clean credit
   const foot = buildFooter();
   if (foot && !/confronter|powered by/i.test(caption)) caption = caption + foot;
 
-  // 1) MENU_MEDIA URL  2) saved bot PP from .setpp  3) live WhatsApp profile pic
-  let buffer = null;
-  let isVideo = false;
-  let isGif = false;
-  const mediaUrl = config.MENU_MEDIA;
-  if (mediaUrl) {
-    const url = String(mediaUrl).toLowerCase();
-    isGif = url.includes('.gif');
-    isVideo = isGif || ['.mp4', '.mkv', '.mov', '.webm'].some(x => url.includes(x)) || url.includes('video');
-    try { buffer = await fetchBuffer(mediaUrl, 60000); } catch (e) { console.log('Menu media fetch failed:', e.message); }
-  }
+  let buffer = existingBuf;
   if (!buffer) {
-    const ppPath = path.join(DATA_DIR, 'bot_pp.jpg');
-    try {
-      if (await fs.pathExists(ppPath)) buffer = await fs.readFile(ppPath);
-    } catch {}
+    const resolved = await resolveMenuImageBuffer();
+    buffer = resolved?.buffer || null;
   }
-  if (!buffer) {
+
+  // If we already sent the image (loading edits), try edit caption → full menu on SAME message
+  if (existingMsg?.key && buffer) {
     try {
-      const botJid = jidNormalizedUser(sock.user?.id || '');
-      const ppUrl = await sock.profilePictureUrl(botJid, 'image');
-      if (ppUrl) buffer = await fetchBuffer(ppUrl, 30000);
-    } catch {}
+      await sock.sendMessage(jid, { image: buffer, caption, edit: existingMsg.key });
+      return existingMsg;
+    } catch (e) {
+      console.log('menu caption edit fail, resend:', e.message);
+    }
   }
+
   if (buffer && Buffer.isBuffer(buffer) && buffer.length > 500) {
     try {
-      if (isVideo) await sock.sendMessage(jid, { video: buffer, caption, mimetype: 'video/mp4', gifPlayback: isGif });
-      else await sock.sendMessage(jid, { image: buffer, caption });
-      return;
+      return await sock.sendMessage(jid, { image: buffer, caption });
     } catch (e) { console.log('menu send media:', e.message); }
   }
-  await sock.sendMessage(jid, { text: caption });
+  return await sock.sendMessage(jid, { text: caption });
 }
 
 // ============ START MESSAGE ============
@@ -1625,21 +1648,42 @@ async function startBot() {
         }
 
         const lines = [
-          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆⨴◦',
+          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆 左侧◦',
           'ɱα∂ε ƁƳ ƈσɳꜰʀᴏɴᴛᴇʀ♞',
           ' 𝙽𝙴𝚅𝙴𝚁 𝙱𝙴 𝚃𝙾𝙾 𝚂𝙻𝙾𝚆 🎭',
           '𝑾𝒆 𝒓𝒖𝒍𝒆 𝒕𝒉𝒆𝒎 𝒂𝒍𝒍.🚀. ',
           '𝐈 𝐤𝐧𝐞𝐰 𝐲𝐨𝐮 𝐰𝐢𝐥𝐥 𝐛𝐞 𝐛𝐚𝐜𝐤 𝐚𝐧𝐝 𝐭𝐞𝐬𝐭 𝐦𝐞😂',
           '𝐃𝐨𝐧𝐭 𝐛𝐞 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫🗿'
         ];
-        let editMsg = await sock.sendMessage(from, { text: lines[0] });
-        for (let i = 1; i < lines.length; i++) {
-          await delay(700);
-          await sock.sendMessage(from, { text: lines[i], edit: editMsg.key }).catch(() => {});
-        }
-        await delay(800);
 
-        await sendMenuWithMedia(from, m.pushName, userCount);
+        // Load bot image once (BOT_IMAGE / MENU_MEDIA from Heroku app.json)
+        const resolved = await resolveMenuImageBuffer();
+        const imgBuf = resolved?.buffer || null;
+        let editMsg = null;
+
+        if (imgBuf) {
+          // Same image for all loading captions → then full menu on same message
+          editMsg = await sock.sendMessage(from, { image: imgBuf, caption: lines[0] });
+          for (let i = 1; i < lines.length; i++) {
+            await delay(700);
+            try {
+              await sock.sendMessage(from, { image: imgBuf, caption: lines[i], edit: editMsg.key });
+            } catch {
+              try { await sock.sendMessage(from, { caption: lines[i], edit: editMsg.key }); } catch {}
+            }
+          }
+          await delay(600);
+          await sendMenuWithMedia(from, m.pushName, userCount, editMsg, imgBuf);
+        } else {
+          // fallback text-only edits
+          editMsg = await sock.sendMessage(from, { text: lines[0] });
+          for (let i = 1; i < lines.length; i++) {
+            await delay(700);
+            await sock.sendMessage(from, { text: lines[i], edit: editMsg.key }).catch(() => {});
+          }
+          await delay(600);
+          await sendMenuWithMedia(from, m.pushName, userCount);
+        }
         return;
       }
 
@@ -2312,7 +2356,8 @@ async function startBot() {
           return reply(`Current MENU_MEDIA: ${config.MENU_MEDIA || '(none)'}\nUsage: ${prefix}setmenu https://image-or-video-url`);
         }
         config.MENU_MEDIA = text.trim();
-        await reply('✅ Menu media set.\n(Set MENU_MEDIA env on Heroku to keep after restart)');
+        config.BOT_IMAGE = text.trim();
+        await reply('✅ Menu/bot image set.\nKeep it after restart: Heroku config BOT_IMAGE or MENU_MEDIA');
         return;
       }
 
