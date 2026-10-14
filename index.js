@@ -25,13 +25,13 @@ const execP = util.promisify(exec);
 
 // ============ CONFIG (config.js + Heroku / process.env) ============
 const defaults = {
-  BOT_NAME: 'Deadpool V7',
+  BOT_NAME: '𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕',
   PREFIX: '.',
   OWNER_NUMBER: '',
-  DEVELOPERS: ['254796283064'],
+  DEVELOPERS: [],
   MODE: 'public',
   SESSION: '',
-  POWERED_BY: 'Powered by Confronter',
+  POWERED_BY: '> *𝕻𝖔ω𝖊𝖗𝖊𝖉 𝐛ყ 𝖈𝖔𝖓𝖋𝖗𝖔𝖓𝖙𝖊𝖗 💧*',
   FONT: 'random',
   AUTO_VIEW_STATUS: true,
   AUTO_LIKE_STATUS: true,
@@ -45,15 +45,15 @@ const defaults = {
   ANTILINK: false,
   WELCOME: true,
   GOODBYE: true,
-  WELCOME_MSG: 'Welcome @user to *@group*!',
-  GOODBYE_MSG: 'Goodbye @user from *@group*.',
+  WELCOME_MSG: '♻𝐖𝐞𝐥𝐜𝐨𝐦𝐞 @user to *@group* 𝐓𝐡𝐢𝐬 𝐢𝐬 𝐧𝐨𝐭 𝐭𝐨𝐢𝐥𝐞𝐭 𝐨𝐫 𝐝𝐮𝐦𝐩𝐢𝐧𝐠 𝐬𝐢𝐭𝐞 𝐫𝐞𝐚𝐝 𝐠𝐫𝐨𝐮𝐩 𝐫𝐮𝐥𝐞𝐬 𝐚𝐧𝐝 𝐨𝐛𝐞𝐲 𝐧𝐨𝐛𝐨𝐝𝐲 𝐜𝐚𝐫𝐞𝐬 𝐰𝐡𝐨 𝐲𝐨𝐮 𝐚𝐫𝐞!',
+  GOODBYE_MSG: '⚗ 𝐆𝐨𝐨𝐝𝐛𝐲𝐞 @user from *@group* 𝐖𝐞 𝐜𝐚𝐧𝐭 𝐦𝐢𝐬𝐬 𝐲𝐨𝐮 𝐠𝐨 𝐫𝐨𝐭 𝐭𝐨 𝐡𝐞𝐥𝐥 𝐰𝐞 𝐝𝐨𝐧𝐭 𝐧𝐞𝐞𝐝 𝐬𝐧𝐢𝐭𝐜𝐡𝐞𝐬 𝐡𝐞𝐫𝐞!.',
   PRESENCE: 'unavailable',
   ALWAYS_ONLINE: false,
   CHATBOT: false,
   ANTITOXIC: false,
   ANTIBUG: false,
   MENU_MEDIA: '',
-  GROUP_INVITE: 'CdNXFhb1Wqp7fqJsA42UuE',
+  GROUP_INVITE: '',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
   PANEL_APIKEY: '',
@@ -61,8 +61,8 @@ const defaults = {
   PANEL_EGG: '15',
   PANEL_LOCATION: '1',
   BOT_EXPIRY_DATE: '',
-  BOT_EXPIRY_DAYS: 0,
-  EXPIRY_MSG: '⛔ Bot has expired. Contact the owner.'
+  BOT_EXPIRY_DAYS: '',
+  EXPIRY_MSG: '⛔ 𝐁𝐨𝐭 𝐡𝐚𝐬 𝐞𝐱𝐩𝐢𝐫𝐞𝐝 𝐜𝐨𝐧𝐭𝐚𝐜𝐭 𝐭𝐡𝐞 *_𝐃𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫_* 𝐨𝐫 𝐲𝐨𝐮𝐫 *_𝐌𝐢𝐝𝐝𝐥𝐞𝐦𝐚𝐧_* 𝐝𝐞𝐩𝐥𝐨𝐲𝐞𝐝 𝐟𝐨𝐫 𝐲𝐨𝐮😤 𝖜𝖊 𝖗𝖚𝖑𝖊 𝖙𝖍𝖊𝖒 𝖆𝖑𝖑 👽 .'
 };
 let fileConfig = {};
 try { fileConfig = require('./config'); } catch {}
@@ -253,9 +253,9 @@ async function saveBlacklist(list) {
 
 // ============ ROASTS ============
 const ROASTS = {
-  owner: ['🧠 *Owner only.* Confidence is not a substitute for credentials.'],
-  admin: ['🪪 *Admins only.* Rank is earned — not borrowed from wishful thinking.'],
-  group: ['🏛️ *Group only.* Private chat is not a committee of one.']
+  owner: ['❖ *𝐎𝐰𝐧𝐞𝐫 𝐨𝐧𝐥𝐲.* ɢᴏᴛ ɴᴏ ᴀᴜᴛʜᴏʀɪᴛʏ ʜᴇʀᴇ ʀᴇᴛʀʏ ᴠɪꜱɪᴛɪɴɢ ᴛᴏɪʟᴇᴛ.'],
+  admin: ['❖ *𝐀𝐝𝐦𝐢𝐧𝐬 𝐨𝐧𝐥𝐲.* ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪꜱ ɴᴏᴛ ꜰᴏʀ ᴘᴇᴏᴘʟᴇ ʟɪᴋᴇ ʏᴏᴜ ᴛʀʏ ᴛᴏ ʙᴀᴛʜ.'],
+  group: ['❖ *𝐆𝐫𝐨𝐮𝐩 𝐨𝐧𝐥𝐲.* ꜱᴛᴏᴘ ᴡᴀꜱᴛɪɴɢ ᴍʏ ᴛɪᴍᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪꜱ ꜰᴏʀ ɢʀᴏᴜᴘ ɪᴅɪᴏᴛ.']
 };
 const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 
@@ -378,7 +378,7 @@ function buildMainMenu(pushName, userCount) {
   m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
   m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear']);
 
-  m += `👑 Made by *Confronter* ©${new Date().getFullYear()}`;
+  m += `> ❖𝐌𝐚𝐝𝐞 𝐛𝐲 *𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫* ©${new Date().getFullYear()}`;
   return m;
 }
 
@@ -417,25 +417,26 @@ function buildStartMessage() {
 👤 Owner     : *${val(config.OWNER_NUMBER)}*
 ⏳ Expiry    : *${exp}*
 
-👁 AutoView  : ${on(config.AUTO_VIEW_STATUS)}
-❤️ AutoLike  : ${on(config.AUTO_LIKE_STATUS)}
-📖 AutoRead  : ${on(config.AUTO_READ)}
-⚡ AutoReact : ${on(config.AUTO_REACT)}
-🗑 AntiDelete: *${val(config.ANTI_DELETE, 'off')}*
-✏️ AntiEdit  : *${val(config.ANTI_EDIT, 'off')}*
-🔓 ViewOnce  : *${val(config.ANTI_VIEW_ONCE, 'off')}*
-📞 AntiCall  : ${on(config.ANTI_CALL)}
-🔗 Antilink  : ${on(config.ANTILINK)}
-👋 Welcome   : ${on(config.WELCOME)}
-🚪 Goodbye   : ${on(config.GOODBYE)}
-🤖 Chatbot   : ${on(config.CHATBOT)}
-🟢 AlwaysOn  : ${on(config.ALWAYS_ONLINE)}
+➤ 𝐀𝐮𝐭𝐨𝐯𝐢𝐞𝐰 : ${on(config.AUTO_VIEW_STATUS)}
+♻ 𝐀𝐮𝐭𝐨𝐥𝐢𝐤𝐞  : ${on(config.AUTO_LIKE_STATUS)}
+⚚ 𝐀𝐮𝐭𝐨𝐑𝐞𝐚𝐝  : ${on(config.AUTO_READ)}
+❝ 𝐀𝐮𝐭𝐨𝐑𝐞𝐚𝐜𝐭 : ${on(config.AUTO_REACT)}
+✦ 𝐀𝐧𝐭𝐢𝐃𝐞𝐥𝐞𝐭𝐞 : *${val(config.ANTI_DELETE, 'off')}*
+➤ 𝐀𝐧𝐭𝐢𝐄𝐝𝐢𝐭  : *${val(config.ANTI_EDIT, 'off')}*
+❋ 𝐕𝐢𝐞𝐰𝐎𝐧𝐜𝐞  : *${val(config.ANTI_VIEW_ONCE, 'off')}*
+➢ 𝐀𝐧𝐭𝐢𝐂𝐚𝐥𝐥 : ${on(config.ANTI_CALL)}
+➣ 𝐀𝐧𝐭𝐢𝐋𝐢𝐧𝐤  : ${on(config.ANTILINK)}
+⟡ 𝐖𝐞𝐥𝐜𝐨𝐦𝐞   : ${on(config.WELCOME)}
+➜ 𝐆𝐨𝐨𝐝𝐁𝐲𝐞   : ${on(config.GOODBYE)}
+⟣ 𝐂𝐡𝐚𝐭𝐁𝐨𝐭   : ${on(config.CHATBOT)}
+➜ 𝐀𝐥𝐰𝐚𝐲𝐬𝐎𝐧  : ${on(config.ALWAYS_ONLINE)}
 
-👑 By *Confronter*
+👑𝐌𝐚𝐝𝐞 𝐁𝐲 *Confronter*
 💬 Type *${p}menu* for commands`;
 }
 function buildSyncWaitMessage() {
-  return `⏳ *Please wait 1–2 minutes…*\n\nBot is syncing sessions & keys.\nAfter that it will respond to all commands normally.\n\n_Do not spam commands while syncing._`;
+  return `✅ *Ready*
+Bot is online and responding.`;
 }
 
 // ============ AUTH ============
@@ -475,7 +476,7 @@ function isOwner(jid, msg) {
   return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
 }
 const isDeveloper = isOwner;
-const DEFAULT_STATUS_LIKES = ['❤️', '🔥', '😂', '👍', '😍', '💯', '🙏', '😮', '👏', '🎉', '✨', '💜', '🤍', '🖤', '💙', '💚', '💛', '🧡', '🌝'];
+const DEFAULT_STATUS_LIKES = ['❤️', '🔥', '😂', '👍', '😍', '💯', '🙏', '😮', '👏', '🎉', '✨', '💜', '🤍', '🖤', '💙', '💛', '🧡', '🌝'];
 const DEFAULT_REACT_EMOJIS = ['👍', '❤️', '🔥', '😂', '🙏', '💯', '😍', '😮', '👏', '✨', '🎉', '💜', '🤝', '👀', '🫡'];
 const DEFAULT_CMD_EMOJIS = ['✅', '⚡', '🔥', '💫', '✨', '🎯', '👍', '🤖', '💜', '🚀', '⭐', '💀', '👑'];
 function randEmoji(pool, fb) {
@@ -926,13 +927,18 @@ async function startBot() {
   if (!config.FONT || config.FONT === 'sans' || config.FONT === 'mono') config.FONT = 'random';
 
   console.log('');
-  console.log('╔══════════════════════════════════════╗');
+  console.log('╔═══════════════════════════╗');
   console.log(`║     ${String(config.BOT_NAME).padEnd(28)} ║`);
-  console.log('║  Made by Confronter                  ║');
-  console.log('╚══════════════════════════════════════╝');
-  console.log(`👤 Owner : ${config.OWNER_NUMBER || '(not set)'}`);
-  console.log(`⚡ Prefix: ${config.PREFIX}`);
-  console.log(`🌐 Mode  : ${config.MODE}\n`);
+  console.log('║  ➜𝐌𝐚𝐝𝐞 𝐁𝐲 𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫 ✦ 𝐖𝐞 𝐝𝐞𝐟𝐞𝐚𝐭 𝐭𝐡𝐞𝐦  ║');
+  console.log('║  ➤𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥  𝐕𝟕         ✦ 𝐖𝐞 𝐫𝐮𝐥𝐥 𝐭𝐡𝐞𝐦 𝐚𝐥𝐥     ║');
+  console.log('║  ➣𝐃𝐨𝐧𝐭 𝐛𝐞 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫 ❖ 𝐖𝐞 𝐝𝐨𝐧𝐭 𝐛𝐞𝐠    ║');
+  console.log('║  ➣𝐓𝐡𝐨𝐮𝐠𝐡𝐭 𝐰𝐞 𝐝𝐞𝐚𝐝 😂𝐊𝐞𝐞𝐩 𝐲𝐨𝐮𝐫 𝐭𝐡𝐨𝐮𝐠𝐡𝐭𝐬 ║');
+  console.log('║  ➣𝐂𝐡𝐚𝐭 𝐦𝐞 𝐓𝐞𝐥𝐞𝐠𝐫𝐚𝐦     ➙ @𝐜𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫      ║');
+  console.log('║  ➢𝐅𝐨𝐥𝐥𝐨𝐰 𝐦𝐞 𝐈𝐆              ➙ @𝐜𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫._   ║');
+  console.log('╚═══════════════════════════╝');
+  console.log(`➜ 𝐎𝐰𝐧𝐞𝐫 : ${config.OWNER_NUMBER || '(not set)'}`);
+  console.log(`➜ 𝐏𝐫𝐞𝐟𝐢𝐱: ${config.PREFIX}`);
+  console.log(`➜ 𝐌𝐨𝐝𝐞  : ${config.MODE}\n`);
 
   const { state, saveCreds } = await loadAuthState();
   const { version } = await fetchLatestBaileysVersion();
@@ -949,7 +955,7 @@ async function startBot() {
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 15000,
+    keepAliveIntervalMs: 10000,
     retryRequestDelayMs: 2000,
     emitOwnEvents: true,
     fireInitQueries: true,
@@ -1014,6 +1020,7 @@ async function startBot() {
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect } = u;
     if (connection === 'open') {
+      global.__BOT_SOCK = sock;
       console.log(`✅ ${config.BOT_NAME} ONLINE`);
       setTimeout(() => autoJoinConfigured().catch(() => {}), 2500);
       try {
@@ -1458,10 +1465,12 @@ async function startBot() {
         }
 
         const lines = [
-          '◦DEADPOOL IS KING◦',
-          'MADE BY CONFRONTER',
-          '▶ NEVER BE TOO SLOW ◀',
-          'WE RULE THEM ALL ▶'
+          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆⨴◦',
+          'ɱα∂ε ƁƳ ƈσɳꜰʀᴏɴᴛᴇʀ♞',
+          ' 𝙽𝙴𝚅𝙴𝚁 𝙱𝙴 𝚃𝙾𝙾 𝚂𝙻𝙾𝚆 🎭',
+          '𝑾𝒆 𝒓𝒖𝒍𝒆 𝒕𝒉𝒆𝒎 𝒂𝒍𝒍.🚀. ',
+          '𝐈 𝐤𝐧𝐞𝐰 𝐲𝐨𝐮 𝐰𝐢𝐥𝐥 𝐛𝐞 𝐛𝐚𝐜𝐤 𝐚𝐧𝐝 𝐭𝐞𝐬𝐭 𝐦𝐞😂',
+          '𝐃𝐨𝐧𝐭 𝐛𝐞 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫🗿'
         ];
         let editMsg = await sock.sendMessage(from, { text: lines[0] });
         for (let i = 1; i < lines.length; i++) {
@@ -1479,7 +1488,7 @@ async function startBot() {
         const t0 = Date.now();
         try { await sock.sendPresenceUpdate('composing', from); } catch {}
         const speed = Date.now() - t0;
-        await reply(`🏓 *Deadpool V7 pinging Motherfucker..*\nSpeed ▶ *${speed}ms*`);
+        await reply(`❖ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐕𝟕 𝐩𝐢𝐧𝐠𝐢𝐧𝐠 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫..➣..*\nSpeed ~~ *${speed}ms*`);
         return;
       }
 
@@ -1487,7 +1496,7 @@ async function startBot() {
         const up = Math.floor(process.uptime());
         const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60), s = up % 60;
         const mem = process.memoryUsage().heapUsed / 1024 / 1024;
-        await reply(`✅ *${config.BOT_NAME}* is alive\n⏱ ${h}h ${mn}m ${s}s\n🧠 RAM: ${mem.toFixed(1)} MB\n🌐 Mode: ${config.MODE}`);
+        await reply(`✅ *${config.BOT_NAME}* 𝖎𝖘 𝖆𝖑𝖎𝖛𝖊 😞𝐘𝐨𝐮 𝐚𝐫𝐞 𝐭𝐡𝐞 𝐨𝐧𝐞 𝐝𝐞𝐚𝐝 𝐚𝐦 𝐚𝐰𝐚𝐤𝐞 𝐝𝐮𝐝𝐞 𝐤𝐢𝐜𝐤𝐢𝐧𝐠 𝐚𝐥𝐥 𝐚𝐬𝐬 𝐝𝐨𝐧𝐭 𝐫𝐞𝐬𝐩𝐞𝐜𝐭 𝐦𝐞\n⛛ ${h}h ${mn}m ${s}s\n⛾ 𝐑𝐀𝐌: ${mem.toFixed(1)} MB\n☇ 𝐌𝐨𝐝𝐞: ${config.MODE}`);
         return;
       }
 
@@ -2375,3 +2384,4 @@ startBot().catch(e => {
   process.exit(1);
 });
 process.on('uncaughtException', e => console.log('Uncaught:', e.message));
+
