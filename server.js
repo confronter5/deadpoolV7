@@ -10,7 +10,9 @@ const {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   Browsers,
-  delay
+  delay,
+  proto,
+  generateWAMessageFromContent
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
@@ -97,44 +99,109 @@ async function sendSessionToPM(sock, sessionId) {
   const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
   const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
   const groupLink = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
+  const dev = process.env.DEV_LINK || DEV_LINK;
   const line = '━━━━━━━━━━━━━━━━━━━━';
+
   try {
     // 1) Header
     await sock.sendMessage(jid, {
       text:
         '➤ *𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕 𝐒𝐄𝐒𝐒𝐈𝐎𝐍*\n' +
         line + '\n' +
-        '➤ *⫹ᴄᴏᴘʏ ᴛʜᴇ ꜱᴇꜱꜱɪᴏɴ ʙᴇʟᴏᴡ ʙᴇ ꜱʜᴀʀᴘ⫺𝐃𝐨𝐧𝐭 𝐛𝐞 𝐦𝐨𝐭𝐡𝐫𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫⬇*\n' +
-        '𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 𝐟𝐨𝐫 𝐡𝐞𝐥𝐩 *@confronter._* / *♞𝔇𝔢𝔞𝔡𝔭𝔬𝔬𝔩* 𝔯𝔲𝔩𝔩𝔦𝔫𝔤 𝔱𝔥𝔢𝔪.\n' +
+        '➤ *⫹ᴄᴏᴘʏ ᴛʜᴇ ꜱᴇꜱꜱɪᴏɴ ʙᴇʟᴏᴡ ʙᴇ ꜱʜᴀʀᴘ⫺*\n' +
+        '𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 *@confronter._*\n' +
         line
     });
     await delay(400);
 
-    // 2) Session string only (easy to copy)
+    // 2) Session string only (long-press copy)
     await sock.sendMessage(jid, { text: sessionId });
     await delay(400);
 
-    // 3) Help / Support menu
-    let help =
-      line + '\n' +
-      '❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' +
-      line + '\n' +
-      '❋ *𝐃𝐄𝐕:*\n' + DEV_LINK + '\n\n';
+    // 3) Buttons: Copy Session | Visit site | Join WaChannel
+    try {
+      const buttons = [
+        {
+          name: 'cta_copy',
+          buttonParamsJson: JSON.stringify({
+            display_text: '📋 Copy Session',
+            copy_code: sessionId
+          })
+        },
+        {
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({
+            display_text: '🔗 visit our site',
+            url: site,
+            merchant_url: site
+          })
+        }
+      ];
+      if (channel) {
+        buttons.push({
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({
+            display_text: '📢 Join WaChannel',
+            url: channel,
+            merchant_url: channel
+          })
+        });
+      } else if (groupLink) {
+        const gurl = groupLink.startsWith('http') ? groupLink : ('https://chat.whatsapp.com/' + groupLink);
+        buttons.push({
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({
+            display_text: '👥 Join Group',
+            url: gurl,
+            merchant_url: gurl
+          })
+        });
+      } else {
+        buttons.push({
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({
+            display_text: '👨‍💻 Developer',
+            url: dev,
+            merchant_url: dev
+          })
+        });
+      }
 
-    if (groupLink) {
-      help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐆𝐜:*\n' + groupLink + '\n\n';
+      const buttonsMsg = {
+        viewOnce: true,
+        interactiveMessage: proto.Message.InteractiveMessage.create({
+          body: proto.Message.InteractiveMessage.Body.create({
+            text: '💀 *Deadpool V7 Session*\nChoose an action:'
+          }),
+          footer: proto.Message.InteractiveMessage.Footer.create({
+            text: (config.POWERED_BY || 'Powered by Confronter').replace(/[*_]/g, '').slice(0, 60)
+          }),
+          header: proto.Message.InteractiveMessage.Header.create({
+            title: 'Session Ready',
+            hasMediaAttachment: false
+          }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+            buttons
+          })
+        })
+      };
+      const msg = generateWAMessageFromContent(jid, buttonsMsg, { userJid: jid });
+      await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+    } catch (btnErr) {
+      log('buttons fail, text fallback', btnErr.message);
+      let help =
+        line + '\n❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' + line + '\n' +
+        '❋ *𝐃𝐄𝐕:*\n' + dev + '\n\n';
+      if (groupLink) help += '➧ *𝐆𝐫𝐨𝐮𝐩:*\n' + groupLink + '\n\n';
+      if (channel) help += '➧ *𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
+      help += '➧ *𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' + line;
+      await sock.sendMessage(jid, { text: help });
     }
-    if (channel) {
-      help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
-    }
-    help +=
-      '➧ *𝐎𝐮𝐫 𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' +
-      line + '\n' +
-      '> _𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙲𝚘𝚗𝚏𝚛𝚘𝚗𝚝𝚎𝚛_';
-
-    await sock.sendMessage(jid, { text: help });
     return true;
-  } catch (e) { log('pm fail', e.message); return false; }
+  } catch (e) {
+    log('pm fail', e.message);
+    return false;
+  }
 }
 
 async function exportSession(AUTH_DIR) {
@@ -314,17 +381,21 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 // ==================== MUSIC (Audius) ====================
+// Real searchable tracks (Audius has indie/creative-commons heavy catalog)
+// Queries tuned so searchSong finds streamable results with real titles
 const MUSIC_TRACKS = [
-  { q: 'Alan Walker Faded',          name: 'Alan Walker — Faded' },
-  { q: 'Vybz Kartel Fever',          name: 'Vybz Kartel — Fever' },
-  { q: 'Central Cee Doja',           name: 'Central Cee — Doja' },
-  { q: 'Lil Baby Woah',              name: 'Lil Baby — Woah' },
-  { q: 'Burna Boy Last Last',        name: 'Burna Boy — Last Last' },
-  { q: 'Sauti Sol Suzanna',          name: 'Sauti Sol — Suzanna' },
-  { q: 'Diamond Platnumz Jeje',      name: 'Diamond Platnumz — Jeje' },
-  { q: 'Ed Sheeran Shape of You',    name: 'Ed Sheeran — Shape of You' },
-  { q: 'The Weeknd Blinding Lights', name: 'The Weeknd — Blinding Lights' },
-  { q: 'Rema Calm Down',             name: 'Rema — Calm Down' }
+  { q: 'electronic chill beats',        name: 'Chill Electronic Beats' },
+  { q: 'lofi hip hop study',            name: 'Lo-Fi Hip Hop' },
+  { q: 'dance pop upbeat',              name: 'Upbeat Dance Pop' },
+  { q: 'afrobeats summer',              name: 'Afrobeats Summer' },
+  { q: 'trap instrumental banger',      name: 'Trap Instrumental' },
+  { q: 'reggae roots vibes',            name: 'Reggae Roots' },
+  { q: 'house music progressive',       name: 'Progressive House' },
+  { q: 'rnb soul smooth',               name: 'Smooth R&B Soul' },
+  { q: 'drill type beat',               name: 'Drill Type Beat' },
+  { q: 'ambient atmospheric',           name: 'Ambient Atmosphere' },
+  { q: 'jazz lounge relax',             name: 'Jazz Lounge' },
+  { q: 'future bass energy',            name: 'Future Bass' }
 ];
 const musicCache = new Map();
 
@@ -336,7 +407,19 @@ app.get('/api/music/:index', async (req, res) => {
   const idx = Number(req.params.index) || 0;
   const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
   const track = MUSIC_TRACKS[i];
-  res.json({ i, name: track.name, url: '/api/stream-song/' + encodeURIComponent(track.q), next: (i + 1) % MUSIC_TRACKS.length });
+  let name = track.name;
+  try {
+    const data = await searchSong(track.q);
+    if (data?.title) {
+      name = data.artist ? `${data.artist} — ${data.title}` : data.title;
+    }
+  } catch {}
+  res.json({
+    i,
+    name,
+    url: '/api/stream-song/' + encodeURIComponent(track.q),
+    next: (i + 1) % MUSIC_TRACKS.length
+  });
 });
 
 app.get('/api/stream-song/:query', async (req, res) => {
@@ -346,9 +429,17 @@ app.get('/api/stream-song/:query', async (req, res) => {
     const cached = musicCache.get(query);
     if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
     const data = await searchSong(query);
-    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found' });
-    musicCache.set(query, { data, ts: Date.now() });
-    res.json(data);
+    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
+    // Always return real title/artist from Audius (never "unknown")
+    const payload = {
+      title: data.title || query,
+      artist: data.artist || 'Artist',
+      streamUrl: data.streamUrl,
+      artwork: data.artwork || null,
+      name: `${data.artist || 'Artist'} — ${data.title || query}`
+    };
+    musicCache.set(query, { data: payload, ts: Date.now() });
+    res.json(payload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -374,6 +465,99 @@ app.get('/api/music/stream/:index', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size }));
+app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
+
+// ---------- Keep-alive (stop free dyno sleep) ----------
+const KEEP_URL = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
+setInterval(async () => {
+  try {
+    const url = KEEP_URL || `http://127.0.0.1:${PORT}/health`;
+    await axios.get(url, { timeout: 12000 }).catch(() => {});
+  } catch {}
+}, 10 * 60 * 1000);
+
+// ---------- Admin: users list + broadcast (password) ----------
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || process.env.DASHBOARD_PASSWORD || 'changeme123';
+const DATA_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const adminSessions = new Map();
+const crypto = require('crypto');
+
+async function loadBotUsers() {
+  try {
+    if (!(await fs.pathExists(USERS_FILE))) return [];
+    const list = await fs.readJson(USERS_FILE);
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
+function adminAuth(req, res, next) {
+  const token = req.headers['x-admin-token'] || req.query.token || req.body?.token;
+  if (token && adminSessions.has(token)) return next();
+  return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
+
+app.post('/api/admin/login', (req, res) => {
+  if (String(req.body?.password || '') === String(ADMIN_PASSWORD)) {
+    const token = crypto.randomBytes(24).toString('hex');
+    adminSessions.set(token, Date.now());
+    return res.json({ ok: true, token });
+  }
+  res.status(401).json({ ok: false, error: 'Invalid password' });
+});
+
+app.get('/api/admin/users', adminAuth, async (req, res) => {
+  const users = await loadBotUsers();
+  res.json({
+    ok: true,
+    count: users.length,
+    users: users.map(j => ({ jid: j, number: String(j).split('@')[0] }))
+  });
+});
+
+app.post('/api/admin/broadcast', adminAuth, async (req, res) => {
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ ok: false, error: 'Message required' });
+  const sock = global.__BOT_SOCK;
+  if (!sock) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Bot not connected on this dyno. Broadcast works when worker (index.js) is online, or use .bc from WhatsApp as owner.'
+    });
+  }
+  const users = await loadBotUsers();
+  res.json({ ok: true, queued: users.length });
+  (async () => {
+    for (const jid of users) {
+      try { await sock.sendMessage(jid, { text: message }); await delay(700); } catch {}
+    }
+  })();
+});
+
+app.get('/admin', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Admin</title><style>
+body{font-family:system-ui;background:#0f0f12;color:#eee;margin:0;padding:1.5rem}
+.card{max-width:480px;margin:2rem auto;background:#1a1a22;padding:1.5rem;border-radius:14px;border:1px solid #2a2a35}
+input,textarea{width:100%;padding:.7rem;margin:.4rem 0;border-radius:8px;border:1px solid #333;background:#121218;color:#fff;box-sizing:border-box}
+button{padding:.7rem 1.2rem;border:0;border-radius:8px;background:#5b5bf0;color:#fff;font-weight:600;cursor:pointer;width:100%;margin-top:.5rem}
+.err{color:#f66}.ok{color:#6f6}
+</style></head><body>
+<div class="card" id="login"><h2>🔐 Admin</h2><input id="pw" type="password" placeholder="Admin password"/><button onclick="doLogin()">Login</button><p class="err" id="le"></p></div>
+<div class="card" id="dash" style="display:none"><h2>Users & Broadcast</h2><p id="cnt">Users: —</p>
+<textarea id="msg" rows="4" placeholder="Broadcast message to all bot users..."></textarea>
+<button onclick="doBc()">Send broadcast</button><p id="bm"></p>
+<button onclick="loadU()" style="background:#333;margin-top:1rem">Refresh users</button>
+<div id="list" style="margin-top:1rem;font-size:.85rem;max-height:300px;overflow:auto"></div>
+</div>
+<script>
+let tok=localStorage.getItem('adm');
+async function doLogin(){const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});const j=await r.json();if(j.ok){tok=j.token;localStorage.setItem('adm',tok);show()}else document.getElementById('le').textContent=j.error||'Fail'}
+function show(){document.getElementById('login').style.display='none';document.getElementById('dash').style.display='block';loadU()}
+async function loadU(){const r=await fetch('/api/admin/users',{headers:{'x-admin-token':tok}});if(r.status===401){localStorage.removeItem('adm');location.reload();return}const j=await r.json();document.getElementById('cnt').textContent='Users: '+j.count;document.getElementById('list').innerHTML=(j.users||[]).map(u=>'<div>'+u.number+'</div>').join('')||'<p style="color:#666">No users yet</p>'}
+async function doBc(){const r=await fetch('/api/admin/broadcast',{method:'POST',headers:{'Content-Type':'application/json','x-admin-token':tok},body:JSON.stringify({message:document.getElementById('msg').value})});const j=await r.json();const el=document.getElementById('bm');el.className=j.ok?'ok':'err';el.textContent=j.ok?('Queued to '+j.queued+' users'):(j.error||'Fail')}
+if(tok)show();
+</script></body></html>`);
+});
 
 app.listen(PORT, () => log(`Deadpool V7 Pair :${PORT} | code=${PAIR_CODE}`));
