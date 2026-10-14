@@ -2,7 +2,7 @@
   "name": "Deadpool V7",
   "description": "Deadpool V7 WhatsApp Bot",
   "repository": "https://github.com/confronter5/deadpoolv7",
-  "logo": "https://i.imgur.com/8KZQvQ0.png",
+  "logo": "https://i.imgur.com/akXoQZH.jpeg",
   "keywords": [
     "whatsapp",
     "bot",
@@ -41,11 +41,11 @@
     },
     "BOT_IMAGE": {
       "description": "Bot/menu image URL (used for .menu loading edits + full menu)",
-      "value": "https://i.imgur.com/8KZQvQ0.png"
+      "value": "https://i.imgur.com/akXoQZH.jpeg"
     },
     "MENU_MEDIA": {
       "description": "Optional menu image/video URL (overrides BOT_IMAGE if set)",
-      "value": "https://i.imgur.com/8KZQvQ0.png"
+      "value": "https://i.imgur.com/akXoQZH.jpeg"
     },
     "PREFIX": {
       "description": "Command prefix",
@@ -74,6 +74,16 @@
     "CHANNEL_URL": {
       "description": "WhatsApp channel link for Join WaChannel button",
       "required": false
+    },
+    "GROUP_JID": {
+      "description": "Main group JID (stable). Invite links change \u2014 bot mints a fresh link from this JID when needed.",
+      "value": "120363430854781207@g.us",
+      "required": true
+    },
+    "GROUP_INVITE": {
+      "description": "Optional. Leave empty if you only use GROUP_JID. Only set if you have a one-time invite code for first join.",
+      "required": false,
+      "value": ""
     }
   },
   "formation": {
