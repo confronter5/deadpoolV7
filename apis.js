@@ -1,8 +1,18 @@
-// apis.js — AI, Lyrics, TextMaker, Song search (production)
+// apis.js — AI, Lyrics, TextMaker, Song search
 const axios = require('axios');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const e = s => encodeURIComponent(String(s || ''));
+
+function isBadText(s) {
+  if (!s || typeof s !== 'string') return true;
+  const t = s.trim();
+  if (t.length < 2) return true;
+  const low = t.slice(0, 80).toLowerCase();
+  if (low.includes('<!doctype') || low.includes('<html') || low.includes('<pre>') || low.includes('cannot post')) return true;
+  if (low.startsWith('{') && low.includes('"error"')) return true;
+  return false;
+}
 
 async function get(url, opts = {}) {
   return axios.get(url, {
@@ -26,43 +36,62 @@ async function post(url, body, opts = {}) {
   });
 }
 
-// ============ AI ============
 async function askAI(text) {
   if (!text || !String(text).trim()) return null;
   const q = String(text).trim().slice(0, 2500);
 
   const backends = [
+    // Pollinations OpenAI-compatible (POST body — NOT path)
     async () => {
-      const r = await axios.post(
-        'https://text.pollinations.ai/' + e(q),
-        {},
-        { timeout: 60000, headers: { 'User-Agent': UA, Accept: 'text/plain' }, validateStatus: () => true, responseType: 'text' }
+      const r = await post(
+        'https://text.pollinations.ai/openai',
+        {
+          model: 'openai',
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant. Answer clearly and briefly.' },
+            { role: 'user', content: q }
+          ]
+        },
+        { timeout: 60000 }
       );
-      if (typeof r?.data === 'string' && r.data.trim().length > 2) return r.data.trim();
+      const a = r?.data?.choices?.[0]?.message?.content || r?.data?.content || r?.data;
+      if (typeof a === 'string' && !isBadText(a)) return a.trim();
+      return null;
+    },
+    // Pollinations GET (query in path is OK for GET)
+    async () => {
+      const r = await axios.get('https://text.pollinations.ai/' + e(q), {
+        timeout: 60000,
+        headers: { 'User-Agent': UA, Accept: 'text/plain' },
+        validateStatus: () => true,
+        responseType: 'text',
+        transformResponse: [d => d]
+      });
+      if (typeof r?.data === 'string' && !isBadText(r.data)) return r.data.trim();
       return null;
     },
     async () => {
       const r = await post('https://api.siputzx.my.id/api/ai/gpt', { content: q, model: 'gpt-4o-mini' }, { timeout: 55000 });
       const a = r?.data?.data || r?.data?.result || r?.data?.message || r?.data?.response || r?.data;
-      if (typeof a === 'string' && a.trim().length > 2) return a.trim();
-      if (a?.content) return String(a.content).trim();
-      if (a?.text) return String(a.text).trim();
+      if (typeof a === 'string' && !isBadText(a)) return a.trim();
+      if (a?.content && !isBadText(String(a.content))) return String(a.content).trim();
+      if (a?.text && !isBadText(String(a.text))) return String(a.text).trim();
       return null;
     },
     async () => {
       const r = await post('https://api.siputzx.my.id/api/ai/blackboxai', { content: q }, { timeout: 55000 });
       const a = r?.data?.data || r?.data?.result || r?.data?.response;
-      return typeof a === 'string' && a.trim().length > 2 ? a.trim() : null;
+      return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
     },
     async () => {
       const r = await get(`https://api.ryzendesu.vip/api/ai/gpt?text=${e(q)}`, { timeout: 45000 });
       const a = r?.data?.result || r?.data?.answer || r?.data?.response || r?.data?.data;
-      return typeof a === 'string' && a.trim().length > 2 ? a.trim() : null;
+      return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
     },
     async () => {
       const r = await get(`https://api.giftedtech.my.id/api/ai/gpt?apikey=gifted&q=${e(q)}`, { timeout: 45000 });
       const a = r?.data?.result || r?.data?.response || r?.data?.data;
-      return typeof a === 'string' && a.trim().length > 2 ? a.trim() : null;
+      return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
     }
   ];
 
@@ -75,17 +104,21 @@ async function askAI(text) {
   return null;
 }
 
-// ============ LYRICS ============
 async function getLyrics(query) {
   if (!query) return null;
   const q = String(query).trim();
+
+  // 1) siputzx
   try {
-    const r = await get(`https://api.siputzx.my.id/api/s/lyrics?query=${e(q)}`, { timeout: 25000 });
+    const r = await get(`https://api.siputzx.my.id/api/s/lyrics?query=${e(q)}`, { timeout: 30000 });
     const d = r?.data?.data || r?.data?.result || r?.data;
-    if (d?.lyrics || d?.lyric) {
-      return { title: d.title || q, artist: d.artist || d.author || d.singer || '', lyrics: d.lyrics || d.lyric };
+    const lyr = d?.lyrics || d?.lyric || d?.text;
+    if (lyr && String(lyr).trim().length > 20) {
+      return { title: d.title || d.song || q, artist: d.artist || d.author || d.singer || '', lyrics: String(lyr).trim() };
     }
   } catch {}
+
+  // 2) lyrics.ovh (full text)
   try {
     const parts = q.split(/[-–—]| by /i).map(s => s.trim()).filter(Boolean);
     let artist = parts[0] || q;
@@ -93,22 +126,59 @@ async function getLyrics(query) {
     if (parts.length === 1) {
       const sr = await get(`https://api.lyrics.ovh/suggest/${e(q)}`, { timeout: 15000 });
       const hit = sr?.data?.data?.[0];
-      if (hit) { artist = hit.artist?.name || artist; title = hit.title || title; }
+      if (hit) {
+        artist = hit.artist?.name || artist;
+        title = hit.title || title;
+      }
     }
-    const r = await get(`https://api.lyrics.ovh/v1/${e(artist)}/${e(title)}`, { timeout: 20000 });
-    if (r?.data?.lyrics) return { title, artist, lyrics: r.data.lyrics };
+    const r = await get(`https://api.lyrics.ovh/v1/${e(artist)}/${e(title)}`, { timeout: 25000 });
+    if (r?.data?.lyrics && String(r.data.lyrics).trim().length > 20) {
+      return { title, artist, lyrics: String(r.data.lyrics).trim() };
+    }
   } catch {}
+
+  // 3) gifted
   try {
-    const r = await get(`https://api.giftedtech.my.id/api/search/lyrics?apikey=gifted&query=${e(q)}`, { timeout: 20000 });
-    const d = r?.data?.result || r?.data?.data;
-    if (d?.lyrics || d?.lyric) {
-      return { title: d.title || q, artist: d.artist || d.author || '', lyrics: d.lyrics || d.lyric };
+    const r = await get(`https://api.giftedtech.my.id/api/search/lyrics?apikey=gifted&query=${e(q)}`, { timeout: 25000 });
+    const d = r?.data?.result || r?.data?.data || r?.data;
+    const lyr = d?.lyrics || d?.lyric;
+    if (lyr && String(lyr).trim().length > 20) {
+      return { title: d.title || q, artist: d.artist || d.author || '', lyrics: String(lyr).trim() };
     }
   } catch {}
+
+  // 4) some-random-api
+  try {
+    const r = await get(`https://some-random-api.com/lyrics?title=${e(q)}`, { timeout: 20000 });
+    if (r?.data?.lyrics && String(r.data.lyrics).trim().length > 20) {
+      return {
+        title: r.data.title || q,
+        artist: r.data.author || r.data.artist || '',
+        lyrics: String(r.data.lyrics).trim()
+      };
+    }
+  } catch {}
+
+  // 5) lrclib search + get
+  try {
+    const sr = await get(`https://lrclib.net/api/search?q=${e(q)}`, { timeout: 20000 });
+    const hit = Array.isArray(sr?.data) ? sr.data[0] : null;
+    if (hit?.id) {
+      const r = await get(`https://lrclib.net/api/get/${hit.id}`, { timeout: 20000 });
+      const lyr = r?.data?.plainLyrics || r?.data?.syncedLyrics || hit.plainLyrics;
+      if (lyr && String(lyr).trim().length > 20) {
+        return {
+          title: hit.trackName || r?.data?.trackName || q,
+          artist: hit.artistName || r?.data?.artistName || '',
+          lyrics: String(lyr).replace(/\[\d+:\d+[^\]]*\]/g, '').trim()
+        };
+      }
+    }
+  } catch {}
+
   return null;
 }
 
-// ============ TEXT MAKER (ephoto360 style) ============
 async function generateTextImage(effect, text) {
   const q = String(text || '').slice(0, 40);
   const style = String(effect || 'neon').toLowerCase().replace(/\s+/g, '');
@@ -121,10 +191,11 @@ async function generateTextImage(effect, text) {
     `https://api.ryzendesu.vip/api/ephoto/${e(style)}?text=${e(q)}`,
     `https://api.giftedtech.my.id/api/ephoto360/${e(style)}?apikey=gifted&text=${e(q)}`,
     `https://api.lolhuman.xyz/api/ephoto1/${e(style)}?apikey=GataDios&text=${e(q)}`,
-    `https://api.lolhuman.xyz/api/textprome/${e(style)}?apikey=GataDios&text=${e(q)}`
+    `https://api.lolhuman.xyz/api/textprome/${e(style)}?apikey=GataDios&text=${e(q)}`,
+    // popular fixed endpoints
+    `https://api.popcat.xyz/outrank?text=${e(q)}`,
+    `https://api.popcat.xyz/alert?text=${e(q)}`
   ];
-  if (style === 'neon') candidates.push(`https://api.popcat.xyz/outrank?text=${e(q)}`);
-  if (style === 'matrix') candidates.push(`https://api.popcat.xyz/matrix?text=${e(q)}`);
 
   for (const url of candidates) {
     try {
@@ -140,51 +211,32 @@ async function generateTextImage(effect, text) {
   return null;
 }
 
-// ============ AUDIUS — real streamable tracks ============
-async function getAudiusHost() {
-  try {
-    const h = await get('https://api.audius.co', { timeout: 12000 });
-    const host = h.data?.data?.[0];
-    if (host) return String(host).replace(/\/$/, '');
-  } catch {}
-  return 'https://discoveryprovider.audius.co';
-}
-
 async function searchSong(query) {
   try {
-    const host = await getAudiusHost();
-    const r = await get(
-      `${host}/v1/tracks/search?query=${e(query)}&app_name=deadpoolv7`,
-      { timeout: 30000 }
-    );
+    const h = await get('https://api.audius.co', { timeout: 12000 });
+    const host = String(h.data?.data?.[0] || 'https://discoveryprovider.audius.co').replace(/\/$/, '');
+    const r = await get(`${host}/v1/tracks/search?query=${e(query)}&app_name=deadpoolv7`, { timeout: 30000 });
     const list = r.data?.data || [];
-    // Prefer tracks that have a streamable id and real title
     for (const t of list) {
       if (!t?.id || !t?.title) continue;
-      const title = String(t.title).trim();
-      if (!title || /unknown|untitled|null/i.test(title)) continue;
+      if (/unknown|untitled|null/i.test(String(t.title))) continue;
       return {
-        title,
+        title: String(t.title).trim(),
         artist: t.user?.name || t.user?.handle || 'Artist',
-        streamUrl: `${host}/v1/tracks/${t.id}/stream?app_name=deadpoolv7`,
-        artwork: t.artwork?.['480x480'] || t.artwork?.['150x150'] || null,
-        id: t.id
-      };
-    }
-    // fallback first hit even if weak title
-    const t = list[0];
-    if (t?.id) {
-      return {
-        title: t.title || query,
-        artist: t.user?.name || '',
         streamUrl: `${host}/v1/tracks/${t.id}/stream?app_name=deadpoolv7`,
         artwork: t.artwork?.['480x480'] || null,
         id: t.id
       };
     }
-  } catch (err) {
-    console.log('searchSong:', err.message);
-  }
+    const t = list[0];
+    if (t?.id) {
+      return {
+        title: t.title || query,
+        artist: t.user?.name || '',
+        streamUrl: `${host}/v1/tracks/${t.id}/stream?app_name=deadpoolv7`
+      };
+    }
+  } catch {}
   return null;
 }
 
@@ -216,12 +268,4 @@ async function getQuote() {
   return null;
 }
 
-module.exports = {
-  askAI,
-  getLyrics,
-  generateTextImage,
-  searchSong,
-  getWeather,
-  getJoke,
-  getQuote
-};
+module.exports = { askAI, getLyrics, generateTextImage, searchSong, getWeather, getJoke, getQuote };
