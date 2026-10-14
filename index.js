@@ -1962,7 +1962,7 @@ async function startBot() {
           const gid = info?.id || '';
           const name = info?.subject || 'Group';
           const size = info?.size || '?';
-          await reply(`👥 *Group Info*\n• Name: *${name}*\n• JID: \\`${gid}\\`\n• Members: ${size}\n• Code: ${code}\n• Link: https://chat.whatsapp.com/${code}`);
+          await reply('👥 *Group Info*\n• Name: *' + name + '*\n• JID: `' + gid + '`\n• Members: ' + size + '\n• Code: ' + code + '\n• Link: https://chat.whatsapp.com/' + code);
         } catch (e) { await reply('❌ ' + e.message); }
         return;
       }
@@ -1989,13 +1989,13 @@ async function startBot() {
             } catch {}
           }
           if (!meta) {
-            await reply(`📢 *Channel*\n• Invite: ${code}\n• JID: \\`${code}@newsletter\\`\n• Link: https://whatsapp.com/channel/${code}`);
+            await reply('📢 *Channel*\n• Invite: ' + code + '\n• JID: `' + code + '@newsletter`\n• Link: https://whatsapp.com/channel/' + code);
             return;
           }
           const nid = meta.id || meta.jid || (code + '@newsletter');
           const name = meta.name || meta.subject || meta.thread_metadata?.name || 'Channel';
           const subs = meta.subscribers || meta.subscribersCount || meta.thread_metadata?.subscribers_count || '?';
-          await reply(`📢 *Newsletter*\n• Name: *${name}*\n• ID: \\`${nid}\\`\n• Subs: ${subs}\n• Invite: ${code}\n• Link: https://whatsapp.com/channel/${code}`);
+          await reply('📢 *Newsletter*\n• Name: *' + name + '*\n• ID: `' + nid + '`\n• Subs: ' + String(subs) + '\n• Invite: ' + code + '\n• Link: https://whatsapp.com/channel/' + code);
         } catch (e) { await reply('❌ ' + e.message); }
         return;
       }
@@ -2409,7 +2409,7 @@ async function startBot() {
         if (!number || number.length < 10) return reply(`Usage: ${prefix}pair 2547xxxxxxx`);
         try {
           const code = await sock.requestPairingCode(number);
-          await reply(`📲 *Pairing Code for +${number}*\n\n\`\`\`${code}\`\`\`\n\n1. Open WhatsApp → Linked Devices\n2. Link a Device → Link with phone number instead\n3. Enter the code above\n\nCode expires in ~1 minute.`);
+          await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. Open WhatsApp → Linked Devices\n2. Link a Device → Link with phone number instead\n3. Enter the code above\n\nCode expires in ~1 minute.');
         } catch (e) {
           await reply('❌ Pairing failed: ' + e.message);
         }
