@@ -118,7 +118,22 @@ async function sendSessionToPM(sock, sessionId) {
     await sock.sendMessage(jid, { text: sessionId });
     await delay(400);
 
-    // 3) Buttons: Copy Session | Visit site | Join WaChannel
+    // 3) HELP / SUPPORT (always shown — like original)
+    let help =
+      line + '\n' +
+      '❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' +
+      line + '\n' +
+      '❋ *𝐃𝐄𝐕:*\n' + dev + '\n\n';
+    if (groupLink) help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐆𝐜:*\n' + groupLink + '\n\n';
+    if (channel) help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
+    help +=
+      '➧ *𝐎𝐮𝐫 𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' +
+      line + '\n' +
+      '> _𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙲𝚘𝚗𝚏𝚛𝚘𝚗𝚝𝚎𝚛_';
+    await sock.sendMessage(jid, { text: help });
+    await delay(400);
+
+    // 4) Buttons: Copy Session | Visit site | Join WaChannel
     try {
       const buttons = [
         {
