@@ -36,7 +36,7 @@ module.exports = {
 
   // Media / links
   MENU_MEDIA: '',                    // optional image/gif/video URL for .menu
-  GROUP_INVITE: '',                  // optional auto-join group invite code or full link
+  GROUP_INVITE: '120363430854781207@g.us',                  // optional auto-join group invite code or full link
   CHANNEL_ID: '',                    // optional newsletter/channel id
 
   // Pterodactyl panel (optional)
