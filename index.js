@@ -458,59 +458,35 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 
-async function sendMenuWithMedia(jid, pushName, userCount, existingMsg = null, existingBuf = null) {
+async function sendMenuWithMedia(jid, pushName, userCount) {
   let caption = buildMainMenu(pushName, userCount);
   try { caption = styleReplyText(caption); } catch {}
   const foot = buildFooter();
   if (foot && !/confronter|powered by/i.test(caption)) caption = caption + foot;
 
-  let buffer = existingBuf;
-  if (!buffer) {
-    const resolved = await resolveMenuImageBuffer();
-    buffer = resolved?.buffer || null;
-  }
+  const resolved = await resolveMenuImageBuffer();
+  const buffer = resolved?.buffer || null;
 
-  // If we already sent the image (loading edits), try edit caption → full menu on SAME message
-  if (existingMsg?.key && buffer) {
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption, edit: existingMsg.key });
-      return existingMsg;
-    } catch (e) {
-      console.log('menu caption edit fail, resend:', e.message);
-    }
-  }
-
+  // Send image + full menu once. NEVER edit image messages (causes Waiting for this message).
   if (buffer && Buffer.isBuffer(buffer) && buffer.length > 500) {
     try {
-      return await sock.sendMessage(jid, { image: buffer, caption });
+      await sock.sendMessage(jid, { image: buffer, caption });
+      return;
     } catch (e) { console.log('menu send media:', e.message); }
   }
-  return await sock.sendMessage(jid, { text: caption });
+  await sock.sendMessage(jid, { text: caption });
 }
 
 // ============ START MESSAGE ============
 function buildStartMessage() {
   const p = config.PREFIX || '.';
-  const on = v => (v === true || ['on', 'dm', 'chat'].includes(v)) ? '✅' : '❌';
-  const val = (v, fb = '—') => (v === undefined || v === null || v === '') ? fb : String(v);
-  const exp = getExpiryInfo();
+  const mode = config.MODE || 'public';
   return (
 `┌───「 *${config.BOT_NAME}* 」
-│ ✅ *ONLINE*
-├────────────
+│ ✅ Online
 │ ⚡ Prefix : *${p}*
-│ 🌐 Mode   : *${val(config.MODE, 'public')}*
-│ 👤 Owner  : *${val(config.OWNER_NUMBER)}*
-│ ⏳ Expiry : *${exp}*
-├────────────
-│ 👁 View ${on(config.AUTO_VIEW_STATUS)}  ❤️ Like ${on(config.AUTO_LIKE_STATUS)}
-│ 📖 Read ${on(config.AUTO_READ)}  ✨ React ${on(config.AUTO_REACT)}
-│ 🗑 Del *${val(config.ANTI_DELETE, 'off')}*  ✏️ Edit *${val(config.ANTI_EDIT, 'off')}*
-│ 🔓 VO *${val(config.ANTI_VIEW_ONCE, 'off')}*  📞 Call ${on(config.ANTI_CALL)}
-│ 👋 In ${on(config.WELCOME)}  🚪 Out ${on(config.GOODBYE)}
-│ 🤖 Chat ${on(config.CHATBOT)}  🟢 On ${on(config.ALWAYS_ONLINE)}
-├────────────
-│ 👑 Confronter
+│ 🌐 Mode   : *${mode}*
+│ 👑 Made by Confronter
 │ 💬 Type *${p}menu*
 └────────────`
   );
@@ -598,16 +574,31 @@ async function forwardViewOnceToOwner(sock, m, from, sender, voMsg) {
   const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
   const target = ownerJid || me;
   if (!target) return false;
+  // Never send unlocked media back to the person who sent the view-once
+  const senderPhone = dig(jidToPhone(sender, m) || String(sender).split('@')[0]);
+  const targetPhone = dig(String(target).split('@')[0]);
+  if (senderPhone && targetPhone && senderPhone === targetPhone) {
+    // owner opened their own VO — still ok to save to me
+  }
   const dl = await downloadMediaMsg(voMsg);
-  if (!dl?.buffer) return false;
+  if (!dl?.buffer || dl.buffer.length < 200) return false;
   const phone = jidToPhone(sender, m);
   const head = `🔓 *ViewOnce*\n• From: ${phone ? '+' + phone : (m.pushName || 'Unknown')}\n• Chat: ${isGroup(from) ? 'Group' : 'DM'}`;
-  if (dl.type === 'imageMessage') await sock.sendMessage(target, { image: dl.buffer, caption: head });
-  else if (dl.type === 'videoMessage') await sock.sendMessage(target, { video: dl.buffer, mimetype: 'video/mp4', caption: head });
-  else if (dl.type === 'audioMessage') {
-    await sock.sendMessage(target, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: !!voMsg.audioMessage?.ptt });
-    await sock.sendMessage(target, { text: head });
-  } else await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin', caption: head });
+  try {
+    if (dl.type === 'imageMessage') {
+      await sock.sendMessage(target, { image: dl.buffer, caption: head });
+    } else if (dl.type === 'videoMessage') {
+      await sock.sendMessage(target, { video: dl.buffer, mimetype: 'video/mp4', caption: head });
+    } else if (dl.type === 'audioMessage') {
+      await sock.sendMessage(target, { audio: dl.buffer, mimetype: 'audio/ogg; codecs=opus', ptt: false });
+      await sock.sendMessage(target, { text: head });
+    } else {
+      await sock.sendMessage(target, { document: dl.buffer, mimetype: 'application/octet-stream', fileName: 'viewonce.bin', caption: head });
+    }
+  } catch (e) {
+    console.log('vv send:', e.message);
+    return false;
+  }
   return true;
 }
 
@@ -971,7 +962,7 @@ async function sendAsVideo(sock, jid, data) {
 }
 
 // ============ AI ============
-async function askAI(text) {
+async function askAI(text, opts = {}) {
   const bad = (s) => {
     if (!s || typeof s !== 'string') return true;
     const t = s.trim();
@@ -979,42 +970,48 @@ async function askAI(text) {
     const low = t.slice(0, 120).toLowerCase();
     return low.includes('<!doctype') || low.includes('<html') || low.includes('<pre>') || low.includes('cannot post');
   };
+  const q = String(text || '').trim().slice(0, 2500);
+  if (!q) return null;
+
+  const chatMode = !!opts.chat;
+  const system = chatMode
+    ? `You are a real human chatting on WhatsApp. Detect the language of the user and reply in THE SAME language only. Match their tone (casual/formal). Use emojis when it feels natural. Keep replies short like a real person (1-4 sentences). Never say you are an AI unless asked. User name: ${opts.userName || 'friend'}.`
+    : `You are a helpful assistant. Detect the user's language and answer in the same language. Be clear and concise. Use emojis lightly when helpful.`;
+
   try {
     const { askAI: real } = require('./apis');
-    const r = await real(text);
+    const r = await real(q, { system, chat: chatMode });
     if (r && !bad(String(r))) return String(r).trim();
   } catch {}
+
   const endpoints = [
     async () => {
       const r = await axios.post('https://text.pollinations.ai/openai', {
         model: 'openai',
-        messages: [{ role: 'user', content: String(text).slice(0, 2500) }]
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: q }
+        ]
       }, { timeout: 60000, headers: { 'User-Agent': UA, 'Content-Type': 'application/json' }, validateStatus: () => true });
       const a = r?.data?.choices?.[0]?.message?.content;
       return typeof a === 'string' && !bad(a) ? a.trim() : null;
     },
     async () => {
-      const r = await axios.get('https://text.pollinations.ai/' + encodeURIComponent(String(text).slice(0, 500)), {
+      const prompt = system + '\\n\\nUser: ' + q + '\\nAssistant:';
+      const r = await axios.get('https://text.pollinations.ai/' + encodeURIComponent(prompt.slice(0, 1500)), {
         timeout: 60000, headers: { 'User-Agent': UA, Accept: 'text/plain' }, validateStatus: () => true,
         responseType: 'text', transformResponse: [d => d]
       });
       return typeof r?.data === 'string' && !bad(r.data) ? r.data.trim() : null;
     },
     async () => {
-      const r = await axios.post('https://api.siputzx.my.id/api/ai/gpt', { content: text, model: 'gpt-4o-mini' }, {
-        timeout: 45000, headers: { 'User-Agent': UA, 'Content-Type': 'application/json' }, validateStatus: () => true
-      });
+      const r = await axios.post('https://api.siputzx.my.id/api/ai/gpt', {
+        content: system + '\\n\\n' + q, model: 'gpt-4o-mini'
+      }, { timeout: 45000, headers: { 'User-Agent': UA, 'Content-Type': 'application/json' }, validateStatus: () => true });
       const a = r?.data?.data || r?.data?.result || r?.data?.message || r?.data?.response || r?.data;
       if (typeof a === 'string' && !bad(a)) return a.trim();
       if (a?.content && !bad(String(a.content))) return String(a.content).trim();
       return null;
-    },
-    async () => {
-      const r = await axios.get('https://api.ryzendesu.vip/api/ai/gpt?text=' + encodeURIComponent(text), {
-        timeout: 45000, headers: { 'User-Agent': UA }, validateStatus: () => true
-      });
-      const a = r?.data?.result || r?.data?.answer || r?.data?.response;
-      return typeof a === 'string' && !bad(a) ? a.trim() : null;
     }
   ];
   for (const fn of endpoints) {
@@ -1194,8 +1191,6 @@ async function startBot() {
           if (!me) return;
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
           await sock.sendMessage(jid, { text: buildStartMessage() });
-          await delay(1500);
-          await sock.sendMessage(jid, { text: buildSyncWaitMessage() });
         } catch (e) { console.log('start send:', e.message); }
       });
     }
@@ -1397,23 +1392,45 @@ async function startBot() {
         if (cached?.message) forwardDelete(key, cached).catch(() => {});
         return;
       }
-      if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage)) {
+      if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage || m.message?.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
-            const key = protoMsg.key || m.key;
+            const key = protoMsg.key || m.message?.editedMessage?.key || m.key;
             const cached = key?.id ? msgCache.get(key.id) : null;
-            const edited = protoMsg.editedMessage || {};
-            const newText = edited.conversation || edited.extendedTextMessage?.text || '';
-            const oldText = cached?.message?.conversation || cached?.message?.extendedTextMessage?.text || '[unknown]';
-            const target = config.ANTI_EDIT === 'chat' ? from : getOwnerJid();
+            const edited = protoMsg.editedMessage || m.message?.editedMessage?.message || m.message?.protocolMessage?.editedMessage || {};
+            const newText =
+              edited.conversation ||
+              edited.extendedTextMessage?.text ||
+              edited.imageMessage?.caption ||
+              edited.videoMessage?.caption ||
+              extractText(edited) ||
+              '';
+            const oldText =
+              cached?.text ||
+              cached?.message?.conversation ||
+              cached?.message?.extendedTextMessage?.text ||
+              cached?.message?.imageMessage?.caption ||
+              (cached?.message ? extractText(cached.message) : '') ||
+              '[not cached — message was sent before bot saw it]';
+            const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+            let target = null;
+            if (config.ANTI_EDIT === 'chat') target = from;
+            else target = getOwnerJid() || me;
+            // Never notify the editor themselves as the only destination unless owner
             if (target) {
-              let who = jidToPhone(key.participant || from, m);
-              if (!who) who = jidToPhone(from, m);
-              if (!who && config.OWNER_NUMBER) who = config.OWNER_NUMBER;
-              const display = who ? '+' + who : (m.pushName || 'Unknown');
-              sock.sendMessage(target, { text: `✅ *${config.BOT_NAME} antiEdit*\n• Edited by: ${display}\n• Chat: ${isGroup(from) ? 'Group' : 'DM'}\n\n📝 *Before:*\n${oldText}\n\n✏️ *After:*\n${newText || '[media]'}` }).catch(() => {});
+              const editor = key?.participant || sender || from;
+              const who = jidToPhone(editor, m) || dig(String(editor).split('@')[0]) || 'Unknown';
+              const display = who.startsWith('+') ? who : ('+' + who);
+              const chatLabel = isGroup(from) ? ('Group ' + from) : 'DM';
+              const body =
+                `✏️ *${config.BOT_NAME} antiEdit*\n` +
+                `• By: ${display}\n` +
+                `• Chat: ${chatLabel}\n\n` +
+                `📝 *Before:*\n${oldText}\n\n` +
+                `✏️ *After:*\n${newText || '[media/empty]'}`;
+              await sock.sendMessage(target, { text: body }).catch(e => console.log('antiedit send:', e.message));
             }
-          } catch {}
+          } catch (e) { console.log('antiedit:', e.message); }
         }
         return;
       }
@@ -1456,7 +1473,8 @@ async function startBot() {
             const voMsg = m.message.viewOnceMessage?.message || m.message.viewOnceMessageV2?.message || m.message.viewOnceMessageV2Extension?.message || m.message;
             const mode = String(config.ANTI_VIEW_ONCE).toLowerCase();
             const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-            const target = (mode === 'dm' || mode === 'pm' || mode === 'private') ? (getOwnerJid() || me || from) : from;
+            const target = (mode === 'dm' || mode === 'pm' || mode === 'private') ? (getOwnerJid() || me) : from;
+            if (!target || target === sender) return;
             let dl = await downloadMediaMsg(voMsg);
             if (!dl) dl = await downloadMediaMsg(m.message);
             const phone = jidToPhone(sender, m);
@@ -1475,6 +1493,16 @@ async function startBot() {
 
       const body = extractText(m.message);
       const cleanBody = (body || '').trim();
+      if (m.key?.id && m.message && from !== 'status@broadcast') {
+        try {
+          msgCache.set(m.key.id, {
+            key: m.key,
+            message: m.message,
+            text: body || extractText(m.message) || '',
+            timestamp: Date.now()
+          });
+        } catch {}
+      }
 
       // Simple reply helper for games (available early)
       async function replySimple(text) {
@@ -1550,10 +1578,11 @@ async function startBot() {
 
       // Chatbot (no prefix needed)
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
-        const ans = await askAI(cleanBody);
-        if (ans) {
+        const ans = await askAI(cleanBody, { chat: true, userName: m.pushName || 'User' });
+        if (ans && !/<html|doctype|cannot post/i.test(ans)) {
           const t = ans.length > 3000 ? ans.slice(0, 3000) + '…' : ans;
-          await sock.sendMessage(from, { text: styleReplyText(t) }).catch(() => {});
+          // natural reply — light style only, keep emojis from AI
+          await sock.sendMessage(from, { text: t }).catch(() => {});
         }
         return;
       }
@@ -1644,46 +1673,26 @@ async function startBot() {
         const emojis = ['💀', '🔥', '⚡', '👑', '🖤', '🩸', '🗡️', '😈', '💥', '🚀'];
         for (const e of emojis) {
           react(from, m.key, e);
-          await delay(180);
+          await delay(120);
         }
 
+        // Text-only loading edits (editing images causes "Waiting for this message")
         const lines = [
-          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆 左侧◦',
+          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆⟕◦',
           'ɱα∂ε ƁƳ ƈσɳꜰʀᴏɴᴛᴇʀ♞',
           ' 𝙽𝙴𝚅𝙴𝚁 𝙱𝙴 𝚃𝙾𝙾 𝚂𝙻𝙾𝚆 🎭',
-          '𝑾𝒆 𝒓𝒖𝒍𝒆 𝒕𝒉𝒆𝒎 𝒂𝒍𝒍.🚀. ',
-          '𝐈 𝐤𝐧𝐞𝐰 𝐲𝐨𝐮 𝐰𝐢𝐥𝐥 𝐛𝐞 𝐛𝐚𝐜𝐤 𝐚𝐧𝐝 𝐭𝐞𝐬𝐭 𝐦𝐞😂',
-          '𝐃𝐨𝐧𝐭 𝐛𝐞 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫🗿'
+          '𝑾𝒆 𝒓𝒖𝒍𝒆 𝒕𝒉𝒆𝒎 𝒂𝒍𝒍.🚀.',
+          '𝐋𝐨𝐚𝐝𝐢𝐧𝐠 𝐦𝐞𝐧𝐮…'
         ];
-
-        // Load bot image once (BOT_IMAGE / MENU_MEDIA from Heroku app.json)
-        const resolved = await resolveMenuImageBuffer();
-        const imgBuf = resolved?.buffer || null;
-        let editMsg = null;
-
-        if (imgBuf) {
-          // Same image for all loading captions → then full menu on same message
-          editMsg = await sock.sendMessage(from, { image: imgBuf, caption: lines[0] });
-          for (let i = 1; i < lines.length; i++) {
-            await delay(700);
-            try {
-              await sock.sendMessage(from, { image: imgBuf, caption: lines[i], edit: editMsg.key });
-            } catch {
-              try { await sock.sendMessage(from, { caption: lines[i], edit: editMsg.key }); } catch {}
-            }
-          }
-          await delay(600);
-          await sendMenuWithMedia(from, m.pushName, userCount, editMsg, imgBuf);
-        } else {
-          // fallback text-only edits
-          editMsg = await sock.sendMessage(from, { text: lines[0] });
-          for (let i = 1; i < lines.length; i++) {
-            await delay(700);
-            await sock.sendMessage(from, { text: lines[i], edit: editMsg.key }).catch(() => {});
-          }
-          await delay(600);
-          await sendMenuWithMedia(from, m.pushName, userCount);
+        let editMsg = await sock.sendMessage(from, { text: lines[0] });
+        for (let i = 1; i < lines.length; i++) {
+          await delay(500);
+          await sock.sendMessage(from, { text: lines[i], edit: editMsg.key }).catch(() => {});
         }
+        await delay(400);
+        // delete loading text then send final menu ONCE with image (no further edits)
+        try { await sock.sendMessage(from, { delete: editMsg.key }); } catch {}
+        await sendMenuWithMedia(from, m.pushName, userCount);
         return;
       }
 
@@ -1922,8 +1931,11 @@ async function startBot() {
             return;
           }
           const ok = await forwardViewOnceToOwner(sock, m, from, sender, vo);
-          if (ok) { react(from, m.key, '✅'); await reply('✅ Sent to your DM'); }
-          else await reply('❌ Failed (set OWNER_NUMBER / download error)');
+          if (ok) {
+            react(from, m.key, '✅'); // silent — no "sent to DM" text (avoids noise / waiting bugs)
+          } else {
+            react(from, m.key, '❌');
+          }
         } catch (e) { await reply('❌ VV failed: ' + e.message); }
         return;
       }
@@ -1937,8 +1949,8 @@ async function startBot() {
             return;
           }
           const ok = await saveQuotedMediaToOwner(sock, m, from, sender, quoted);
-          if (ok) { react(from, m.key, '✅'); await reply('✅ Saved to your DM'); }
-          else await reply('❌ Could not save');
+          if (ok) react(from, m.key, '✅');
+          else react(from, m.key, '❌');
         } catch (e) { await reply('❌ ' + e.message); }
         return;
       }
@@ -2104,13 +2116,73 @@ async function startBot() {
 
       // ========== APK / XNXX placeholders ==========
       if (cmd === 'apk') {
-        if (!text) { await reply(`Usage: ${prefix}apk facebook`); return; }
-        await reply(`📦 APK search for *${text}*\n(Integrate your preferred APK API)`);
+        if (!text) { await reply(`Usage: ${prefix}apk whatsapp`); return; }
+        await reply('⏳ Searching APK…');
+        try {
+          const q = encodeURIComponent(text.trim());
+          const urls = [
+            `https://api.siputzx.my.id/api/apk/search?query=${q}`,
+            `https://api.ryzendesu.vip/api/search/apk?query=${q}`,
+            `https://api.giftedtech.my.id/api/search/apk?apikey=gifted&query=${q}`
+          ];
+          let items = [];
+          for (const u of urls) {
+            try {
+              const r = await dlGet(u, { timeout: 30000 });
+              const d = r?.data?.data || r?.data?.result || r?.data;
+              const arr = Array.isArray(d) ? d : (d?.list || d?.results || []);
+              if (arr.length) { items = arr; break; }
+            } catch {}
+          }
+          if (!items.length) { await reply('❌ No APK found.'); return; }
+          const top = items.slice(0, 5);
+          let msg = `📦 *APK Search:* ${text}\\n\\n`;
+          for (let i = 0; i < top.length; i++) {
+            const it = top[i];
+            const name = it.name || it.title || it.appName || 'App';
+            const ver = it.version || it.ver || '';
+            const link = it.url || it.download || it.dllink || it.path || '';
+            msg += `*${i + 1}.* ${name}${ver ? ' (`' + ver + '`)' : ''}\\n`;
+            if (link) msg += `🔗 ${link}\\n`;
+            msg += '\\n';
+          }
+          await reply(msg.trim());
+        } catch (e) { await reply('❌ APK search failed: ' + e.message); }
         return;
       }
+
       if (cmd === 'xnxx') {
-        if (!text) { await reply(`Usage: ${prefix}xnxx stepmom`); return; }
-        await reply(`🔞 Searching *${text}*…\n(Integrate your preferred 18+ API)`);
+        if (!text) { await reply(`Usage: ${prefix}xnxx query`); return; }
+        await reply('⏳ Searching…');
+        try {
+          const q = encodeURIComponent(text.trim());
+          const urls = [
+            `https://api.siputzx.my.id/api/s/xnxx?query=${q}`,
+            `https://api.siputzx.my.id/api/xnxx/search?query=${q}`,
+            `https://api.ryzendesu.vip/api/search/xnxx?query=${q}`
+          ];
+          let items = [];
+          for (const u of urls) {
+            try {
+              const r = await dlGet(u, { timeout: 35000 });
+              const d = r?.data?.data || r?.data?.result || r?.data;
+              const arr = Array.isArray(d) ? d : (d?.list || d?.result || []);
+              if (arr.length) { items = arr; break; }
+            } catch {}
+          }
+          if (!items.length) { await reply('❌ No results.'); return; }
+          const top = items.slice(0, 5);
+          let msg = `🔞 *Results:* ${text}\\n\\n`;
+          for (let i = 0; i < top.length; i++) {
+            const it = top[i];
+            const title = it.title || it.name || 'Video';
+            const link = it.url || it.link || it.path || '';
+            msg += `*${i + 1}.* ${title}\\n`;
+            if (link) msg += `${link}\\n`;
+            msg += '\\n';
+          }
+          await reply(msg.trim());
+        } catch (e) { await reply('❌ Search failed: ' + e.message); }
         return;
       }
 
@@ -2717,29 +2789,44 @@ async function startBot() {
       }
 
       if (['block', 'unblock'].includes(cmd)) {
-        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
         const inGroup = isGroup(from);
-        let targets = getTargetUsers(m, text, from, inGroup);
-        // DM: .block with no args → block this chat user
-        if (!targets.length && !inGroup && from && from !== 'status@broadcast') {
-          targets = [from];
+        // Owner always; in group also bot owner only (block is account-level)
+        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+
+        let targets = [];
+        // reply to someone
+        const quotedP = getQuoted(m);
+        if (quotedP) targets.push(quotedP);
+        // mentions
+        for (const j of getMentioned(m)) targets.push(j);
+        // number in text
+        if (text) {
+          const nums = String(text).match(/\d{6,15}/g) || [];
+          for (const n of nums) targets.push(n + '@s.whatsapp.net');
         }
-        // Group: must tag or reply (no need for full number)
+        // DM with no args → block this chat
+        if (!targets.length && !inGroup && from && !from.endsWith('@g.us') && from !== 'status@broadcast') {
+          targets.push(from);
+        }
+        targets = [...new Set(targets.filter(Boolean))];
         if (!targets.length) {
-          await reply(
-            inGroup
-              ? `Tag or reply to a user.\\n${prefix}${cmd} @user`
-              : `Usage:\\n• Here in DM: ${prefix}${cmd}\\n• Group: ${prefix}${cmd} @user or reply\\n• Or: ${prefix}${cmd} 2547xxxxxxx`
-          );
+          await reply(inGroup
+            ? `Reply to their message or tag them.\\n${prefix}${cmd}`
+            : `In this chat type: ${prefix}${cmd}`);
           return;
         }
+
         let ok = 0, fail = 0;
         const labels = [];
         for (const jid of targets) {
           try {
-            let blockJid = jidNormalizedUser(jid);
-            const phone = jidToPhone(jid, m) || dig(String(jid).split('@')[0].split(':')[0]);
-            if (phone && /^\d{6,15}$/.test(phone)) blockJid = phone + '@s.whatsapp.net';
+            let blockJid = jidNormalizedUser(String(jid));
+            // Prefer real phone for updateBlockStatus (LID often fails)
+            let phone = jidToPhone(jid, m);
+            if (!phone) phone = dig(String(jid).split('@')[0].split(':')[0]);
+            if (phone && phone.length >= 6 && phone.length <= 15) {
+              blockJid = phone + '@s.whatsapp.net';
+            }
             await sock.updateBlockStatus(blockJid, cmd === 'block' ? 'block' : 'unblock');
             labels.push(phone ? ('+' + phone) : blockJid.split('@')[0]);
             ok++;
@@ -2749,7 +2836,7 @@ async function startBot() {
           }
         }
         if (ok) await reply(`✅ *${cmd.toUpperCase()}*\\n${labels.join(', ')}`);
-        else await reply(`❌ Could not ${cmd}. In group: reply to their message or tag them.`);
+        else await reply(`❌ ${cmd} failed. Reply to their message or use number.`);
         return;
       }
     } catch (err) {
