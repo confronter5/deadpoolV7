@@ -54,7 +54,7 @@ const defaults = {
   ANTIBUG: false,
   MENU_MEDIA: '',
   BOT_IMAGE: 'https://i.imgur.com/8KZQvQ0.png',
-  GROUP_INVITE: '',
+  GROUP_INVITE: '120363430854781207@g.us',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
   PANEL_APIKEY: '',
@@ -273,9 +273,9 @@ function buildFooter() {
     .replace(/^>\s*/, '')
     .replace(/\*/g, '')
     .trim();
-  if (!p) p = 'Powered by Confronter';
+  if (!p) p = '𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐁𝐲 𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫';
   // one blank line then credit (no double spaces / fancy overflow)
-  return `\n\n_${p} ©${y}_`;
+  return `\n\n> ${p} ©${y}`;
 }
 
 // ============ FANCY FONTS ============
