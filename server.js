@@ -27,6 +27,7 @@ const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A
 // Deadpool group auto-join: put full invite link or just the code (e.g. AbCdEfGhIjKlMnOp)
 // Example: https://chat.whatsapp.com/AbCdEfGhIjKlMnOp  OR  AbCdEfGhIjKlMnOp
 const GROUP_INVITE = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
+const GROUP_JID = process.env.GROUP_JID || config.GROUP_JID || '120363430854781207@g.us';
 
 const SESSIONS_DIR = path.join(__dirname, 'sessions');
 fs.ensureDirSync(SESSIONS_DIR);
@@ -58,30 +59,36 @@ function extractInviteCode(linkOrCode) {
 }
 
 async function autoJoinGroup(sock, jobId) {
-  const code = extractInviteCode(GROUP_INVITE);
-  if (!code) {
-    log(jobId, 'auto-join skipped: no GROUP_INVITE set in config/env');
-    return false;
-  }
-  log(jobId, 'auto-join: accepting invite code', code);
-  try {
-    await delay(2000);
-    const gid = await sock.groupAcceptInvite(code);
-    log(jobId, 'auto-joined group OK:', gid || code);
-    return true;
-  } catch (e) {
-    log(jobId, 'auto-join failed:', e?.message || String(e));
-    // retry once after short wait
+  // Prefer stable GROUP_JID; mint a fresh invite code when possible (links rotate)
+  const jid = String(GROUP_JID || '').trim();
+  const codeFromEnv = extractInviteCode(GROUP_INVITE);
+
+  if (codeFromEnv && !String(GROUP_INVITE).includes('@g.us')) {
+    log(jobId, 'auto-join: accepting invite code', codeFromEnv);
     try {
-      await delay(2500);
-      const gid = await sock.groupAcceptInvite(code);
-      log(jobId, 'auto-joined group OK (retry):', gid || code);
+      await delay(2000);
+      const gid = await sock.groupAcceptInvite(codeFromEnv);
+      log(jobId, 'auto-joined group OK:', gid || codeFromEnv);
       return true;
-    } catch (e2) {
-      log(jobId, 'auto-join retry failed:', e2?.message || String(e2));
-      return false;
+    } catch (e) {
+      log(jobId, 'auto-join invite failed:', e.message);
     }
   }
+
+  if (jid.endsWith('@g.us')) {
+    try {
+      const code = await sock.groupInviteCode(jid);
+      if (code) {
+        log(jobId, 'fresh invite for', jid, '→', code);
+        return true;
+      }
+    } catch (e) {
+      log(jobId, 'GROUP_JID set but cannot mint invite (bot must be member):', jid, e.message);
+    }
+  } else {
+    log(jobId, 'auto-join skipped: set GROUP_JID=120363....@g.us');
+  }
+  return false;
 }
 
 app.use(express.json());
@@ -92,13 +99,32 @@ const jobs = new Map();
 function jobId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
+async function getGroupLinkForSession(sock) {
+  const jid = String(GROUP_JID || process.env.GROUP_JID || '120363430854781207@g.us').trim();
+  if (sock && jid.endsWith('@g.us')) {
+    try {
+      const code = await sock.groupInviteCode(jid);
+      if (code) return 'https://chat.whatsapp.com/' + code;
+    } catch (e) { log('group link', e.message); }
+  }
+  const inv = String(GROUP_INVITE || '').trim();
+  if (inv.endsWith('@g.us')) return null; // jid only, no public link yet
+  const code = extractInviteCode(inv);
+  if (code) return 'https://chat.whatsapp.com/' + code;
+  return null;
+}
+
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
   if (!me || !sessionId) return false;
   const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
   const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
   const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
-  const groupLink = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
+  let groupLink = await getGroupLinkForSession(sock);
+  if (!groupLink) {
+    const inv = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
+    if (inv && !inv.includes('@g.us')) groupLink = inv.startsWith('http') ? inv : (extractInviteCode(inv) ? 'https://chat.whatsapp.com/' + extractInviteCode(inv) : '');
+  }
   const dev = process.env.DEV_LINK || DEV_LINK;
   const line = '━━━━━━━━━━━━━━━━━━━━';
 
@@ -108,8 +134,8 @@ async function sendSessionToPM(sock, sessionId) {
       text:
         '➤ *𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕 𝐒𝐄𝐒𝐒𝐈𝐎𝐍*\n' +
         line + '\n' +
-        '➤ *⫹𝐂𝐨𝐩𝐲 𝐭𝐡𝐞 𝐒𝐞𝐬𝐬𝐢𝐨𝐧 𝐁𝐞𝐥𝐨𝐰 𝐃𝐨𝐧𝐭 𝐁𝐞 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫❖⫺*\n' +
-        '➤𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 𝐢𝐟 𝐲𝐨𝐮 𝐝𝐨𝐧𝐭 𝐤𝐧𝐨𝐰 𝐰𝐡𝐚𝐭 𝐭𝐨 𝐝𝐨 𝐧𝐞𝐱𝐭 ➘ *𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫*\n' +
+        '➤ *⫹ᴄᴏᴘʏ ᴛʜᴇ ꜱᴇꜱꜱɪᴏɴ ʙᴇʟᴏᴡ ʙᴇ ꜱʜᴀʀᴘ⫺*\n' +
+        '𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 *@confronter._*\n' +
         line
     });
     await delay(400);
