@@ -1,16 +1,22 @@
 {
   "name": "deadpoolv7",
-  "version": "7.6.1",
+  "version": "7.6.2",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "start:pair": "node server.js"
+    "start": "node server.js",
+    "start:bot": "node index.js",
+    "start:pair": "node server.js",
+    "pair": "node pair.js"
   },
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.18",
     "@hapi/boom": "^10.0.1",
     "@distube/ytdl-core": "^4.16.0",
+    "ytdl-core": "^4.11.5",
+    "yt-search": "^2.12.1",
     "youtube-sr": "^4.3.11",
     "pino": "^9.5.0",
     "dotenv": "^16.4.5",
