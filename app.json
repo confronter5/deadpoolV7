@@ -1,56 +1,53 @@
 {
   "name": "Deadpool V7",
-  "description": "Deadpool V7 WhatsApp Bot",
-  "repository": "https://github.com/confronter5/deadpoolv7",
-  "logo": "https://i.imgur.com/8KZQvQ0.png",
-  "keywords": [
-    "whatsapp",
-    "bot",
-    "baileys"
-  ],
-  "stack": "heroku-24",
+  "description": "WhatsApp bot + pairing site — Deadpool V7",
+  "keywords": ["whatsapp", "bot", "baileys", "nodejs"],
+  "success_url": "/",
   "env": {
     "SESSION": {
-      "description": "Full session deadpool~BASE64 from pair site",
-      "required": true,
-      "value": "deadpool~"
+      "description": "Baileys session string (deadpool~...)",
+      "required": false
     },
     "OWNER_NUMBER": {
-      "description": "Owner number with country code no +",
-      "required": true,
-      "value": "254796283064"
-    },
-    "BOT_EXPIRY_DAYS": {
-      "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
-      "required": true,
-      "value": "30"
+      "description": "Owner phone without + (e.g. 2547xxxxxxx)",
+      "required": true
     },
     "BOT_NAME": {
-      "description": "Bot display name",
-      "value": "Deadpool V7"
+      "description": "Bot name",
+      "value": "DEADPOOL V7"
     },
     "PREFIX": {
-      "description": "Command prefix",
       "value": "."
     },
     "MODE": {
-      "description": "public or private",
       "value": "public"
     },
-    "MENU_MEDIA": {
-      "description": "Optional menu image or video URL",
-      "value": ""
+    "ADMIN_PASSWORD": {
+      "description": "Password for /admin dashboard (users + broadcast)",
+      "value": "changeme123"
+    },
+    "ALWAYS_ONLINE": {
+      "value": "true"
+    },
+    "CHATBOT": {
+      "value": "false"
+    },
+    "KEEP_ALIVE_URL": {
+      "description": "https://YOUR-APP.herokuapp.com/health",
+      "required": false
+    },
+    "GROUP_INVITE": {
+      "description": "WhatsApp group invite link or code for auto-join on pair",
+      "required": false
     }
   },
   "formation": {
-    "worker": {
-      "quantity": 1,
-      "size": "basic"
-    }
+    "web": { "quantity": 1, "size": "basic" },
+    "worker": { "quantity": 1, "size": "basic" }
   },
   "buildpacks": [
-    {
-      "url": "heroku/nodejs"
-    }
+    { "url": "heroku/nodejs" },
+    { "url": "https://github.com/clhuang/heroku-buildpack-webp-binaries.git" },
+    { "url": "https://github.com/heroku/heroku-buildpack-activestorage-preview" }
   ]
 }
