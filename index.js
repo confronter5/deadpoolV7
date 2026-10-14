@@ -54,7 +54,8 @@ const defaults = {
   ANTIBUG: false,
   MENU_MEDIA: '',
   BOT_IMAGE: 'https://i.imgur.com/8KZQvQ0.png',
-  GROUP_INVITE: '120363430854781207@g.us',
+  GROUP_INVITE: '',
+  GROUP_JID: '120363430854781207@g.us',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
   PANEL_APIKEY: '',
@@ -97,6 +98,7 @@ const config = {
   WELCOME_MSG: env.WELCOME_MSG || fileConfig.WELCOME_MSG || defaults.WELCOME_MSG,
   GOODBYE_MSG: env.GOODBYE_MSG || fileConfig.GOODBYE_MSG || defaults.GOODBYE_MSG,
   GROUP_INVITE: env.GROUP_INVITE || fileConfig.GROUP_INVITE || defaults.GROUP_INVITE,
+  GROUP_JID: env.GROUP_JID || fileConfig.GROUP_JID || defaults.GROUP_JID || '120363430854781207@g.us',
   CHANNEL_ID: env.CHANNEL_ID || fileConfig.CHANNEL_ID || defaults.CHANNEL_ID,
   MENU_MEDIA: env.MENU_MEDIA || env.BOT_IMAGE || fileConfig.MENU_MEDIA || fileConfig.BOT_IMAGE || defaults.MENU_MEDIA || defaults.BOT_IMAGE,
   BOT_IMAGE: env.BOT_IMAGE || env.MENU_MEDIA || fileConfig.BOT_IMAGE || fileConfig.MENU_MEDIA || defaults.BOT_IMAGE || defaults.MENU_MEDIA,
@@ -273,9 +275,9 @@ function buildFooter() {
     .replace(/^>\s*/, '')
     .replace(/\*/g, '')
     .trim();
-  if (!p) p = '𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐁𝐲 𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫';
+  if (!p) p = 'Powered by Confronter';
   // one blank line then credit (no double spaces / fancy overflow)
-  return `\n\n> ${p} ©${y}`;
+  return `\n\n_${p} ©${y}_`;
 }
 
 // ============ FANCY FONTS ============
@@ -786,14 +788,63 @@ async function forwardDelete(key, cached) {
 }
 
 // ============ AUTO JOIN GROUP + CHANNEL ============
+async function getFreshGroupInviteLink() {
+  const groupJid = String(config.GROUP_JID || '120363430854781207@g.us').trim();
+  if (!groupJid.endsWith('@g.us') || !sock) return null;
+  try {
+    const code = await sock.groupInviteCode(groupJid);
+    if (code) {
+      config.GROUP_INVITE = code; // cache latest code (link changes; JID stays)
+      return 'https://chat.whatsapp.com/' + code;
+    }
+  } catch (e) {
+    console.log('getFreshGroupInviteLink:', e.message);
+  }
+  // fallback: if GROUP_INVITE still has a code (not a jid)
+  const inv = String(config.GROUP_INVITE || '').trim();
+  if (inv && !inv.includes('@') && inv.length >= 10) {
+    const code = inv.includes('chat.whatsapp.com/')
+      ? inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0]
+      : inv;
+    if (code) return 'https://chat.whatsapp.com/' + code;
+  }
+  return null;
+}
+
 async function autoJoinConfigured() {
-  if (config.GROUP_INVITE) {
+  // Primary identity = GROUP_JID (stable). Invite links change often.
+  let groupJid = String(config.GROUP_JID || '120363430854781207@g.us').trim();
+
+  // Allow GROUP_INVITE env to hold a JID instead of a link
+  const invRaw = String(config.GROUP_INVITE || '').trim();
+  if (invRaw.endsWith('@g.us')) {
+    groupJid = invRaw;
+    config.GROUP_JID = invRaw;
+  }
+
+  // Only auto-join if a real invite CODE/link was provided (not the JID)
+  if (invRaw && !invRaw.endsWith('@g.us')) {
     try {
-      let code = String(config.GROUP_INVITE).trim();
-      if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
-      if (code) { await sock.groupAcceptInvite(code); console.log('✅ Auto-joined group'); }
+      let code = invRaw;
+      if (code.includes('chat.whatsapp.com/')) {
+        code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
+      }
+      if (code && !code.includes('@')) {
+        const gid = await sock.groupAcceptInvite(code);
+        if (gid) config.GROUP_JID = String(gid);
+        console.log('✅ Auto-joined group', gid || code);
+      }
     } catch (e) { console.log('Auto-join group failed:', e.message); }
   }
+
+  // Always refresh invite code FROM group JID when bot is a member
+  if (groupJid.endsWith('@g.us')) {
+    config.GROUP_JID = groupJid;
+    const link = await getFreshGroupInviteLink();
+    if (link) console.log('✅ Fresh group invite for', groupJid, '→', link);
+    else console.log('ℹ️ GROUP_JID set to', groupJid, '(bot must be admin/member to mint invite links)');
+  }
+
   if (config.CHANNEL_ID) {
     try {
       const ch = String(config.CHANNEL_ID).trim();
@@ -801,6 +852,7 @@ async function autoJoinConfigured() {
     } catch (e) { console.log('Auto-join channel failed:', e.message); }
   }
 }
+
 
 // ============ DOWNLOADERS ============
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
