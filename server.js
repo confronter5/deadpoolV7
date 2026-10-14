@@ -134,8 +134,8 @@ async function sendSessionToPM(sock, sessionId) {
       text:
         '➤ *𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕 𝐒𝐄𝐒𝐒𝐈𝐎𝐍*\n' +
         line + '\n' +
-        '➤ *⫹ᴄᴏᴘʏ ᴛʜᴇ ꜱᴇꜱꜱɪᴏɴ ʙᴇʟᴏᴡ ʙᴇ ꜱʜᴀʀᴘ⫺*\n' +
-        '𝐓𝐚𝐥𝐤 𝐭𝐨 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐞𝐫 *@confronter._*\n' +
+        '➤ *𝐂𝐨𝐩𝐲 𝐬𝐞𝐬𝐬𝐢𝐨𝐧 𝐛𝐞𝐥𝐨𝐰 𝐝𝐨𝐧𝐭 𝐛𝐞 𝐦𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫 😤*\n' +
+        '➤𝚃𝚊𝚕𝚔 𝚝𝚘 𝙳𝚎𝚟𝚎𝚕𝚘𝚙𝚎𝚛 𝚒𝚏 𝚢𝚘𝚞 𝚍𝚘𝚗𝚝 𝚑𝚊𝚟𝚎 𝚌𝚕𝚞𝚎 𝚠𝚑𝚊𝚝 𝚗𝚎𝚡𝚝 *➘𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫*\n' +
         line
     });
     await delay(400);
@@ -155,7 +155,7 @@ async function sendSessionToPM(sock, sessionId) {
     help +=
       '➧ *𝐎𝐮𝐫 𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' +
       line + '\n' +
-      '> _𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙲𝚘𝚗𝚏𝚛𝚘𝚗𝚝𝚎𝚛_';
+      '> 𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐛𝐲 𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫';
     await sock.sendMessage(jid, { text: help });
     await delay(400);
 
