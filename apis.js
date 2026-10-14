@@ -36,19 +36,23 @@ async function post(url, body, opts = {}) {
   });
 }
 
-async function askAI(text) {
+async function askAI(text, opts = {}) {
   if (!text || !String(text).trim()) return null;
   const q = String(text).trim().slice(0, 2500);
+  const system = opts.system || (
+    opts.chat
+      ? 'You are a real human on WhatsApp. Reply in the SAME language as the user. Match their tone. Use emojis naturally. Keep it short like a real chat.'
+      : 'You are a helpful assistant. Reply in the same language as the user. Be clear and concise.'
+  );
 
   const backends = [
-    // Pollinations OpenAI-compatible (POST body — NOT path)
     async () => {
       const r = await post(
         'https://text.pollinations.ai/openai',
         {
           model: 'openai',
           messages: [
-            { role: 'system', content: 'You are a helpful assistant. Answer clearly and briefly.' },
+            { role: 'system', content: system },
             { role: 'user', content: q }
           ]
         },
@@ -58,9 +62,9 @@ async function askAI(text) {
       if (typeof a === 'string' && !isBadText(a)) return a.trim();
       return null;
     },
-    // Pollinations GET (query in path is OK for GET)
     async () => {
-      const r = await axios.get('https://text.pollinations.ai/' + e(q), {
+      const prompt = system + '\n\nUser: ' + q + '\nAssistant:';
+      const r = await axios.get('https://text.pollinations.ai/' + e(prompt.slice(0, 1500)), {
         timeout: 60000,
         headers: { 'User-Agent': UA, Accept: 'text/plain' },
         validateStatus: () => true,
@@ -71,7 +75,10 @@ async function askAI(text) {
       return null;
     },
     async () => {
-      const r = await post('https://api.siputzx.my.id/api/ai/gpt', { content: q, model: 'gpt-4o-mini' }, { timeout: 55000 });
+      const r = await post('https://api.siputzx.my.id/api/ai/gpt', {
+        content: system + '\n\n' + q,
+        model: 'gpt-4o-mini'
+      }, { timeout: 55000 });
       const a = r?.data?.data || r?.data?.result || r?.data?.message || r?.data?.response || r?.data;
       if (typeof a === 'string' && !isBadText(a)) return a.trim();
       if (a?.content && !isBadText(String(a.content))) return String(a.content).trim();
@@ -79,18 +86,13 @@ async function askAI(text) {
       return null;
     },
     async () => {
-      const r = await post('https://api.siputzx.my.id/api/ai/blackboxai', { content: q }, { timeout: 55000 });
+      const r = await post('https://api.siputzx.my.id/api/ai/blackboxai', { content: system + '\n' + q }, { timeout: 55000 });
       const a = r?.data?.data || r?.data?.result || r?.data?.response;
       return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
     },
     async () => {
       const r = await get(`https://api.ryzendesu.vip/api/ai/gpt?text=${e(q)}`, { timeout: 45000 });
       const a = r?.data?.result || r?.data?.answer || r?.data?.response || r?.data?.data;
-      return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
-    },
-    async () => {
-      const r = await get(`https://api.giftedtech.my.id/api/ai/gpt?apikey=gifted&q=${e(q)}`, { timeout: 45000 });
-      const a = r?.data?.result || r?.data?.response || r?.data?.data;
       return typeof a === 'string' && !isBadText(a) ? a.trim() : null;
     }
   ];
