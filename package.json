@@ -3,10 +3,11 @@
   "version": "7.6.2",
   "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node index.js",
     "start:bot": "node index.js",
     "start:pair": "node server.js",
-    "pair": "node pair.js"
+    "pair": "node pair.js",
+    "postinstall": "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod a+rx ./yt-dlp"
   },
   "engines": {
     "node": "22.x"
@@ -25,6 +26,7 @@
     "axios": "^1.7.7",
     "wa-sticker-formatter": "^4.4.4",
     "express": "^4.21.2",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "yt-dlp-exec": "^1.0.2"
   }
 }
