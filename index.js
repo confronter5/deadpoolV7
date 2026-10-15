@@ -935,15 +935,44 @@ async function downloadViaYtdl(url, audioOnly) {
   try {
     let ytdl;
     try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = require('ytdl-core'); }
-    const info = await ytdl.getInfo(url, { requestOptions: { headers: { 'User-Agent': UA } } });
+    const info = await ytdl.getInfo(url, {
+      requestOptions: {
+        headers: {
+          'User-Agent': UA,
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': '*/*'
+        }
+      }
+    });
     const title = info?.videoDetails?.title || 'YouTube';
-    const format = audioOnly
-      ? ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' })
-      : (ytdl.chooseFormat(info.formats, { quality: '18' }) || ytdl.chooseFormat(info.formats, { quality: 'lowest' }));
+    let format = null;
+    if (audioOnly) {
+      try {
+        format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+      } catch {}
+      if (!format?.url) {
+        // fallback: any audio-capable progressive format
+        format = (info.formats || []).find(f => f.hasAudio && !f.hasVideo && f.url)
+          || (info.formats || []).find(f => f.hasAudio && f.url);
+      }
+    } else {
+      try {
+        format = ytdl.chooseFormat(info.formats, { quality: '18' });
+      } catch {}
+      if (!format?.url) {
+        try { format = ytdl.chooseFormat(info.formats, { quality: 'lowest' }); } catch {}
+      }
+      if (!format?.url) {
+        format = (info.formats || []).find(f => f.hasVideo && f.hasAudio && f.url)
+          || (info.formats || []).find(f => f.hasVideo && f.url);
+      }
+    }
     if (!format?.url) return null;
     const buf = await fetchBuffer(format.url, 180000);
     if (buf && buf.length > 5000) return { buffer: buf, title, url: format.url };
-  } catch {}
+  } catch (e) {
+    console.log('ytdl error:', e?.message?.slice(0, 120));
+  }
   return null;
 }
 async function downloadViaYtDlp(url, audioOnly) {
@@ -984,25 +1013,60 @@ async function downloadViaYtDlp(url, audioOnly) {
   }
   return null;
 }
-async function downloadYouTube(query, audioOnly = true) {
+async function downloadViaGifted(url, audioOnly) {
   try {
-    const { downloadYouTube: real } = require('./downloader');
-    const r = await real(query, audioOnly);
-    if (r?.buffer) return r;
+    const endpoint = audioOnly
+      ? 'https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url='
+      : 'https://api.giftedtech.web.id/api/download/ytmp4?apikey=gifted&url=';
+    const r = await dlGet(endpoint + encodeURIComponent(url), { timeout: 60000 });
+    const d = r?.data?.result || r?.data?.data || r?.data;
+    const mediaUrl = d?.url || d?.download_url || d?.dl || d?.link || d?.audio || d?.video;
+    const title = d?.title || 'YouTube';
+    if (mediaUrl) {
+      const buf = await fetchBuffer(String(mediaUrl), 180000);
+      if (buf && buf.length > 5000) return { buffer: buf, title, url: mediaUrl };
+    }
   } catch {}
+  return null;
+}
+
+async function downloadViaAsupan(url, audioOnly) {
+  try {
+    const path = audioOnly ? 'ytmp3' : 'ytmp4';
+    const bases = [
+      `https://api.siputzx.my.id/api/d/${path}?url=`,
+      `https://api.ryzendesu.vip/api/downloader/${path}?url=`
+    ];
+    for (const base of bases) {
+      try {
+        const r = await dlGet(base + encodeURIComponent(url), { timeout: 55000 });
+        const d = r?.data?.data || r?.data?.result || r?.data;
+        const mediaUrl = d?.dl || d?.download || d?.url || d?.link || d?.audio || d?.video;
+        if (mediaUrl) {
+          const buf = await fetchBuffer(String(mediaUrl), 180000);
+          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || 'YouTube', url: mediaUrl };
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+async function downloadYouTube(query, audioOnly = true) {
   let url = isYoutubeUrl(query) ? query.trim() : null;
   let title = query;
   if (!url) {
     const found = await searchYoutube(query);
     if (!found?.url) return null;
-    url = found.url; title = found.title || query;
+    url = found.url;
+    title = found.title || query;
   }
-  // Prefer yt-dlp first (works best on Heroku with binary)
-  let data = await downloadViaYtDlp(url, audioOnly);
-  if (!data?.buffer) data = await downloadViaSiputzx(url, audioOnly);
-  if (!data?.buffer) data = await downloadViaCobalt(url, audioOnly);
-  if (!data?.buffer) data = await downloadViaYtdl(url, audioOnly);
-  if (data?.buffer) { data.title = data.title || title; return data; }
+  // ONLY ytdl — no other download APIs
+  const data = await downloadViaYtdl(url, audioOnly);
+  if (data?.buffer) {
+    data.title = data.title || title;
+    return data;
+  }
   return null;
 }
 async function sendAsMp3(sock, jid, data) {
@@ -1103,36 +1167,70 @@ async function getLyrics(text) {
 }
 
 // ============ TEXTMAKER ============
+// Map short cmd names → real ephoto / textpro effect slugs (text ON background)
+const TEXTMAKER_STYLES = {
+  neon: ['neon', 'neon-light', 'green-neon', 'neon2'],
+  fire: ['flame-letter', 'fire-text-effect', 'hotmetal'],
+  glitch: ['glitch', 'glitch-tiktok', 'glitchtext'],
+  ice: ['ice', 'frozen-winter', 'ice-cold'],
+  matrix: ['matrix', 'green-matrix'],
+  thunder: ['thunder', 'thundertext', 'lightning'],
+  devil: ['devil-wings', 'demon'],
+  sand: ['sand', 'writing-sand', 'sand-writing', 'summersand'],
+  blackpink: ['blackpink', 'blackpink-logo'],
+  metallic: ['metallic', 'metal-dark-gold', 'pornhub-style-logo'],
+  light: ['light-text', 'light-effect', 'light-glow'],
+  hacker: ['hacker', 'green-horror', 'matrix'],
+  paper: ['paper', 'write-paper'],
+  luxury: ['luxury', 'luxury-gold', 'gold-text'],
+  fire2: ['fire', 'flame-letter'],
+  glow: ['glow', 'glowing'],
+  gold: ['gold', 'gold-text', 'luxury-gold'],
+  rainbow: ['rainbow', 'colorful']
+};
+
 async function generateTextImage(effect, text) {
   try {
     const { generateTextImage: real } = require('./apis');
     const buf = await real(effect, text);
     if (buf && Buffer.isBuffer(buf) && buf.length > 500) return buf;
   } catch {}
+
   const q = String(text || '').slice(0, 40);
   const style = String(effect || 'neon').toLowerCase();
-  const mkUrls = (tpl) => tpl.map(u => u.replace('{q}', encodeURIComponent(q)).replace('{s}', encodeURIComponent(style)));
-  const lists = [
-    mkUrls([
-      'https://api.siputzx.my.id/api/canvas/textpro?text={q}&style={s}',
-      'https://api.siputzx.my.id/api/ephoto/{s}?text={q}',
-      'https://api.siputzx.my.id/api/photooxy/{s}?text={q}',
-      'https://api.ryzendesu.vip/api/ephoto/{s}?text={q}',
-      'https://api.giftedtech.my.id/api/ephoto360/{s}?apikey=gifted&text={q}',
-      'https://api.lolhuman.xyz/api/ephoto1/{s}?apikey=GataDios&text={q}',
-      'https://api.lolhuman.xyz/api/textprome/{s}?apikey=GataDios&text={q}'
-    ]),
-    style === 'neon' ? mkUrls(['https://api.popcat.xyz/outrank?text={q}']) : [],
-    style === 'matrix' ? mkUrls(['https://api.popcat.xyz/matrix?text={q}']) : []
-  ].flat();
-  for (const url of lists) {
+  const aliases = TEXTMAKER_STYLES[style] || [style];
+
+  const urls = [];
+  for (const s of aliases) {
+    const encS = encodeURIComponent(s);
+    const encQ = encodeURIComponent(q);
+    // Prefer ephoto / textpro endpoints that put text INSIDE themed background
+    urls.push(
+      `https://api.siputzx.my.id/api/ephoto/${encS}?text=${encQ}`,
+      `https://api.siputzx.my.id/api/canvas/textpro?text=${encQ}&style=${encS}`,
+      `https://api.ryzendesu.vip/api/ephoto/${encS}?text=${encQ}`,
+      `https://api.lolhuman.xyz/api/ephoto1/${encS}?apikey=GataDios&text=${encQ}`,
+      `https://api.lolhuman.xyz/api/textprome/${encS}?apikey=GataDios&text=${encQ}`,
+      `https://api.giftedtech.web.id/api/ephoto360/${encS}?apikey=gifted&text=${encQ}`,
+      `https://api.siputzx.my.id/api/photooxy/${encS}?text=${encQ}`
+    );
+  }
+  if (style === 'neon') urls.push(`https://api.popcat.xyz/outrank?text=${encodeURIComponent(q)}`);
+  if (style === 'matrix') urls.push(`https://api.popcat.xyz/matrix?text=${encodeURIComponent(q)}`);
+
+  for (const url of urls) {
     try {
-      const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 40000 });
+      const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 45000 });
       if (r.status >= 400 || !r.data) continue;
       const buf = Buffer.from(r.data);
       if (buf.length < 800) continue;
-      const head = buf.slice(0, 20).toString('utf8').toLowerCase();
-      if (head.includes('<!doctype') || head.includes('<html') || head.includes('{"')) continue;
+      const head = buf.slice(0, 24).toString('utf8').toLowerCase();
+      if (head.includes('<!doctype') || head.includes('<html') || head.includes('{"') || head.includes('error')) continue;
+      // Valid image magic bytes
+      const isImg = buf[0] === 0xFF && buf[1] === 0xD8; // jpeg
+      const isPng = buf[0] === 0x89 && buf[1] === 0x50;
+      const isWebp = buf.slice(0, 4).toString() === 'RIFF';
+      if (!isImg && !isPng && !isWebp) continue;
       return buf;
     } catch {}
   }
@@ -1232,19 +1330,26 @@ async function startBot() {
     setInterval(() => { try { sock.sendPresenceUpdate('available'); } catch {} }, 25_000);
   }
 
-  const keepUrl = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
-  if (keepUrl) {
-    setInterval(() => {
-      axios.get(String(keepUrl).replace(/\/$/, '') + (String(keepUrl).includes('/health') ? '' : '/health'), {
-        timeout: 12000, validateStatus: () => true
-      }).catch(() => {});
-    }, 4 * 60 * 1000);
-    console.log('KEEP_ALIVE →', keepUrl);
+  // Keep-alive: self-ping so Heroku dyno does not sleep
+  let keepUrl = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
+  if (!keepUrl && process.env.HEROKU_APP_NAME) {
+    keepUrl = `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
   }
+  const pingKeepAlive = () => {
+    const targets = [];
+    if (keepUrl) targets.push(String(keepUrl).replace(/\/$/, ''));
+    targets.push(`http://127.0.0.1:${KEEP_PORT}`);
+    for (const t of targets) {
+      axios.get(t, { timeout: 10000, validateStatus: () => true }).catch(() => {});
+    }
+  };
+  setInterval(pingKeepAlive, 2 * 60 * 1000); // every 2 minutes
+  setTimeout(pingKeepAlive, 15000);
+  if (keepUrl) console.log('KEEP_ALIVE →', keepUrl);
 
   setInterval(() => {
     try { if (sock) sock.sendPresenceUpdate(presenceMap(config.PRESENCE) || 'available'); } catch {}
-  }, 30_000);
+  }, 25_000);
 
   // ============ CONNECTION ============
   sock.ev.on('connection.update', async (u) => {
@@ -1355,11 +1460,30 @@ async function startBot() {
     for (const u of updates) if (u.id) groupCache.del(u.id);
   });
 
-  // ============ MESSAGES ============
+  // ============ MESSAGES (no double reply / ignore old cmds) ============
+  const processedMsgIds = new Set();
+  const BOT_STARTED_AT = Math.floor(Date.now() / 1000) - 15; // allow 15s clock skew
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type && type !== 'notify' && type !== 'append') return;
+    // Only live notifications — never replay history / append
+    if (type !== 'notify') return;
     for (const m of messages) {
-      handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
+      try {
+        if (!m?.key?.id) continue;
+        // Dedupe — same message must not run twice
+        if (processedMsgIds.has(m.key.id)) continue;
+        processedMsgIds.add(m.key.id);
+        if (processedMsgIds.size > 2000) {
+          const first = processedMsgIds.values().next().value;
+          processedMsgIds.delete(first);
+        }
+        // Ignore old messages (stops replying to commands sent while offline)
+        const ts = Number(m.messageTimestamp || 0);
+        if (ts && ts < BOT_STARTED_AT) continue;
+        handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
+      } catch (e) {
+        console.log('upsert err:', e?.message);
+      }
     }
   });
 
