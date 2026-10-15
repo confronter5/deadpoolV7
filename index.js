@@ -812,44 +812,56 @@ async function getFreshGroupInviteLink() {
 }
 
 async function autoJoinConfigured() {
-  // Primary identity = GROUP_JID (stable). Invite links change often.
-  let groupJid = String(config.GROUP_JID || '120363430854781207@g.us').trim();
+  // GROUP_JID is enough — no invite link required (links change; JID is stable)
+  let groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '120363430854781207@g.us').trim();
+  const invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
 
-  // Allow GROUP_INVITE env to hold a JID instead of a link
-  const invRaw = String(config.GROUP_INVITE || '').trim();
   if (invRaw.endsWith('@g.us')) {
     groupJid = invRaw;
     config.GROUP_JID = invRaw;
   }
 
-  // Only auto-join if a real invite CODE/link was provided (not the JID)
-  if (invRaw && !invRaw.endsWith('@g.us')) {
+  // Optional one-time join via invite code only (not required)
+  if (invRaw && !invRaw.endsWith('@g.us') && !invRaw.includes('@')) {
     try {
       let code = invRaw;
       if (code.includes('chat.whatsapp.com/')) {
         code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
       }
-      if (code && !code.includes('@')) {
+      if (code) {
         const gid = await sock.groupAcceptInvite(code);
-        if (gid) config.GROUP_JID = String(gid);
+        if (gid) { groupJid = String(gid); config.GROUP_JID = groupJid; }
         console.log('✅ Auto-joined group', gid || code);
       }
-    } catch (e) { console.log('Auto-join group failed:', e.message); }
+    } catch (e) { console.log('Optional invite join failed (OK if already member):', e.message); }
   }
 
-  // Always refresh invite code FROM group JID when bot is a member
   if (groupJid.endsWith('@g.us')) {
     config.GROUP_JID = groupJid;
-    const link = await getFreshGroupInviteLink();
-    if (link) console.log('✅ Fresh group invite for', groupJid, '→', link);
-    else console.log('ℹ️ GROUP_JID set to', groupJid, '(bot must be admin/member to mint invite links)');
+    try {
+      const meta = await sock.groupMetadata(groupJid);
+      console.log('✅ Group JID OK:', groupJid, '|', meta?.subject || 'group', '| members:', meta?.participants?.length || '?');
+      // Cache a fresh invite for session buttons only if bot can mint it
+      try {
+        const code = await sock.groupInviteCode(groupJid);
+        if (code) {
+          config.GROUP_INVITE = code;
+          console.log('✅ Cached invite code (rotates):', code);
+        }
+      } catch {
+        console.log('ℹ️ In group but cannot mint invite (need admin). GROUP_JID alone is fine.');
+      }
+    } catch (e) {
+      console.log('⚠️ GROUP_JID set but bot is NOT in that group yet:', groupJid);
+      console.log('   Add the bot number to the group manually. No invite link needed in Heroku config.');
+    }
   }
 
   if (config.CHANNEL_ID) {
     try {
       const ch = String(config.CHANNEL_ID).trim();
       if (sock.newsletterFollow) { await sock.newsletterFollow(ch); console.log('✅ Auto-followed channel'); }
-    } catch (e) { console.log('Auto-join channel failed:', e.message); }
+    } catch (e) { console.log('Channel follow:', e.message); }
   }
 }
 
@@ -1222,8 +1234,20 @@ async function startBot() {
   if (config.ALWAYS_ONLINE) {
     setInterval(() => {
       try { sock.sendPresenceUpdate('available'); } catch {}
-    }, 25000);
+    }, 25_000);
   }
+
+  // Prevent Heroku sleep: ping web /health every 4 min when KEEP_ALIVE_URL is set
+  const keepUrl = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
+  if (keepUrl) {
+    setInterval(() => {
+      axios.get(String(keepUrl).replace(/\/$/, '') + (String(keepUrl).includes('/health') ? '' : '/health'), {
+        timeout: 12000, validateStatus: () => true
+      }).catch(() => {});
+    }, 4 * 60 * 1000);
+    console.log('KEEP_ALIVE →', keepUrl);
+  }
+
 
   // ============ CONNECTION ============
   sock.ev.on('connection.update', async (u) => {
@@ -1237,12 +1261,31 @@ async function startBot() {
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
         if (config.ALWAYS_ONLINE) sock.sendPresenceUpdate('available').catch(() => {});
       } catch {}
-      setImmediate(async () => {
+            setImmediate(async () => {
         try {
           const me = sock.user?.id;
           if (!me) return;
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
+
+          // Only send start message once every 24 hours (reconnects must not spam)
+          const startFile = path.join(DATA_DIR, 'last_start.json');
+          let last = 0;
+          try {
+            if (await fs.pathExists(startFile)) {
+              const j = await fs.readJson(startFile);
+              last = Number(j?.at) || 0;
+            }
+          } catch {}
+          const DAY = 24 * 60 * 60 * 1000;
+          if (Date.now() - last < DAY) {
+            console.log('Start message skipped (already sent within 24h)');
+            return;
+          }
           await sock.sendMessage(jid, { text: buildStartMessage() });
+          try {
+            await fs.ensureDir(DATA_DIR);
+            await fs.writeJson(startFile, { at: Date.now() }, { spaces: 0 });
+          } catch {}
         } catch (e) { console.log('start send:', e.message); }
       });
     }
