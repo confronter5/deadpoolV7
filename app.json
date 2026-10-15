@@ -16,7 +16,7 @@
       "value": "deadpool~"
     },
     "OWNER_NUMBER": {
-      "description": "Owner number with country code no +",
+      "description": "Owner number with country code (no +)",
       "required": true,
       "value": "254796283064"
     },
@@ -25,26 +25,12 @@
       "required": true,
       "value": "30"
     },
-    "BOT_EXPIRY_DATE": {
-      "description": "Optional fixed end date YYYY-MM-DD (overrides BOT_EXPIRY_DAYS if set)",
-      "required": false,
-      "value": ""
-    },
-    "BOT_ACTIVATED_AT": {
-      "description": "Optional ISO date when rental started. Leave empty \u2014 bot saves first start automatically",
-      "required": false,
-      "value": ""
-    },
     "BOT_NAME": {
       "description": "Bot display name",
       "value": "Deadpool V7"
     },
     "BOT_IMAGE": {
-      "description": "Bot/menu image URL (used for .menu loading edits + full menu)",
-      "value": "https://i.imgur.com/akXoQZH.jpeg"
-    },
-    "MENU_MEDIA": {
-      "description": "Optional menu image/video URL (overrides BOT_IMAGE if set)",
+      "description": "Bot/menu image URL",
       "value": "https://i.imgur.com/akXoQZH.jpeg"
     },
     "PREFIX": {
@@ -54,57 +40,20 @@
     "MODE": {
       "description": "public or private",
       "value": "public"
-    },
-    "ADMIN_PASSWORD": {
-      "description": "Password for web /admin dashboard",
-      "value": "changeme123"
-    },
-    "ALWAYS_ONLINE": {
-      "description": "Keep WhatsApp presence available",
-      "value": "true"
-    },
-    "KEEP_ALIVE_URL": {
-      "description": "https://YOUR-APP.herokuapp.com/health \u2014 stops free sleep",
-      "required": false
-    },
-    "SITE_URL": {
-      "description": "Pair site URL for session buttons",
-      "required": false
-    },
-    "CHANNEL_URL": {
-      "description": "WhatsApp channel link for Join WaChannel button",
-      "required": false
-    },
-    "GROUP_JID": {
-      "description": "Main group JID (stable). Invite links change \u2014 bot mints a fresh link from this JID when needed.",
-      "value": "120363430854781207@g.us",
-      "required": true
-    },
-    "GROUP_INVITE": {
-      "description": "Optional. Leave empty if you only use GROUP_JID. Only set if you have a one-time invite code for first join.",
-      "required": false,
-      "value": ""
     }
   },
   "formation": {
     "web": {
       "quantity": 1,
       "size": "basic"
-    },
-    "worker": {
-      "quantity": 1,
-      "size": "basic"
     }
   },
   "buildpacks": [
     {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
+    },
+    {
       "url": "heroku/nodejs"
-    },
-    {
-      "url": "https://github.com/clhuang/heroku-buildpack-webp-binaries.git"
-    },
-    {
-      "url": "https://github.com/heroku/heroku-buildpack-activestorage-preview"
     }
   ]
 }
