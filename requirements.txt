@@ -1,1 +1,1 @@
-python-3.12.7
+# No Python packages needed — only the python binary for yt-dlp-exec
