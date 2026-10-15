@@ -282,7 +282,7 @@ async function saveBlacklist(list) { await fs.writeJson(BLACKLIST_FILE, list, { 
 const ROASTS = {
   owner: ['❖ *𝐎𝐰𝐧𝐞𝐫 𝐨𝐧𝐥𝐲.* ɢᴏᴛ ɴᴏ ᴀᴜᴛʜᴏʀɪᴛʏ ʜᴇʀᴇ ʀᴇᴛʀʏ ᴠɪꜱɪᴛɪɴɢ ᴛᴏɪʟᴇᴛ.'],
   admin: ['❖ *𝐀𝐝𝐦𝐢𝐧𝐬 𝐨𝐧𝐥𝐲.* ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪꜱ ɴᴏᴛ ꜰᴏʀ ᴘᴇᴏᴘʟᴇ ʟɪᴋᴇ ʏᴏᴜ ᴛʀʏ ᴛᴏ ʙᴀᴛʜ.'],
-  group: ['❖ *𝐆𝐫𝐨𝐮𝐩 𝐨𝐧𝐥𝐲.* ꜱᴛᴏᴘ ᴡᴀꜱᴛɪɴɢ ᴍʏ ᴛɪᴍᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪꜱ ꜰᴏʀ ɢʀᴏᴜᴘ ɪᴅɪᴏᴛ.']
+  group: ['❖ *𝐆𝐫𝐨𝐮𝐩 𝐨𝐧𝐥𝐲.* ꜱᴛᴏᴘ 𝐰𝐚𝐬𝐭𝐢𝐧𝐠 ᴍʏ ᴛɪᴍᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪꜱ ꜰᴏʀ ɢʀᴏᴜᴘ ɪᴅɪᴏᴛ.']
 };
 const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 
@@ -563,9 +563,15 @@ function isOwner(jid, msg) {
   return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
 }
 const isDeveloper = isOwner;
-const DEFAULT_STATUS_LIKES = ['❤️', '🔥', '😂', '👍', '😍', '💯', '🙏', '😮', '👏', '🎉', '✨', '💜', '🤍', '🖤', '💙', '💛', '🧡', '🌝'];
+
+// ============ EMOJI HELPERS (FIXED) ============
+const DEFAULT_STATUS_LIKES = [
+  '❤️', '🔥', '😂', '👍', '😍', '💯', '🙏', '😮', '👏', '🎉',
+  '✨', '💜', '🤍', '🖤', '💙', '💛', '🧡', '🌝', '🥰', '😎', '🤩', '😘'
+];
 const DEFAULT_REACT_EMOJIS = ['👍', '❤️', '🔥', '😂', '🙏', '💯', '😍', '😮', '👏', '✨', '🎉', '💜', '🤝', '👀', '🫡'];
 const DEFAULT_CMD_EMOJIS = ['✅', '⚡', '🔥', '💫', '✨', '🎯', '👍', '🤖', '💜', '🚀', '⭐', '💀', '👑'];
+
 function randEmoji(pool, fb) {
   const list = (Array.isArray(pool) && pool.length) ? pool : (fb || DEFAULT_REACT_EMOJIS);
   return list[Math.floor(Math.random() * list.length)] || '👍';
@@ -1521,27 +1527,67 @@ async function startBot() {
 
       if (!isMe && from && !from.includes('status')) saveUser(sender).catch(() => {});
 
-      // STATUS auto view + like
+      // ============ STATUS auto view + like (INSTANT + fixed) ============
       if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
         if (isMe) return;
-        const rawP = m.key.participant || m.participant || m.key.participantAlt || m.key.remoteJidAlt || '';
-        cacheLid(m.key, m);
-        const phone = jidToPhone(rawP, m);
-        const poster = (phone) ? phone + '@s.whatsapp.net' : (String(rawP).includes('@') ? rawP : dig(rawP) + '@s.whatsapp.net');
-        const statusKey = { remoteJid: 'status@broadcast', id: m.key.id, participant: poster, fromMe: false };
 
+        const statusKey = {
+          remoteJid: 'status@broadcast',
+          id: m.key.id,
+          fromMe: false,
+          participant: m.key.participant || m.key.participantAlt || m.participant || undefined
+        };
+
+        cacheLid(m.key, m);
+        const rawP = statusKey.participant || '';
+        let posterJid = rawP;
+        const phone = jidToPhone(rawP, m);
+        if (phone) {
+          posterJid = phone + '@s.whatsapp.net';
+          if (String(rawP).includes('@lid')) {
+            _lidMap.set(String(rawP).split('@')[0], phone);
+          }
+        }
+
+        // ---------- AUTO VIEW (instant) ----------
         if (config.AUTO_VIEW_STATUS) {
           try { await sock.readMessages([m.key]); } catch {}
           try { await sock.readMessages([statusKey]); } catch {}
         }
+
+        // ---------- AUTO LIKE ----------
         if (config.AUTO_LIKE_STATUS) {
-          const emoji = statusLikeEmoji();
+          const emoji = statusLikeEmoji(); // uses single if set via .reaction, else random from list
           const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-          const list = [...new Set([poster, rawP, m.key.participant, botJid].filter(Boolean).map(String))];
+
+          const statusJidList = [
+            ...new Set(
+              [posterJid, rawP, m.key.participant, m.key.participantAlt, botJid]
+                .filter(Boolean)
+                .map(j => {
+                  const p = dig(String(j).split('@')[0].split(':')[0]);
+                  if (/^\d{6,15}$/.test(p)) return p + '@s.whatsapp.net';
+                  return String(j);
+                })
+            )
+          ];
+
           try {
-            await sock.sendMessage('status@broadcast', { react: { text: emoji, key: statusKey } }, { statusJidList: list });
+            await sock.sendMessage(
+              'status@broadcast',
+              { react: { text: emoji, key: statusKey } },
+              { statusJidList }
+            );
           } catch {
-            try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: m.key } }, { statusJidList: list }); } catch {}
+            try {
+              await sock.sendMessage(
+                'status@broadcast',
+                { react: { text: emoji, key: m.key } },
+                { statusJidList }
+              );
+            } catch (e) {
+              console.log('status like failed:', e?.message);
+            }
           }
         }
         return;
@@ -1749,29 +1795,46 @@ async function startBot() {
         const up = Math.floor(process.uptime());
         const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60), s = up % 60;
         const mem = process.memoryUsage().heapUsed / 1024 / 1024;
-        await reply(`✅ *${config.BOT_NAME}* 𝖎𝖘 𝖆𝖑𝖎𝖛𝖊 😞𝐘𝐨𝐮 𝐚𝐫𝐞 𝐭𝐡𝐞 𝐨𝐧𝐞 𝐝𝐞𝐚𝐝 𝐚𝐦 𝐚𝐰𝐚𝐤𝐞 𝐝𝐮𝐝𝐞 𝐤𝐢𝐜𝐤𝐢𝐧𝐠 𝐚𝐥𝐥 𝐚𝐬𝐬 𝐝𝐨𝐧𝐭 𝐫𝐞𝐬𝐩𝐞𝐜𝐭 𝐦𝐞\n⛛ ${h}h ${mn}m ${s}s\n⛾ 𝐑𝐀𝐌: ${mem.toFixed(1)} MB\n☇ 𝐌𝐨𝐝𝐞: ${config.MODE}`);
+        await reply(`✅ *${config.BOT_NAME}* 𝖎𝖘 𝖆𝖑𝖎𝖛𝖊 😞𝐘𝐨𝐮 𝐚𝐫𝐞 𝐭𝐡𝐞 𝐨𝐧𝐞 𝐝𝐞𝐚𝐝 𝐚𝐦 𝐚𝐰𝐚𝐤𝐞 𝐝𝐮𝐝𝐞 𝐤𝐢𝐜𝐤𝐢𝐧𝐠 𝐚𝐥𝐥 𝐚𝐬𝐬 𝐝𝐨𝐧𝐭 𝐫𝐞𝐬𝐩𝐞𝐜𝐭 𝐦𝐞\n⛛ ${h}h ${mn}m ${s}s\n retrograde 𝐑𝐀𝐌: ${mem.toFixed(1)} MB\n☇ 𝐌𝐨𝐝𝐞: ${config.MODE}`);
         return;
       }
 
       // ========== OWNER ==========
       if (cmd === 'owner') {
         const contacts = [];
-        if (config.OWNER_NUMBER) {
+
+        // DEVELOPERS = Confronter (real owner)
+        for (const d of (config.DEVELOPERS || [])) {
+          if (!d) continue;
           contacts.push({
-            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Owner - ${config.BOT_NAME}\nORG:Confronter\nTEL;type=CELL;type=VOICE;waid=${config.OWNER_NUMBER}:+${config.OWNER_NUMBER}\nEND:VCARD`
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Owner - ${config.BOT_NAME}\nORG:Confronter\nTEL;type=CELL;type=VOICE;waid=${d}:+${d}\nEND:VCARD`
           });
         }
-        for (const d of (config.DEVELOPERS || [])) {
-          if (d && d !== config.OWNER_NUMBER) {
-            contacts.push({
-              vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Developer\nORG:Confronter\nTEL;type=CELL;type=VOICE;waid=${d}:+${d}\nEND:VCARD`
-            });
-          }
+
+        // OWNER_NUMBER = User (no Confronter)
+        if (config.OWNER_NUMBER && !(config.DEVELOPERS || []).includes(config.OWNER_NUMBER)) {
+          let displayName = 'User';
+          try {
+            const jid = config.OWNER_NUMBER + '@s.whatsapp.net';
+            const realName = await sock.getName(jid).catch(() => null);
+            if (realName && realName.trim() && realName !== 'User' && realName !== 'Unknown') {
+              displayName = String(realName).replace(/[@\n]/g, '').trim().slice(0, 30);
+            }
+          } catch {}
+          contacts.push({
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${displayName}\nORG:User\nTEL;type=CELL;type=VOICE;waid=${config.OWNER_NUMBER}:+${config.OWNER_NUMBER}\nEND:VCARD`
+          });
         }
+
         if (contacts.length) {
-          await sock.sendMessage(from, { contacts: { displayName: contacts.length > 1 ? 'Owners' : 'Owner', contacts } });
+          await sock.sendMessage(from, {
+            contacts: {
+              displayName: contacts.length > 1 ? 'Contacts' : 'Owner',
+              contacts
+            }
+          });
         } else {
-          await reply('👑 Owner number not configured.');
+          await reply('👑 No owner/developer numbers configured.');
         }
         return;
       }
@@ -2465,11 +2528,27 @@ async function startBot() {
       }
 
       if (cmd === 'startmsg') { await reply(buildStartMessage()); return; }
+
+      // ========== REACTION (FIXED) ==========
       if (cmd === 'reaction') {
-        if (!args[0]) return reply(`Current: ${(config.STATUS_LIKES && config.STATUS_LIKES[0]) || '❤️'}\nUsage: ${prefix}reaction 🌝`);
-        config.STATUS_LIKES = [args[0]];
-        await reply(`✅ Status reaction set to ${args[0]}`);
-        return;
+        if (!args[0]) {
+          const current = Array.isArray(config.STATUS_LIKES) && config.STATUS_LIKES.length
+            ? config.STATUS_LIKES.join(' ')
+            : 'random (default list)';
+          return reply(
+            `Current status likes: *${current}*\n\n` +
+            `Usage:\n` +
+            `${prefix}reaction 🌝          → only this emoji\n` +
+            `${prefix}reaction ❤️ 🔥 😂    → only these\n` +
+            `${prefix}reaction random      → different random emojis`
+          );
+        }
+        if (['random', 'default', 'off'].includes(args[0].toLowerCase())) {
+          config.STATUS_LIKES = null;
+          return reply('✅ Status likes → *random different emojis*');
+        }
+        config.STATUS_LIKES = args;
+        return reply(`✅ Status likes set to: ${args.join(' ')}`);
       }
 
       // ========== DIE / BLACKLIST ==========
