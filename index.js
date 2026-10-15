@@ -23,6 +23,16 @@ const { exec } = require('child_process');
 const util = require('util');
 const execP = util.promisify(exec);
 
+// ============ KEEP-ALIVE WEB SERVER (binds Heroku PORT -> dyno never sleeps) ============
+const http = require('http');
+const KEEP_PORT = process.env.PORT || 3000;
+try {
+  http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(config.BOT_NAME + ' is alive\n');
+  }).listen(KEEP_PORT, () => console.log('🌐 Health server on port ' + KEEP_PORT));
+} catch (e) { console.log('keep server:', e.message); }
+
 // ============ CONFIG (config.js + Heroku / process.env) ============
 const defaults = {
   BOT_NAME: '𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕',
@@ -424,7 +434,6 @@ function buildMainMenu(pushName, userCount) {
   m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
   m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'togcstatus']);
 
-  m += `> ❖𝐌𝐚𝐝𝐞 𝐛𝐲 *𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫* ©${new Date().getFullYear()}`;
   return m;
 }
 
@@ -460,26 +469,55 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 
+// Edit an image message's caption safely (fallback: delete + resend)
+async function editImageCaption(jid, key, buffer, caption) {
+  try {
+    if (!key) throw new Error('no key');
+    await sock.sendMessage(jid, { image: buffer, caption, edit: key });
+    return true;
+  } catch (e1) {
+    try {
+      await sock.relayMessage(jid, {
+        protocolMessage: { key, type: 14, editedMessage: { imageMessage: { caption } } }
+      }, {});
+      return true;
+    } catch (e2) {
+      try { await sock.sendMessage(jid, { delete: key }); } catch {}
+      try { await sock.sendMessage(jid, { image: buffer, caption }); return true; }
+      catch { await sock.sendMessage(jid, { text: caption }); return true; }
+    }
+  }
+}
+
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  let caption = buildMainMenu(pushName, userCount);
-  try { caption = styleReplyText(caption); } catch {}
-  const foot = buildFooter();
-  if (foot && !/confronter|powered by/i.test(caption)) caption = caption + foot;
+  const foot = buildFooter(); // single footer, from config.POWERED_BY only
+  let full = buildMainMenu(pushName, userCount);
+  try { full = styleReplyText(full); } catch {}
+  if (foot) full = full + foot;
+  const loading = '⏳ *𝐋𝐨𝐚𝐝𝐢𝐧𝐠 𝐦𝐞𝐧𝐮…*';
 
   const resolved = await resolveMenuImageBuffer();
   const buffer = resolved?.buffer || null;
 
-  // Send image + full menu once. NEVER edit image messages (causes Waiting for this message).
   if (buffer && Buffer.isBuffer(buffer) && buffer.length > 500) {
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption });
-      return;
-    } catch (e) { console.log('menu send media:', e.message); }
+    // 1) send image with the loading text INSIDE the caption
+    let base = null;
+    try { base = await sock.sendMessage(jid, { image: buffer, caption: loading }); }
+    catch (e) { console.log('menu base send:', e.message); }
+    await delay(900);
+    // 2) edit that same image message caption -> full menu
+    await editImageCaption(jid, base?.key || null, buffer, full);
+    return;
   }
-  await sock.sendMessage(jid, { text: caption });
-}
-
-// ============ START MESSAGE ============
+  // no image available: text fallback (edit text -> full menu)
+  let base = null;
+  try { base = await sock.sendMessage(jid, { text: loading }); } catch {}
+  await delay(700);
+  try {
+    if (base?.key) await sock.sendMessage(jid, { text: full, edit: base.key });
+    else await sock.sendMessage(jid, { text: full });
+  } catch { await sock.sendMessage(jid, { text: full }); }
+}// ============ START MESSAGE ============
 function buildStartMessage() {
   const p = config.PREFIX || '.';
   const mode = config.MODE || 'public';
@@ -488,7 +526,7 @@ function buildStartMessage() {
 │ ✅ Online
 │ ⚡ Prefix : *${p}*
 │ 🌐 Mode   : *${mode}*
-│ 👑 Made by Confronter
+│ 👑 ${(config.POWERED_BY || 'Powered by Confronter').replace(/^>\s*/, '').replace(/\*/g, '').trim()}
 │ 💬 Type *${p}menu*
 └────────────`
   );
@@ -1039,7 +1077,7 @@ async function askAI(text, opts = {}) {
 
   const chatMode = !!opts.chat;
   const system = chatMode
-    ? `You are a real human chatting on WhatsApp. Detect the language of the user and reply in THE SAME language only. Match their tone (casual/formal). Use emojis when it feels natural. Keep replies short like a real person (1-4 sentences). Never say you are an AI unless asked. User name: ${opts.userName || 'friend'}.`
+    ? `You are a real human chatting on WhatsApp. FIRST detect the language of the user's message and always reply ONLY in that exact same language. Never switch languages, even if the question is in English. Match their tone (casual/formal). Use emojis when it feels natural. Keep replies short like a real person (1-4 sentences). Never say you are an AI unless asked. User name: ${opts.userName || 'friend'}.`
     : `You are a helpful assistant. Detect the user's language and answer in the same language. Be clear and concise. Use emojis lightly when helpful.`;
 
   try {
@@ -1061,7 +1099,7 @@ async function askAI(text, opts = {}) {
       return typeof a === 'string' && !bad(a) ? a.trim() : null;
     },
     async () => {
-      const prompt = system + '\\n\\nUser: ' + q + '\\nAssistant:';
+      const prompt = system + '\n\nUser: ' + q + '\nAssistant:';
       const r = await axios.get('https://text.pollinations.ai/' + encodeURIComponent(prompt.slice(0, 1500)), {
         timeout: 60000, headers: { 'User-Agent': UA, Accept: 'text/plain' }, validateStatus: () => true,
         responseType: 'text', transformResponse: [d => d]
@@ -1070,7 +1108,7 @@ async function askAI(text, opts = {}) {
     },
     async () => {
       const r = await axios.post('https://api.siputzx.my.id/api/ai/gpt', {
-        content: system + '\\n\\n' + q, model: 'gpt-4o-mini'
+        content: system + '\n\n' + q, model: 'gpt-4o-mini'
       }, { timeout: 45000, headers: { 'User-Agent': UA, 'Content-Type': 'application/json' }, validateStatus: () => true });
       const a = r?.data?.data || r?.data?.result || r?.data?.message || r?.data?.response || r?.data;
       if (typeof a === 'string' && !bad(a)) return a.trim();
@@ -1248,6 +1286,11 @@ async function startBot() {
     console.log('KEEP_ALIVE →', keepUrl);
   }
 
+  // Fresh presence every 30s so neither WhatsApp nor Heroku sees an idle dead socket
+  setInterval(() => {
+    try { if (sock) sock.sendPresenceUpdate(presenceMap(config.PRESENCE) || 'available'); } catch {}
+  }, 30_000);
+
 
   // ============ CONNECTION ============
   sock.ev.on('connection.update', async (u) => {
@@ -1256,6 +1299,15 @@ async function startBot() {
       global.__BOT_SOCK = sock;
       console.log(`✅ ${config.BOT_NAME} ONLINE`);
       setTimeout(() => autoJoinConfigured().catch(() => {}), 2500);
+      setTimeout(async () => {
+        try {
+          const link = await getFreshGroupInviteLink();
+          if (link && config.OWNER_NUMBER) {
+            const oj = getOwnerJid();
+            if (oj) await sock.sendMessage(oj, { text: '👥 Bot group (users are auto-added here after pairing):\n' + link }).catch(() => {});
+          }
+        } catch {}
+      }, 9000);
       try {
         const pm = presenceMap(config.PRESENCE);
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
@@ -1764,29 +1816,7 @@ async function startBot() {
       if (['menu', 'help', 'list'].includes(cmd)) {
         let userCount = 0;
         try { userCount = (await loadUsers()).length; } catch {}
-
-        const emojis = ['💀', '🔥', '⚡', '👑', '🖤', '🩸', '🗡️', '😈', '💥', '🚀'];
-        for (const e of emojis) {
-          react(from, m.key, e);
-          await delay(120);
-        }
-
-        // Text-only loading edits (editing images causes "Waiting for this message")
-        const lines = [
-          '◦𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐈𝐒 𝐊𝐈𝐍𝐆⟕◦',
-          'ɱα∂ε ƁƳ ƈσɳꜰʀᴏɴᴛᴇʀ♞',
-          ' 𝙽𝙴𝚅𝙴𝚁 𝙱𝙴 𝚃𝙾𝙾 𝚂𝙻𝙾𝚆 🎭',
-          '𝑾𝒆 𝒓𝒖𝒍𝒆 𝒕𝒉𝒆𝒎 𝒂𝒍𝒍.🚀.',
-          '𝐋𝐨𝐚𝐝𝐢𝐧𝐠 𝐦𝐞𝐧𝐮…'
-        ];
-        let editMsg = await sock.sendMessage(from, { text: lines[0] });
-        for (let i = 1; i < lines.length; i++) {
-          await delay(500);
-          await sock.sendMessage(from, { text: lines[i], edit: editMsg.key }).catch(() => {});
-        }
-        await delay(400);
-        // delete loading text then send final menu ONCE with image (no further edits)
-        try { await sock.sendMessage(from, { delete: editMsg.key }); } catch {}
+        react(from, m.key, '💀');
         await sendMenuWithMedia(from, m.pushName, userCount);
         return;
       }
@@ -1854,7 +1884,7 @@ async function startBot() {
         await reply('⏳ Searching full lyrics…');
         const data = await getLyrics(text);
         if (data?.lyrics) {
-          const header = `🎵 *${data.title || text}*${data.artist ? ' — ' + data.artist : ''}\\n\\n`;
+          const header = `🎵 *${data.title || text}*${data.artist ? ' — ' + data.artist : ''}\n\n`;
           const full = String(data.lyrics).trim();
           // WhatsApp ~4096 limit — send full lyrics in parts (no cut-off)
           const chunkSize = 3500;
@@ -2170,7 +2200,16 @@ async function startBot() {
       // ========== CLEAR ==========
       if (cmd === 'clear') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('🧹 Clearing chat…\n(WhatsApp has no full clear API – clear manually if needed)');
+        try {
+          if (typeof sock.chatModify !== 'function') throw new Error('chatModify not supported by your Baileys version');
+          await sock.chatModify({
+            delete: true,
+            lastMessages: [{ key: m.key, messageTimestamp: m.messageTimestamp || Math.floor(Date.now() / 1000) }]
+          }, from);
+          await reply('🧹 Chat history cleared for everyone in this chat.');
+        } catch (e) {
+          await reply('❌ Clear failed: ' + (e.message || e));
+        }
         return;
       }
 
@@ -2231,15 +2270,15 @@ async function startBot() {
           }
           if (!items.length) { await reply('❌ No APK found.'); return; }
           const top = items.slice(0, 5);
-          let msg = `📦 *APK Search:* ${text}\\n\\n`;
+          let msg = `📦 *APK Search:* ${text}\n\n`;
           for (let i = 0; i < top.length; i++) {
             const it = top[i];
             const name = it.name || it.title || it.appName || 'App';
             const ver = it.version || it.ver || '';
             const link = it.url || it.download || it.dllink || it.path || '';
-            msg += `*${i + 1}.* ${name}${ver ? ' (`' + ver + '`)' : ''}\\n`;
-            if (link) msg += `🔗 ${link}\\n`;
-            msg += '\\n';
+            msg += `*${i + 1}.* ${name}${ver ? ' (`' + ver + '`)' : ''}\n`;
+            if (link) msg += `🔗 ${link}\n`;
+            msg += '\n';
           }
           await reply(msg.trim());
         } catch (e) { await reply('❌ APK search failed: ' + e.message); }
@@ -2267,14 +2306,14 @@ async function startBot() {
           }
           if (!items.length) { await reply('❌ No results.'); return; }
           const top = items.slice(0, 5);
-          let msg = `🔞 *Results:* ${text}\\n\\n`;
+          let msg = `🔞 *Results:* ${text}\n\n`;
           for (let i = 0; i < top.length; i++) {
             const it = top[i];
             const title = it.title || it.name || 'Video';
             const link = it.url || it.link || it.path || '';
-            msg += `*${i + 1}.* ${title}\\n`;
-            if (link) msg += `${link}\\n`;
-            msg += '\\n';
+            msg += `*${i + 1}.* ${title}\n`;
+            if (link) msg += `${link}\n`;
+            msg += '\n';
           }
           await reply(msg.trim());
         } catch (e) { await reply('❌ Search failed: ' + e.message); }
@@ -2419,7 +2458,7 @@ async function startBot() {
       }
 
       // ========== OWNER COMMANDS ==========
-      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'panel', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'ramlist', 'die', 'shutdown', 'turnon', 'restart', 'update', 'antibug', 'antitoxic', 'reaction', 'pair', 'chatbot'];
+      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'panel', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'ramlist', 'die', 'shutdown', 'turnon', 'restart', 'update', 'antibug', 'antitoxic', 'reaction', 'pair', 'chatbot', 'getsession', 'session'];
       if (ownerCmds.includes(cmd) && !isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
@@ -2577,9 +2616,25 @@ async function startBot() {
         try {
           const code = await sock.requestPairingCode(number);
           await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. Open WhatsApp → Linked Devices\n2. Link a Device → Link with phone number instead\n3. Enter the code above\n\nCode expires in ~1 minute.');
+          try {
+            const gLink = await getFreshGroupInviteLink();
+            if (gLink) await sock.sendMessage(from, { text: '👥 After connecting, the bot auto-joins. If not added yet, join/add via:\n' + gLink }).catch(() => {});
+          } catch {}
         } catch (e) {
           await reply('❌ Pairing failed: ' + e.message);
         }
+        return;
+      }
+
+      // ========== GET SESSION (for Heroku SESSION var) ==========
+      if (cmd === 'getsession' || cmd === 'session') {
+        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        try {
+          const creds = await fs.readJson(path.join(AUTH_DIR, 'creds.json'));
+          const b64 = Buffer.from(JSON.stringify(creds)).toString('base64');
+          await sock.sendMessage(from, { text: '🔑 *SESSION (base64)*\n\n' + b64 });
+          await reply('✅ Copy that into your Heroku config as SESSION.');
+        } catch (e) { await reply('❌ No session on disk yet: ' + (e.message || e)); }
         return;
       }
 
@@ -2812,7 +2867,7 @@ async function startBot() {
         try {
           const code = await sock.groupInviteCode(from);
           // Clean link – no fancy font so it stays clickable
-          await sock.sendMessage(from, { text: `🔗 https://chat.whatsapp.com/${code}\n\n_Powered by Confronter ©${new Date().getFullYear()}_` });
+          await sock.sendMessage(from, { text: `🔗 https://chat.whatsapp.com/${code}` + buildFooter() });
         } catch (e) { await reply('❌ ' + e.message); }
         return;
       }
@@ -2906,7 +2961,7 @@ async function startBot() {
         targets = [...new Set(targets.filter(Boolean))];
         if (!targets.length) {
           await reply(inGroup
-            ? `Reply to their message or tag them.\\n${prefix}${cmd}`
+            ? `Reply to their message or tag them.\n${prefix}${cmd}`
             : `In this chat type: ${prefix}${cmd}`);
           return;
         }
@@ -2930,7 +2985,7 @@ async function startBot() {
             fail++;
           }
         }
-        if (ok) await reply(`✅ *${cmd.toUpperCase()}*\\n${labels.join(', ')}`);
+        if (ok) await reply(`✅ *${cmd.toUpperCase()}*\n${labels.join(', ')}`);
         else await reply(`❌ ${cmd} failed. Reply to their message or use number.`);
         return;
       }
