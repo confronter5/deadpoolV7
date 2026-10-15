@@ -1,7 +1,14 @@
-// downloader.js — YouTube search + mp3/mp4 using ONLY ytdl (@distube/ytdl-core / ytdl-core)
+// downloader.js — YouTube search + mp3/mp4
+// Primary: yt-dlp binary (installed by postinstall on Heroku)
+// Fallback: @distube/ytdl-core / ytdl-core
+
 const fs = require('fs-extra');
 const path = require('path');
+const crypto = require('crypto');
 const axios = require('axios');
+const { exec } = require('child_process');
+const util = require('util');
+const execP = util.promisify(exec);
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const TMP = path.join(__dirname, 'tmp');
@@ -40,7 +47,6 @@ async function ytSearch(query) {
   } catch (e) {
     console.log('ytSearch:', e.message);
   }
-  // fallback youtube-sr if present
   try {
     const { default: YouTube } = require('youtube-sr');
     const r = await YouTube.search(query, { limit: 1, type: 'video' });
@@ -53,6 +59,57 @@ async function ytSearch(query) {
       };
     }
   } catch {}
+  return null;
+}
+
+async function viaYtDlp(url, audioOnly) {
+  try {
+    const ytdlpPath = path.join(__dirname, 'yt-dlp');
+    // check if binary exists
+    if (!(await fs.pathExists(ytdlpPath))) {
+      // try system path
+      try {
+        await execP('yt-dlp --version');
+      } catch {
+        return null;
+      }
+    }
+
+    const id = crypto.randomBytes(6).toString('hex');
+    const outTemplate = path.join(TMP, id + '.%(ext)s');
+
+    const bin = (await fs.pathExists(ytdlpPath)) ? `"${ytdlpPath}"` : 'yt-dlp';
+
+    const args = audioOnly
+      ? [
+          '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+          '-o', outTemplate, '--no-playlist', '--no-warnings', '--prefer-ffmpeg', url
+        ]
+      : [
+          '-f', 'best[height<=720]/best',
+          '-o', outTemplate, '--no-playlist', '--no-warnings',
+          '--merge-output-format', 'mp4', url
+        ];
+
+    await execP(`${bin} ${args.map(a => `"${a}"`).join(' ')}`, {
+      timeout: 200000,
+      maxBuffer: 80 * 1024 * 1024
+    });
+
+    const files = await fs.readdir(TMP);
+    const downloaded = files.find(f => f.startsWith(id));
+    if (!downloaded) return null;
+
+    const finalPath = path.join(TMP, downloaded);
+    const buf = await fs.readFile(finalPath);
+    await fs.remove(finalPath).catch(() => {});
+
+    if (buf && buf.length > 5000) {
+      return { buffer: buf, title: 'YouTube' };
+    }
+  } catch (e) {
+    console.log('viaYtDlp:', e.message?.slice(0, 120));
+  }
   return null;
 }
 
@@ -83,8 +140,10 @@ async function downloadYouTube(query, isAudio = true) {
   try {
     query = String(query || '').trim();
     if (!query) return null;
+
     let videoUrl = null;
     let title = query;
+
     if (isYtUrl(query)) {
       videoUrl = query;
     } else {
@@ -93,7 +152,13 @@ async function downloadYouTube(query, isAudio = true) {
       videoUrl = s.url;
       title = s.title || query;
     }
-    const data = await viaYtdl(videoUrl, isAudio);
+
+    // Prefer yt-dlp binary (works better on Heroku)
+    let data = await viaYtDlp(videoUrl, isAudio);
+    if (!data?.buffer) {
+      data = await viaYtdl(videoUrl, isAudio);
+    }
+
     if (data?.buffer) {
       data.title = data.title || title;
       data.url = videoUrl;
