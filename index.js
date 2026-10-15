@@ -24,12 +24,13 @@ const util = require('util');
 const execP = util.promisify(exec);
 
 // ============ KEEP-ALIVE WEB SERVER (binds Heroku PORT -> dyno never sleeps) ============
+// NOTE: run ONLY this file as a single dyno (Procfile: web: node index.js)
 const http = require('http');
 const KEEP_PORT = process.env.PORT || 3000;
 try {
   http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end(config.BOT_NAME + ' is alive\n');
+    res.end((typeof config !== 'undefined' ? config.BOT_NAME : 'Bot') + ' is alive\n');
   }).listen(KEEP_PORT, () => console.log('🌐 Health server on port ' + KEEP_PORT));
 } catch (e) { console.log('keep server:', e.message); }
 
@@ -65,7 +66,7 @@ const defaults = {
   MENU_MEDIA: '',
   BOT_IMAGE: 'https://i.imgur.com/8KZQvQ0.png',
   GROUP_INVITE: '',
-  GROUP_JID: '120363430854781207@g.us',
+  GROUP_JID: '',
   CHANNEL_ID: '',
   PANEL_DOMAIN: '',
   PANEL_APIKEY: '',
@@ -108,7 +109,7 @@ const config = {
   WELCOME_MSG: env.WELCOME_MSG || fileConfig.WELCOME_MSG || defaults.WELCOME_MSG,
   GOODBYE_MSG: env.GOODBYE_MSG || fileConfig.GOODBYE_MSG || defaults.GOODBYE_MSG,
   GROUP_INVITE: env.GROUP_INVITE || fileConfig.GROUP_INVITE || defaults.GROUP_INVITE,
-  GROUP_JID: env.GROUP_JID || fileConfig.GROUP_JID || defaults.GROUP_JID || '120363430854781207@g.us',
+  GROUP_JID: env.GROUP_JID || fileConfig.GROUP_JID || defaults.GROUP_JID,
   CHANNEL_ID: env.CHANNEL_ID || fileConfig.CHANNEL_ID || defaults.CHANNEL_ID,
   MENU_MEDIA: env.MENU_MEDIA || env.BOT_IMAGE || fileConfig.MENU_MEDIA || fileConfig.BOT_IMAGE || defaults.MENU_MEDIA || defaults.BOT_IMAGE,
   BOT_IMAGE: env.BOT_IMAGE || env.MENU_MEDIA || fileConfig.BOT_IMAGE || fileConfig.MENU_MEDIA || defaults.BOT_IMAGE || defaults.MENU_MEDIA,
@@ -174,16 +175,8 @@ const _lidMap = new Map();
 const _historyFetching = new Set();
 
 const games = {
-  family100: {},
-  tebakgambar: {},
-  tebakkata: {},
-  tebakkalimat: {},
-  tebaklirik: {},
-  caklontong: {},
-  caklontong_desk: {},
-  math: {},
-  tictactoe: {},
-  suit: {}
+  family100: {}, tebakgambar: {}, tebakkata: {}, tebakkalimat: {},
+  tebaklirik: {}, caklontong: {}, caklontong_desk: {}, math: {}, tictactoe: {}, suit: {}
 };
 
 // ============ LID CACHE + NAME HELPERS ============
@@ -207,15 +200,43 @@ function jidToPhone(jid, msg) {
     const alt = msg?.key?.participantAlt || msg?.key?.remoteJidAlt || msg?.participantAlt;
     if (alt && !String(alt).includes('@lid')) {
       const n = String(alt).split('@')[0].split(':')[0];
-      if (/^\d{6,15}$/.test(n)) {
-        _lidMap.set(lid, n);
-        return n;
-      }
+      if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); return n; }
     }
     return null;
   }
   const n = raw.split('@')[0].split(':')[0];
   return /^\d{6,15}$/.test(n) ? n : null;
+}
+
+// NEW: async resolver — falls back to group metadata (fixes LID users)
+async function jidToPhoneAsync(jid, msg, from) {
+  const p = jidToPhone(jid, msg);
+  if (p) return p;
+  if (!String(jid || '').includes('@lid')) return null;
+  if (isGroup(from)) {
+    try {
+      const meta = await sock.groupMetadata(from);
+      const lid = String(jid).split('@')[0];
+      const entry = meta.participants.find(x =>
+        String(x.id || '').split('@')[0] === lid ||
+        String(x.lid || '').split('@')[0] === lid);
+      if (entry?.phoneNumber) {
+        const n = String(entry.phoneNumber).split('@')[0].replace(/\D/g, '');
+        if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); return n; }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// NEW: phone or @username label for reports (antiedit / antidelete)
+async function whoLabel(jid, msg, from, pushName) {
+  const phone = await jidToPhoneAsync(jid, msg, from);
+  if (phone) return '+' + phone;
+  const name = pushName || (await sock.getName?.(jid).catch(() => null));
+  if (name && name !== 'Unknown' && name.trim()) return '@' + String(name).replace(/[@\n]/g, '').trim();
+  const raw = String(jid || '').split('@')[0];
+  return raw || 'Unknown';
 }
 
 function getDisplayName(jid, msg, pushName = null) {
@@ -224,7 +245,6 @@ function getDisplayName(jid, msg, pushName = null) {
   if (pushName && pushName !== 'User' && pushName.trim()) return '@' + String(pushName).replace(/[@\n]/g, '').trim();
   return null;
 }
-
 function mentionLabel(jid, msg, pushName) {
   return getDisplayName(jid, msg, pushName) || 'someone';
 }
@@ -236,22 +256,15 @@ async function ensureData() {
   if (!(await fs.pathExists(GROUPS_FILE))) await fs.writeJson(GROUPS_FILE, {});
   if (!(await fs.pathExists(BLACKLIST_FILE))) await fs.writeJson(BLACKLIST_FILE, []);
 }
-async function loadUsers() {
-  try { return await fs.readJson(USERS_FILE); } catch { return []; }
-}
+async function loadUsers() { try { return await fs.readJson(USERS_FILE); } catch { return []; } }
 async function saveUser(jid) {
   try {
     const users = await loadUsers();
     const id = jidNormalizedUser(jid);
-    if (!users.includes(id)) {
-      users.push(id);
-      await fs.writeJson(USERS_FILE, users, { spaces: 2 });
-    }
+    if (!users.includes(id)) { users.push(id); await fs.writeJson(USERS_FILE, users, { spaces: 2 }); }
   } catch {}
 }
-async function loadGroups() {
-  try { return await fs.readJson(GROUPS_FILE); } catch { return {}; }
-}
+async function loadGroups() { try { return await fs.readJson(GROUPS_FILE); } catch { return {}; } }
 async function saveGroup(gid, k, v) {
   const d = await loadGroups();
   if (!d[gid]) d[gid] = {};
@@ -262,12 +275,8 @@ async function getGroup(gid, k, def = false) {
   const d = await loadGroups();
   return d?.[gid]?.[k] ?? def;
 }
-async function loadBlacklist() {
-  try { return await fs.readJson(BLACKLIST_FILE); } catch { return []; }
-}
-async function saveBlacklist(list) {
-  await fs.writeJson(BLACKLIST_FILE, list, { spaces: 2 });
-}
+async function loadBlacklist() { try { return await fs.readJson(BLACKLIST_FILE); } catch { return []; } }
+async function saveBlacklist(list) { await fs.writeJson(BLACKLIST_FILE, list, { spaces: 2 }); }
 
 // ============ ROASTS ============
 const ROASTS = {
@@ -281,12 +290,8 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 function buildFooter() {
   const y = new Date().getFullYear();
   let p = (config.POWERED_BY || 'Powered by Confronter')
-    .replace(/©?\d{4}/g, '')
-    .replace(/^>\s*/, '')
-    .replace(/\*/g, '')
-    .trim();
+    .replace(/©?\d{4}/g, '').replace(/^>\s*/, '').replace(/\*/g, '').trim();
   if (!p) p = 'Powered by Confronter';
-  // one blank line then credit (no double spaces / fancy overflow)
   return `\n\n_${p} ©${y}_`;
 }
 
@@ -326,7 +331,6 @@ function styleReplyText(text) {
 
 // ============ EXPIRY ============
 const ACTIVATED_FILE = path.join(DATA_DIR, 'activated.json');
-
 function loadActivatedAt() {
   try {
     if (config.BOT_ACTIVATED_AT) {
@@ -335,31 +339,22 @@ function loadActivatedAt() {
     }
     if (fs.existsSync(ACTIVATED_FILE)) {
       const j = fs.readJsonSync(ACTIVATED_FILE);
-      if (j?.at) {
-        const d = new Date(j.at);
-        if (!isNaN(d.getTime())) return d;
-      }
+      if (j?.at) { const d = new Date(j.at); if (!isNaN(d.getTime())) return d; }
     }
   } catch {}
   return null;
 }
-
 function ensureActivatedAt() {
   let d = loadActivatedAt();
   if (d) return d;
   d = new Date();
-  try {
-    fs.ensureDirSync(DATA_DIR);
-    fs.writeJsonSync(ACTIVATED_FILE, { at: d.toISOString() }, { spaces: 0 });
-  } catch {}
+  try { fs.ensureDirSync(DATA_DIR); fs.writeJsonSync(ACTIVATED_FILE, { at: d.toISOString() }, { spaces: 0 }); } catch {}
   config.BOT_ACTIVATED_AT = d.toISOString();
   return d;
 }
-
 function getExpiryInfo() {
   const now = new Date();
   try {
-    // Fixed end date from Heroku: BOT_EXPIRY_DATE=2026-12-31
     const dateStr = config.BOT_EXPIRY_DATE || config.EXPIRY || '';
     if (dateStr) {
       const end = new Date(dateStr);
@@ -370,7 +365,6 @@ function getExpiryInfo() {
         return `${diff} day${diff === 1 ? '' : 's'} left`;
       }
     }
-    // Days from Heroku: BOT_EXPIRY_DAYS=30 (0 = unlimited)
     const days = parseInt(String(config.BOT_EXPIRY_DAYS || '0'), 10) || 0;
     if (days > 0) {
       const activated = ensureActivatedAt();
@@ -395,14 +389,12 @@ function buildMainMenu(pushName, userCount) {
 ⏳ Active: ${exp}
 
 `;
-
   const box = (title, cmds) => {
     let s = `┌─「 *${title}* 」\n`;
     for (const c of cmds) s += `│ ${p}${c}\n`;
     s += `└────────────\n\n`;
     return s;
   };
-
   m += box('DOWNLOADS', ['play <song>', 'song <name>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'lyrics <song>', 'apk <name>', 'xnxx <query>']);
   m += box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
   m += box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off']);
@@ -433,18 +425,12 @@ function buildMainMenu(pushName, userCount) {
   m += box('TEXTMAKER', ['neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light']);
   m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
   m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'togcstatus']);
-
   return m;
 }
 
 async function resolveMenuImageBuffer() {
-  // Priority: MENU_MEDIA → BOT_IMAGE → data/bot_pp.jpg → live profile pic
-  const urls = [
-    config.MENU_MEDIA,
-    config.BOT_IMAGE,
-    process.env.MENU_MEDIA,
-    process.env.BOT_IMAGE
-  ].filter(u => u && String(u).trim().startsWith('http'));
+  const urls = [config.MENU_MEDIA, config.BOT_IMAGE, process.env.MENU_MEDIA, process.env.BOT_IMAGE]
+    .filter(u => u && String(u).trim().startsWith('http'));
   for (const u of urls) {
     try {
       const buf = await fetchBuffer(String(u).trim(), 60000);
@@ -469,28 +455,35 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 
-// Edit an image message's caption safely (fallback: delete + resend)
+// FIXED: image caption edit — protocol edit first, delete+resend, text last
 async function editImageCaption(jid, key, buffer, caption) {
-  try {
-    if (!key) throw new Error('no key');
-    await sock.sendMessage(jid, { image: buffer, caption, edit: key });
-    return true;
-  } catch (e1) {
+  // 1) proper protocol edit (works for image captions)
+  if (key) {
     try {
       await sock.relayMessage(jid, {
         protocolMessage: { key, type: 14, editedMessage: { imageMessage: { caption } } }
       }, {});
       return true;
-    } catch (e2) {
-      try { await sock.sendMessage(jid, { delete: key }); } catch {}
-      try { await sock.sendMessage(jid, { image: buffer, caption }); return true; }
-      catch { await sock.sendMessage(jid, { text: caption }); return true; }
-    }
+    } catch {}
+    // 2) native edit attempt (some Baileys versions support it)
+    try {
+      await sock.sendMessage(jid, { image: buffer, caption, edit: key });
+      return true;
+    } catch {}
   }
+  // 3) delete + resend image with full caption
+  try { if (key) await sock.sendMessage(jid, { delete: key }); } catch {}
+  try {
+    await sock.sendMessage(jid, { image: buffer, caption });
+    return true;
+  } catch {}
+  // 4) last resort: text
+  await sock.sendMessage(jid, { text: caption });
+  return true;
 }
 
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  const foot = buildFooter(); // single footer, from config.POWERED_BY only
+  const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   if (foot) full = full + foot;
@@ -500,12 +493,11 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   const buffer = resolved?.buffer || null;
 
   if (buffer && Buffer.isBuffer(buffer) && buffer.length > 500) {
-    // 1) send image with the loading text INSIDE the caption
+    // send image with loading caption, then EDIT that image's caption -> full menu
     let base = null;
     try { base = await sock.sendMessage(jid, { image: buffer, caption: loading }); }
     catch (e) { console.log('menu base send:', e.message); }
     await delay(900);
-    // 2) edit that same image message caption -> full menu
     await editImageCaption(jid, base?.key || null, buffer, full);
     return;
   }
@@ -517,7 +509,9 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
     if (base?.key) await sock.sendMessage(jid, { text: full, edit: base.key });
     else await sock.sendMessage(jid, { text: full });
   } catch { await sock.sendMessage(jid, { text: full }); }
-}// ============ START MESSAGE ============
+}
+
+// ============ START MESSAGE ============
 function buildStartMessage() {
   const p = config.PREFIX || '.';
   const mode = config.MODE || 'public';
@@ -530,10 +524,6 @@ function buildStartMessage() {
 │ 💬 Type *${p}menu*
 └────────────`
   );
-}
-function buildSyncWaitMessage() {
-  return `✅ *Ready*
-Bot is online and responding.`;
 }
 
 // ============ AUTH ============
@@ -585,14 +575,12 @@ const msgReactEmoji = () => randEmoji(config.REACT_EMOJIS || DEFAULT_REACT_EMOJI
 const cmdReactEmoji = () => randEmoji(null, DEFAULT_CMD_EMOJIS);
 function react(jid, key, emoji) { sock.sendMessage(jid, { react: { text: emoji, key } }).catch(() => {}); }
 
-
 function isOnlyEmoji(s) {
   const t = String(s || '').trim();
   if (!t) return false;
   if (/[a-zA-Z0-9]/.test(t)) return false;
   return t.length <= 12;
 }
-
 function extractGroupInviteCode(input) {
   const s = String(input || '').trim();
   const m = s.match(/(?:https?:\/\/)?chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9_-]{10,})/i);
@@ -600,7 +588,6 @@ function extractGroupInviteCode(input) {
   if (/^[A-Za-z0-9_-]{10,}$/.test(s)) return s;
   return null;
 }
-
 function extractChannelCode(input) {
   const s = String(input || '').trim();
   const m = s.match(/(?:https?:\/\/)?(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
@@ -614,12 +601,6 @@ async function forwardViewOnceToOwner(sock, m, from, sender, voMsg) {
   const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
   const target = ownerJid || me;
   if (!target) return false;
-  // Never send unlocked media back to the person who sent the view-once
-  const senderPhone = dig(jidToPhone(sender, m) || String(sender).split('@')[0]);
-  const targetPhone = dig(String(target).split('@')[0]);
-  if (senderPhone && targetPhone && senderPhone === targetPhone) {
-    // owner opened their own VO — still ok to save to me
-  }
   const dl = await downloadMediaMsg(voMsg);
   if (!dl?.buffer || dl.buffer.length < 200) return false;
   const phone = jidToPhone(sender, m);
@@ -635,10 +616,7 @@ async function forwardViewOnceToOwner(sock, m, from, sender, voMsg) {
     } else {
       await sock.sendMessage(target, { document: dl.buffer, mimetype: 'application/octet-stream', fileName: 'viewonce.bin', caption: head });
     }
-  } catch (e) {
-    console.log('vv send:', e.message);
-    return false;
-  }
+  } catch (e) { console.log('vv send:', e.message); return false; }
   return true;
 }
 
@@ -692,7 +670,6 @@ async function getMeta(jid) {
     return meta;
   } catch { return null; }
 }
-
 async function isGroupAdmin(jid, p) {
   const meta = await getMeta(jid);
   if (!meta || !p) return false;
@@ -759,7 +736,7 @@ function presenceMap(v) {
   return null;
 }
 
-// ============ ANTI-DELETE ============
+// ============ ANTI-DELETE (FIXED: unwrapped cache + real phone/username) ============
 async function forwardDelete(key, cached) {
   try {
     const from = key.remoteJid;
@@ -768,9 +745,8 @@ async function forwardDelete(key, cached) {
     if (!isStatus && config.ANTI_DELETE === 'off') return;
     const target = isStatus ? getOwnerJid() : (config.ANTI_DELETE === 'chat' ? from : getOwnerJid());
     if (!target) return;
+    // cache now stores the UNWRAPPED message — only unwrap ephemeral here
     let msg = cached.message;
-    if (msg?.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
-    if (msg?.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
     if (msg?.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
     let type = getContentType(msg) || '';
     if (!type) {
@@ -778,12 +754,7 @@ async function forwardDelete(key, cached) {
         if (msg[t]) { type = t; break; }
       }
     }
-    let phone = jidToPhone(key.participant || cached.participant || cached.participantAlt, cached);
-    if (!phone) phone = jidToPhone(from, cached);
-    if (!phone && config.OWNER_NUMBER) {
-      if (String(from).includes(config.OWNER_NUMBER) || String(key.participant || '').includes(config.OWNER_NUMBER)) phone = config.OWNER_NUMBER;
-    }
-    const who = phone ? '+' + phone : (cached.pushName || 'Unknown');
+    const who = await whoLabel(key.participant || cached.participant || cached.participantAlt || from, cached, from, cached.pushName);
     let deletedText = '';
     if (type === 'conversation') deletedText = msg.conversation || '';
     else if (type === 'extendedTextMessage') deletedText = msg.extendedTextMessage?.text || '';
@@ -825,73 +796,64 @@ async function forwardDelete(key, cached) {
   } catch (e) { console.log('antiDelete:', e.message); }
 }
 
-// ============ AUTO JOIN GROUP + CHANNEL ============
+// ============ AUTO JOIN GROUP + CHANNEL (invite-code based) ============
 async function getFreshGroupInviteLink() {
-  const groupJid = String(config.GROUP_JID || '120363430854781207@g.us').trim();
+  const groupJid = String(config.GROUP_JID || '').trim();
   if (!groupJid.endsWith('@g.us') || !sock) return null;
   try {
     const code = await sock.groupInviteCode(groupJid);
-    if (code) {
-      config.GROUP_INVITE = code; // cache latest code (link changes; JID stays)
-      return 'https://chat.whatsapp.com/' + code;
-    }
-  } catch (e) {
-    console.log('getFreshGroupInviteLink:', e.message);
-  }
-  // fallback: if GROUP_INVITE still has a code (not a jid)
+    if (code) { config.GROUP_INVITE = code; return 'https://chat.whatsapp.com/' + code; }
+  } catch (e) { console.log('getFreshGroupInviteLink:', e.message); }
   const inv = String(config.GROUP_INVITE || '').trim();
   if (inv && !inv.includes('@') && inv.length >= 10) {
-    const code = inv.includes('chat.whatsapp.com/')
-      ? inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0]
-      : inv;
+    const code = inv.includes('chat.whatsapp.com/') ? inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0] : inv;
     if (code) return 'https://chat.whatsapp.com/' + code;
   }
   return null;
 }
 
 async function autoJoinConfigured() {
-  // GROUP_JID is enough — no invite link required (links change; JID is stable)
-  let groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '120363430854781207@g.us').trim();
+  let groupJid = String(config.GROUP_JID || '').trim();
   const invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
 
-  if (invRaw.endsWith('@g.us')) {
-    groupJid = invRaw;
-    config.GROUP_JID = invRaw;
-  }
+  if (invRaw.endsWith('@g.us')) { groupJid = invRaw; config.GROUP_JID = invRaw; }
 
-  // Optional one-time join via invite code only (not required)
+  // join via invite code if provided
   if (invRaw && !invRaw.endsWith('@g.us') && !invRaw.includes('@')) {
     try {
       let code = invRaw;
-      if (code.includes('chat.whatsapp.com/')) {
-        code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
-      }
+      if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
       if (code) {
         const gid = await sock.groupAcceptInvite(code);
         if (gid) { groupJid = String(gid); config.GROUP_JID = groupJid; }
         console.log('✅ Auto-joined group', gid || code);
       }
-    } catch (e) { console.log('Optional invite join failed (OK if already member):', e.message); }
+    } catch (e) { console.log('Invite join (OK if already member):', e.message); }
   }
 
   if (groupJid.endsWith('@g.us')) {
     config.GROUP_JID = groupJid;
     try {
       const meta = await sock.groupMetadata(groupJid);
-      console.log('✅ Group JID OK:', groupJid, '|', meta?.subject || 'group', '| members:', meta?.participants?.length || '?');
-      // Cache a fresh invite for session buttons only if bot can mint it
+      console.log('✅ Group OK:', groupJid, '|', meta?.subject || 'group', '| members:', meta?.participants?.length || '?');
+      // cache ALL participant LID->phone mappings while we're here
+      try {
+        for (const p of meta.participants || []) {
+          if (p.id?.includes('@lid') && p.phoneNumber) {
+            _lidMap.set(p.id.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
+          }
+          if (p.lid?.includes('@lid') && p.phoneNumber) {
+            _lidMap.set(p.lid.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
+          }
+        }
+      } catch {}
       try {
         const code = await sock.groupInviteCode(groupJid);
-        if (code) {
-          config.GROUP_INVITE = code;
-          console.log('✅ Cached invite code (rotates):', code);
-        }
-      } catch {
-        console.log('ℹ️ In group but cannot mint invite (need admin). GROUP_JID alone is fine.');
-      }
+        if (code) { config.GROUP_INVITE = code; console.log('✅ Cached invite code:', code); }
+      } catch { console.log('ℹ️ Bot in group but not admin — cannot mint invite (fine).'); }
     } catch (e) {
       console.log('⚠️ GROUP_JID set but bot is NOT in that group yet:', groupJid);
-      console.log('   Add the bot number to the group manually. No invite link needed in Heroku config.');
+      console.log('   Set GROUP_INVITE (invite code) in Heroku config so the bot can auto-join.');
     }
   }
 
@@ -902,7 +864,6 @@ async function autoJoinConfigured() {
     } catch (e) { console.log('Channel follow:', e.message); }
   }
 }
-
 
 // ============ DOWNLOADERS ============
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
@@ -934,16 +895,9 @@ async function downloadViaCobalt(url, audioOnly) {
   for (const inst of COBALT_INSTANCES) {
     try {
       const r = await axios.post(inst, {
-        url,
-        isAudioOnly: !!audioOnly,
-        aFormat: 'mp3',
-        vCodec: 'h264',
-        filenamePattern: 'basic',
-        downloadMode: 'auto'
-      }, {
-        timeout: 60000,
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': UA }
-      });
+        url, isAudioOnly: !!audioOnly, aFormat: 'mp3', vCodec: 'h264',
+        filenamePattern: 'basic', downloadMode: 'auto'
+      }, { timeout: 60000, headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': UA } });
       const d = r.data;
       if ((d?.status === 'stream' || d?.status === 'redirect' || d?.url) && d?.url) {
         const buf = await fetchBuffer(d.url, 180000);
@@ -953,7 +907,6 @@ async function downloadViaCobalt(url, audioOnly) {
   }
   return null;
 }
-
 async function downloadViaSiputzx(url, audioOnly) {
   const endpoints = audioOnly
     ? ['https://api.siputzx.my.id/api/d/ytmp3?url=', 'https://api.siputzx.my.id/api/d/ytmp3v2?url=']
@@ -972,7 +925,6 @@ async function downloadViaSiputzx(url, audioOnly) {
   }
   return null;
 }
-
 async function downloadViaYtdl(url, audioOnly) {
   try {
     let ytdl;
@@ -988,47 +940,65 @@ async function downloadViaYtdl(url, audioOnly) {
   } catch {}
   return null;
 }
-
 async function downloadViaYtDlp(url, audioOnly) {
   try {
-    let ytdlp;
-    try { ytdlp = require('yt-dlp-exec'); } catch { return null; }
-    const out = path.join(TMP_DIR, crypto.randomBytes(6).toString('hex') + (audioOnly ? '.mp3' : '.mp4'));
-    await ytdlp(url, audioOnly
-      ? { extractAudio: true, audioFormat: 'mp3', output: out, noPlaylist: true }
-      : { format: 'best[height<=480]/best', output: out, noPlaylist: true });
-    const buf = await fs.readFile(out).catch(() => null);
-    await fs.remove(out).catch(() => {});
-    if (buf && buf.length > 5000) return { buffer: buf, title: 'YouTube' };
-  } catch {}
+    const ytdlpPath = path.join(__dirname, 'yt-dlp');
+    const id = crypto.randomBytes(6).toString('hex');
+    const outTemplate = path.join(TMP_DIR, id + '.%(ext)s');
+
+    const args = audioOnly
+      ? [
+          '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+          '-o', outTemplate, '--no-playlist', '--no-warnings', '--prefer-ffmpeg', url
+        ]
+      : [
+          '-f', 'best[height<=720]/best',
+          '-o', outTemplate, '--no-playlist', '--no-warnings',
+          '--merge-output-format', 'mp4', url
+        ];
+
+    await execP(`"${ytdlpPath}" ${args.map(a => `"${a}"`).join(' ')}`, {
+      timeout: 200000,
+      maxBuffer: 80 * 1024 * 1024
+    });
+
+    const files = await fs.readdir(TMP_DIR);
+    const downloaded = files.find(f => f.startsWith(id));
+    if (!downloaded) return null;
+
+    const finalPath = path.join(TMP_DIR, downloaded);
+    const buf = await fs.readFile(finalPath);
+    await fs.remove(finalPath).catch(() => {});
+
+    if (buf && buf.length > 5000) {
+      return { buffer: buf, title: 'YouTube' };
+    }
+  } catch (e) {
+    console.log('yt-dlp error:', e.message?.slice(0, 150));
+  }
   return null;
 }
-
 async function downloadYouTube(query, audioOnly = true) {
   try {
     const { downloadYouTube: real } = require('./downloader');
     const r = await real(query, audioOnly);
     if (r?.buffer) return r;
   } catch {}
-
   let url = isYoutubeUrl(query) ? query.trim() : null;
   let title = query;
   if (!url) {
     const found = await searchYoutube(query);
     if (!found?.url) return null;
-    url = found.url;
-    title = found.title || query;
+    url = found.url; title = found.title || query;
   }
-
-  let data = await downloadViaSiputzx(url, audioOnly);
+  // Prefer yt-dlp first (works best on Heroku with binary)
+  let data = await downloadViaYtDlp(url, audioOnly);
+  if (!data?.buffer) data = await downloadViaSiputzx(url, audioOnly);
   if (!data?.buffer) data = await downloadViaCobalt(url, audioOnly);
-  if (!data?.buffer) data = await downloadViaYtDlp(url, audioOnly);
   if (!data?.buffer) data = await downloadViaYtdl(url, audioOnly);
-
   if (data?.buffer) { data.title = data.title || title; return data; }
   return null;
 }
-
 async function sendAsMp3(sock, jid, data) {
   try {
     const { sendAsMp3: real } = require('./downloader');
@@ -1037,16 +1007,13 @@ async function sendAsMp3(sock, jid, data) {
   if (!data?.buffer) return false;
   try {
     await sock.sendMessage(jid, {
-      audio: data.buffer,
-      mimetype: 'audio/mpeg',
-      fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3',
-      ptt: false
+      audio: data.buffer, mimetype: 'audio/mpeg',
+      fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
     });
     if (data.title) await sock.sendMessage(jid, { text: `🎵 *${data.title}*` }).catch(() => {});
     return true;
   } catch (e) { console.log('sendAsMp3:', e.message); return false; }
 }
-
 async function sendAsVideo(sock, jid, data) {
   try {
     const { sendAsVideo: real } = require('./downloader');
@@ -1054,11 +1021,7 @@ async function sendAsVideo(sock, jid, data) {
   } catch {}
   if (!data?.buffer) return false;
   try {
-    await sock.sendMessage(jid, {
-      video: data.buffer,
-      mimetype: 'video/mp4',
-      caption: data.title ? `🎬 *${data.title}*` : undefined
-    });
+    await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
     return true;
   } catch (e) { console.log('sendAsVideo:', e.message); return false; }
 }
@@ -1074,26 +1037,20 @@ async function askAI(text, opts = {}) {
   };
   const q = String(text || '').trim().slice(0, 2500);
   if (!q) return null;
-
   const chatMode = !!opts.chat;
   const system = chatMode
     ? `You are a real human chatting on WhatsApp. FIRST detect the language of the user's message and always reply ONLY in that exact same language. Never switch languages, even if the question is in English. Match their tone (casual/formal). Use emojis when it feels natural. Keep replies short like a real person (1-4 sentences). Never say you are an AI unless asked. User name: ${opts.userName || 'friend'}.`
     : `You are a helpful assistant. Detect the user's language and answer in the same language. Be clear and concise. Use emojis lightly when helpful.`;
-
   try {
     const { askAI: real } = require('./apis');
     const r = await real(q, { system, chat: chatMode });
     if (r && !bad(String(r))) return String(r).trim();
   } catch {}
-
   const endpoints = [
     async () => {
       const r = await axios.post('https://text.pollinations.ai/openai', {
         model: 'openai',
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: q }
-        ]
+        messages: [{ role: 'system', content: system }, { role: 'user', content: q }]
       }, { timeout: 60000, headers: { 'User-Agent': UA, 'Content-Type': 'application/json' }, validateStatus: () => true });
       const a = r?.data?.choices?.[0]?.message?.content;
       return typeof a === 'string' && !bad(a) ? a.trim() : null;
@@ -1146,10 +1103,8 @@ async function generateTextImage(effect, text) {
     const buf = await real(effect, text);
     if (buf && Buffer.isBuffer(buf) && buf.length > 500) return buf;
   } catch {}
-
   const q = String(text || '').slice(0, 40);
   const style = String(effect || 'neon').toLowerCase();
-
   const mkUrls = (tpl) => tpl.map(u => u.replace('{q}', encodeURIComponent(q)).replace('{s}', encodeURIComponent(style)));
   const lists = [
     mkUrls([
@@ -1164,7 +1119,6 @@ async function generateTextImage(effect, text) {
     style === 'neon' ? mkUrls(['https://api.popcat.xyz/outrank?text={q}']) : [],
     style === 'matrix' ? mkUrls(['https://api.popcat.xyz/matrix?text={q}']) : []
   ].flat();
-
   for (const url of lists) {
     try {
       const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 40000 });
@@ -1268,14 +1222,10 @@ async function startBot() {
     console.log('unhandledRejection:', m.slice(0, 200));
   });
 
-  // Keep always-online
   if (config.ALWAYS_ONLINE) {
-    setInterval(() => {
-      try { sock.sendPresenceUpdate('available'); } catch {}
-    }, 25_000);
+    setInterval(() => { try { sock.sendPresenceUpdate('available'); } catch {} }, 25_000);
   }
 
-  // Prevent Heroku sleep: ping web /health every 4 min when KEEP_ALIVE_URL is set
   const keepUrl = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
   if (keepUrl) {
     setInterval(() => {
@@ -1286,11 +1236,9 @@ async function startBot() {
     console.log('KEEP_ALIVE →', keepUrl);
   }
 
-  // Fresh presence every 30s so neither WhatsApp nor Heroku sees an idle dead socket
   setInterval(() => {
     try { if (sock) sock.sendPresenceUpdate(presenceMap(config.PRESENCE) || 'available'); } catch {}
   }, 30_000);
-
 
   // ============ CONNECTION ============
   sock.ev.on('connection.update', async (u) => {
@@ -1304,7 +1252,7 @@ async function startBot() {
           const link = await getFreshGroupInviteLink();
           if (link && config.OWNER_NUMBER) {
             const oj = getOwnerJid();
-            if (oj) await sock.sendMessage(oj, { text: '👥 Bot group (users are auto-added here after pairing):\n' + link }).catch(() => {});
+            if (oj) await sock.sendMessage(oj, { text: '👥 Bot group (invite rotates; JID stable):\n' + link }).catch(() => {});
           }
         } catch {}
       }, 9000);
@@ -1313,20 +1261,15 @@ async function startBot() {
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
         if (config.ALWAYS_ONLINE) sock.sendPresenceUpdate('available').catch(() => {});
       } catch {}
-            setImmediate(async () => {
+      setImmediate(async () => {
         try {
           const me = sock.user?.id;
           if (!me) return;
           const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
-
-          // Only send start message once every 24 hours (reconnects must not spam)
           const startFile = path.join(DATA_DIR, 'last_start.json');
           let last = 0;
           try {
-            if (await fs.pathExists(startFile)) {
-              const j = await fs.readJson(startFile);
-              last = Number(j?.at) || 0;
-            }
+            if (await fs.pathExists(startFile)) last = Number((await fs.readJson(startFile))?.at) || 0;
           } catch {}
           const DAY = 24 * 60 * 60 * 1000;
           if (Date.now() - last < DAY) {
@@ -1334,10 +1277,7 @@ async function startBot() {
             return;
           }
           await sock.sendMessage(jid, { text: buildStartMessage() });
-          try {
-            await fs.ensureDir(DATA_DIR);
-            await fs.writeJson(startFile, { at: Date.now() }, { spaces: 0 });
-          } catch {}
+          try { await fs.ensureDir(DATA_DIR); await fs.writeJson(startFile, { at: Date.now() }, { spaces: 0 }); } catch {}
         } catch (e) { console.log('start send:', e.message); }
       });
     }
@@ -1375,9 +1315,8 @@ async function startBot() {
       const gname = meta?.subject || 'Group';
       try {
         for (const p of meta?.participants || []) {
-          if (p.id?.includes('@lid') && p.phoneNumber) {
-            _lidMap.set(p.id.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
-          }
+          if (p.id?.includes('@lid') && p.phoneNumber) _lidMap.set(p.id.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
+          if (p.lid?.includes('@lid') && p.phoneNumber) _lidMap.set(p.lid.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
         }
       } catch {}
 
@@ -1452,7 +1391,6 @@ async function startBot() {
     const senderKey = sender.split('@')[0];
     const ans = cleanBody.trim();
     if (!ans) return false;
-
     if (games.math[senderKey] !== undefined) {
       if (String(games.math[senderKey]) === ans) {
         await replyFn('✅ Correct!');
@@ -1499,7 +1437,8 @@ async function startBot() {
         try {
           msgCache.set(m.key.id, {
             key: m.key,
-            message: JSON.parse(JSON.stringify(m.message)),
+            message: unwrapMessage(m.message) || m.message, // FIXED: store unwrapped for antidelete
+            text: extractText(m.message) || '',
             pushName: m.pushName,
             participant: m.key.participant || m.key.remoteJid,
             participantAlt: m.key.participantAlt || m.key.remoteJidAlt || null,
@@ -1513,7 +1452,6 @@ async function startBot() {
       const sender = m.key.participant || m.key.remoteJid;
       const isMe = !!m.key.fromMe;
 
-      // Blacklist check
       if (!isMe) {
         const bl = await loadBlacklist();
         if (bl.includes(jidNormalizedUser(sender))) {
@@ -1531,7 +1469,7 @@ async function startBot() {
         sock.readMessages([m.key]).catch(() => {});
       }
 
-      // protocol messages
+      // protocol messages — delete / revoke
       const protoMsg = m.message?.protocolMessage;
       if (protoMsg && (protoMsg.type === 0 || protoMsg.type === 'REVOKE' || protoMsg.type === 1)) {
         const key = protoMsg.key || m.key;
@@ -1539,6 +1477,8 @@ async function startBot() {
         if (cached?.message) forwardDelete(key, cached).catch(() => {});
         return;
       }
+
+      // protocol messages — EDIT (FIXED: real phone or @username)
       if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage || m.message?.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
@@ -1550,8 +1490,7 @@ async function startBot() {
               edited.extendedTextMessage?.text ||
               edited.imageMessage?.caption ||
               edited.videoMessage?.caption ||
-              extractText(edited) ||
-              '';
+              extractText(edited) || '';
             const oldText =
               cached?.text ||
               cached?.message?.conversation ||
@@ -1563,15 +1502,13 @@ async function startBot() {
             let target = null;
             if (config.ANTI_EDIT === 'chat') target = from;
             else target = getOwnerJid() || me;
-            // Never notify the editor themselves as the only destination unless owner
             if (target) {
               const editor = key?.participant || sender || from;
-              const who = jidToPhone(editor, m) || dig(String(editor).split('@')[0]) || 'Unknown';
-              const display = who.startsWith('+') ? who : ('+' + who);
+              const who = await whoLabel(editor, m, from, m.pushName); // +phone or @username
               const chatLabel = isGroup(from) ? ('Group ' + from) : 'DM';
               const body =
                 `✏️ *${config.BOT_NAME} antiEdit*\n` +
-                `• By: ${display}\n` +
+                `• By: ${who}\n` +
                 `• Chat: ${chatLabel}\n\n` +
                 `📝 *Before:*\n${oldText}\n\n` +
                 `✏️ *After:*\n${newText || '[media/empty]'}`;
@@ -1610,18 +1547,22 @@ async function startBot() {
         return;
       }
 
-      // ANTI-VIEW-ONCE
+      // ANTI-VIEW-ONCE (FIXED detection via unwrap)
       if (config.ANTI_VIEW_ONCE && config.ANTI_VIEW_ONCE !== 'off') {
-        const ct = getContentType(m.message);
-        const isVO = ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'].includes(ct)
-          || !!m.message?.viewOnceMessage || !!m.message?.viewOnceMessageV2;
+        const unwrapped = unwrapMessage(m.message);
+        const isVO = !!(
+          m.message?.viewOnceMessage || m.message?.viewOnceMessageV2 ||
+          m.message?.viewOnceMessageV2Extension ||
+          unwrapped?.imageMessage?.viewOnce || unwrapped?.videoMessage?.viewOnce ||
+          unwrapped?.audioMessage?.viewOnce
+        );
         if (isVO && !isMe) {
           try {
-            const voMsg = m.message.viewOnceMessage?.message || m.message.viewOnceMessageV2?.message || m.message.viewOnceMessageV2Extension?.message || m.message;
+            const voMsg = unwrapped;
             const mode = String(config.ANTI_VIEW_ONCE).toLowerCase();
             const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-            const target = (mode === 'dm' || mode === 'pm' || mode === 'private') ? (getOwnerJid() || me) : from;
-            if (!target || target === sender) return;
+            const target = (mode === 'chat') ? from : (getOwnerJid() || me);
+            if (!target || jidNormalizedUser(target) === jidNormalizedUser(sender)) return;
             let dl = await downloadMediaMsg(voMsg);
             if (!dl) dl = await downloadMediaMsg(m.message);
             const phone = jidToPhone(sender, m);
@@ -1634,31 +1575,17 @@ async function startBot() {
                 await sock.sendMessage(target, { text: head });
               } else await sock.sendMessage(target, { document: dl.buffer, fileName: 'vo.bin', caption: head });
             }
-          } catch {}
+          } catch (e) { console.log('antivo:', e.message); }
         }
       }
 
       const body = extractText(m.message);
       const cleanBody = (body || '').trim();
-      if (m.key?.id && m.message && from !== 'status@broadcast') {
-        try {
-          msgCache.set(m.key.id, {
-            key: m.key,
-            message: m.message,
-            text: body || extractText(m.message) || '',
-            timestamp: Date.now()
-          });
-        } catch {}
-      }
 
-      // Simple reply helper for games (available early)
       async function replySimple(text) {
-        try {
-          await sock.sendMessage(from, { text: styleReplyText(String(text)) });
-        } catch {}
+        try { await sock.sendMessage(from, { text: styleReplyText(String(text)) }); } catch {}
       }
 
-      // Game answers without prefix
       if (!isMe && cleanBody) {
         await checkGameAnswer(cleanBody, sender, from, replySimple).catch(() => {});
       }
@@ -1668,7 +1595,6 @@ async function startBot() {
         if (!isCmd) react(from, m.key, msgReactEmoji());
       }
 
-      // Flood / antitoxic / antibug
       if ((config.ANTITOXIC || config.ANTIBUG) && !isMe && isGroup(from)) {
         const key = sender + from;
         const now = Date.now();
@@ -1688,26 +1614,18 @@ async function startBot() {
         }
       }
 
-      // Antilink advanced
       if (isGroup(from) && !isMe) {
         const al = await getGroup(from, 'antilink', false);
         if (al && hasLink(cleanBody) && !(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) {
           if (await isBotAdmin(from)) {
-            if (al === 'delete' || al === true || al === 'on') {
-              await sock.sendMessage(from, { delete: m.key }).catch(() => {});
-            }
-            if (al === 'kick') {
-              await sock.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
-            }
-            if (al === 'warn') {
-              await sock.sendMessage(from, { text: `⚠️ @${sender.split('@')[0]} links not allowed!`, mentions: [sender] }).catch(() => {});
-            }
+            if (al === 'delete' || al === true || al === 'on') await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+            if (al === 'kick') await sock.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
+            if (al === 'warn') await sock.sendMessage(from, { text: `⚠️ @${sender.split('@')[0]} links not allowed!`, mentions: [sender] }).catch(() => {});
           }
           return;
         }
       }
 
-      // Antiword
       const aw = await getGroup(from, 'antiword', null);
       if (aw?.words && isGroup(from) && !isMe) {
         const lower = cleanBody.toLowerCase();
@@ -1723,18 +1641,16 @@ async function startBot() {
       const prefix = String(config.PREFIX || '.').trim() || '.';
       if (!cleanBody) return;
 
-      // Chatbot (no prefix needed)
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
         const ans = await askAI(cleanBody, { chat: true, userName: m.pushName || 'User' });
         if (ans && !/<html|doctype|cannot post/i.test(ans)) {
           const t = ans.length > 3000 ? ans.slice(0, 3000) + '…' : ans;
-          // natural reply — light style only, keep emojis from AI
           await sock.sendMessage(from, { text: t }).catch(() => {});
         }
         return;
       }
 
-      // reply with only prefix "." OR any emoji → vv / save to owner DM
+      // reply with only prefix or any emoji -> vv / save to owner DM
       {
         const ctxQ = getCtx(m);
         const quoted = ctxQ.quotedMessage;
@@ -1764,7 +1680,6 @@ async function startBot() {
         return;
       }
 
-      // Antibot
       const antibotMode = isGroup(from) ? await getGroup(from, 'antibot', false) : false;
       if (antibotMode && !isMe && !(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) {
         if (await isBotAdmin(from)) {
@@ -1838,7 +1753,7 @@ async function startBot() {
         return;
       }
 
-      // ========== OWNER (real contact cards) ==========
+      // ========== OWNER ==========
       if (cmd === 'owner') {
         const contacts = [];
         if (config.OWNER_NUMBER) {
@@ -1854,12 +1769,7 @@ async function startBot() {
           }
         }
         if (contacts.length) {
-          await sock.sendMessage(from, {
-            contacts: {
-              displayName: contacts.length > 1 ? 'Owners' : 'Owner',
-              contacts
-            }
-          });
+          await sock.sendMessage(from, { contacts: { displayName: contacts.length > 1 ? 'Owners' : 'Owner', contacts } });
         } else {
           await reply('👑 Owner number not configured.');
         }
@@ -1886,7 +1796,6 @@ async function startBot() {
         if (data?.lyrics) {
           const header = `🎵 *${data.title || text}*${data.artist ? ' — ' + data.artist : ''}\n\n`;
           const full = String(data.lyrics).trim();
-          // WhatsApp ~4096 limit — send full lyrics in parts (no cut-off)
           const chunkSize = 3500;
           if (full.length <= chunkSize) {
             await reply(header + full);
@@ -2043,7 +1952,7 @@ async function startBot() {
         return;
       }
 
-      // ========== .vv (also: reply with only prefix or any emoji) ==========
+      // ========== .vv ==========
       if (cmd === 'vv' || cmd === 'viewonce' || cmd === 'rvo' || cmd === '') {
         try {
           const quoted = getCtx(m).quotedMessage;
@@ -2056,16 +1965,12 @@ async function startBot() {
             return;
           }
           const ok = await forwardViewOnceToOwner(sock, m, from, sender, vo);
-          if (ok) {
-            react(from, m.key, '✅'); // silent — no "sent to DM" text (avoids noise / waiting bugs)
-          } else {
-            react(from, m.key, '❌');
-          }
+          react(from, m.key, ok ? '✅' : '❌');
         } catch (e) { await reply('❌ VV failed: ' + e.message); }
         return;
       }
 
-      // ========== SAVE status/media → DM ==========
+      // ========== SAVE ==========
       if (['save', 'sv', 'savestatus', 'getstatus'].includes(cmd)) {
         try {
           const quoted = getCtx(m).quotedMessage;
@@ -2074,8 +1979,7 @@ async function startBot() {
             return;
           }
           const ok = await saveQuotedMediaToOwner(sock, m, from, sender, quoted);
-          if (ok) react(from, m.key, '✅');
-          else react(from, m.key, '❌');
+          react(from, m.key, ok ? '✅' : '❌');
         } catch (e) { await reply('❌ ' + e.message); }
         return;
       }
@@ -2137,14 +2041,13 @@ async function startBot() {
         return;
       }
 
-      // ========== TO STATUS (photo/text → WhatsApp status) ==========
+      // ========== TO STATUS ==========
       if (['togcstatus', 'tostatus', 'gcstatus'].includes(cmd)) {
         try {
           const quoted = getCtx(m).quotedMessage;
           let buffer = null;
           let mtype = null;
           let caption = text || '';
-
           if (m.message?.imageMessage) {
             const dl = await downloadMediaMsg(m.message);
             buffer = dl?.buffer; mtype = 'image';
@@ -2161,7 +2064,6 @@ async function startBot() {
           } else if (quoted?.conversation || quoted?.extendedTextMessage) {
             caption = quoted.conversation || quoted.extendedTextMessage?.text || caption;
           }
-
           let statusJidList = [];
           if (isGroup(from)) {
             const meta = await getMeta(from);
@@ -2170,7 +2072,6 @@ async function startBot() {
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           if (me && !statusJidList.includes(me)) statusJidList.push(me);
           const opts = { statusJidList, backgroundColor: '#111111', font: 0 };
-
           if (buffer && mtype === 'image') {
             await sock.sendMessage('status@broadcast', { image: buffer, caption: caption || undefined }, opts);
             await reply('✅ Photo posted to status' + (isGroup(from) ? ' (group audience)' : ''));
@@ -2201,14 +2102,14 @@ async function startBot() {
       if (cmd === 'clear') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
         try {
-          if (typeof sock.chatModify !== 'function') throw new Error('chatModify not supported by your Baileys version');
+          if (typeof sock.chatModify !== 'function') throw new Error('chatModify not supported — update @whiskeysockets/baileys');
           await sock.chatModify({
             delete: true,
             lastMessages: [{ key: m.key, messageTimestamp: m.messageTimestamp || Math.floor(Date.now() / 1000) }]
           }, from);
           await reply('🧹 Chat history cleared for everyone in this chat.');
         } catch (e) {
-          await reply('❌ Clear failed: ' + (e.message || e));
+          await reply('❌ Clear failed: ' + (e.message || e) + '\n\nNote: WhatsApp only allows clearing *recent* messages, and in groups the bot must be admin.');
         }
         return;
       }
@@ -2248,7 +2149,7 @@ async function startBot() {
         return;
       }
 
-      // ========== APK / XNXX placeholders ==========
+      // ========== APK ==========
       if (cmd === 'apk') {
         if (!text) { await reply(`Usage: ${prefix}apk whatsapp`); return; }
         await reply('⏳ Searching APK…');
@@ -2285,6 +2186,7 @@ async function startBot() {
         return;
       }
 
+      // ========== XNXX ==========
       if (cmd === 'xnxx') {
         if (!text) { await reply(`Usage: ${prefix}xnxx query`); return; }
         await reply('⏳ Searching…');
@@ -2519,16 +2421,13 @@ async function startBot() {
         return;
       }
 
-      // Set bot profile picture (reply to image OR send image with caption .setpp OR .setpp <url>)
       if (cmd === 'setpp' || cmd === 'setpic' || cmd === 'fullpp') {
         try {
           let buf = null;
-          // image sent with caption .setpp
           if (m.message?.imageMessage) {
             const dl = await downloadMediaMsg(m.message);
             buf = dl?.buffer || null;
           }
-          // reply to an image/sticker
           if (!buf && m.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
             const qm = m.message.extendedTextMessage.contextInfo.quotedMessage;
             if (qm.imageMessage || qm.stickerMessage) {
@@ -2536,7 +2435,6 @@ async function startBot() {
               buf = dl?.buffer || null;
             }
           }
-          // URL
           if (!buf && text && /^https?:\/\//i.test(text.trim())) {
             buf = await fetchBuffer(text.trim(), 60000);
           }
@@ -2556,7 +2454,6 @@ async function startBot() {
         return;
       }
 
-      // Menu media image/video URL
       if (cmd === 'setmenu' || cmd === 'botimage' || cmd === 'setimage') {
         if (!text || !/^https?:\/\//i.test(text.trim())) {
           return reply(`Current MENU_MEDIA: ${config.MENU_MEDIA || '(none)'}\nUsage: ${prefix}setmenu https://image-or-video-url`);
@@ -2589,7 +2486,7 @@ async function startBot() {
         return;
       }
 
-      // ========== SHUTDOWN / TURNON / RESTART / UPDATE ==========
+      // ========== SHUTDOWN / RESTART ==========
       if (cmd === 'shutdown') {
         await reply('🛑 Bot shutting down...');
         setTimeout(() => process.exit(0), 1000);
@@ -2618,15 +2515,15 @@ async function startBot() {
           await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. Open WhatsApp → Linked Devices\n2. Link a Device → Link with phone number instead\n3. Enter the code above\n\nCode expires in ~1 minute.');
           try {
             const gLink = await getFreshGroupInviteLink();
-            if (gLink) await sock.sendMessage(from, { text: '👥 After connecting, the bot auto-joins. If not added yet, join/add via:\n' + gLink }).catch(() => {});
+            if (gLink) await sock.sendMessage(from, { text: '👥 Bot group:\n' + gLink }).catch(() => {});
           } catch {}
         } catch (e) {
-          await reply('❌ Pairing failed: ' + e.message);
+          await reply('❌ Pairing failed: ' + e.message + '\n\nNote: pairing needs a recent @whiskeysockets/baileys (6.6+). If this keeps failing, update Baileys in package.json.');
         }
         return;
       }
 
-      // ========== GET SESSION (for Heroku SESSION var) ==========
+      // ========== GET SESSION ==========
       if (cmd === 'getsession' || cmd === 'session') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
         try {
@@ -2866,7 +2763,6 @@ async function startBot() {
         if (!(await isBotAdmin(from))) { await reply('❌ I need to be admin first.'); return; }
         try {
           const code = await sock.groupInviteCode(from);
-          // Clean link – no fancy font so it stays clickable
           await sock.sendMessage(from, { text: `🔗 https://chat.whatsapp.com/${code}` + buildFooter() });
         } catch (e) { await reply('❌ ' + e.message); }
         return;
@@ -2938,23 +2834,19 @@ async function startBot() {
         return;
       }
 
+      // ========== BLOCK / UNBLOCK (FIXED: resolves LID -> real phone) ==========
       if (['block', 'unblock'].includes(cmd)) {
-        const inGroup = isGroup(from);
-        // Owner always; in group also bot owner only (block is account-level)
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        const inGroup = isGroup(from);
 
         let targets = [];
-        // reply to someone
         const quotedP = getQuoted(m);
         if (quotedP) targets.push(quotedP);
-        // mentions
         for (const j of getMentioned(m)) targets.push(j);
-        // number in text
         if (text) {
           const nums = String(text).match(/\d{6,15}/g) || [];
           for (const n of nums) targets.push(n + '@s.whatsapp.net');
         }
-        // DM with no args → block this chat
         if (!targets.length && !inGroup && from && !from.endsWith('@g.us') && from !== 'status@broadcast') {
           targets.push(from);
         }
@@ -2970,15 +2862,16 @@ async function startBot() {
         const labels = [];
         for (const jid of targets) {
           try {
-            let blockJid = jidNormalizedUser(String(jid));
-            // Prefer real phone for updateBlockStatus (LID often fails)
-            let phone = jidToPhone(jid, m);
+            let phone = await jidToPhoneAsync(jid, m, from); // LID -> phone via cache/group metadata
             if (!phone) phone = dig(String(jid).split('@')[0].split(':')[0]);
-            if (phone && phone.length >= 6 && phone.length <= 15) {
-              blockJid = phone + '@s.whatsapp.net';
+            if (!/^\d{6,15}$/.test(phone || '')) {
+              // last resort: ask WhatsApp who this JID is
+              const wa = await sock.onWhatsApp(dig(String(jid).split('@')[0]) + '@s.whatsapp.net').catch(() => null);
+              if (wa?.[0]?.jid) phone = dig(wa[0].jid);
             }
-            await sock.updateBlockStatus(blockJid, cmd === 'block' ? 'block' : 'unblock');
-            labels.push(phone ? ('+' + phone) : blockJid.split('@')[0]);
+            if (!/^\d{6,15}$/.test(phone || '')) { fail++; continue; }
+            await sock.updateBlockStatus(phone + '@s.whatsapp.net', cmd === 'block' ? 'block' : 'unblock');
+            labels.push('+' + phone);
             ok++;
           } catch (e) {
             console.log(cmd + ' err:', e.message);
@@ -2986,7 +2879,7 @@ async function startBot() {
           }
         }
         if (ok) await reply(`✅ *${cmd.toUpperCase()}*\n${labels.join(', ')}`);
-        else await reply(`❌ ${cmd} failed. Reply to their message or use number.`);
+        else await reply(`❌ ${cmd} failed. Reply to their message or use a number.`);
         return;
       }
     } catch (err) {
@@ -2994,7 +2887,7 @@ async function startBot() {
     }
   }
 
-  // ============ ANTI-DELETE ============
+  // ============ ANTI-DELETE (messages.update path) ============
   sock.ev.on('messages.update', async (updates) => {
     for (const u of updates) {
       try {
@@ -3014,4 +2907,3 @@ startBot().catch(e => {
   process.exit(1);
 });
 process.on('uncaughtException', e => console.log('Uncaught:', e.message));
-
