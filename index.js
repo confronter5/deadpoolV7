@@ -285,11 +285,9 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 
 // ============ FOOTER ============
 function buildFooter() {
-  const y = new Date().getFullYear();
-  let p = (config.POWERED_BY || '> *Powered by Confronter💫*')
-    .replace(/©?\d{4}/g, '').replace(/^>\s*/, '').replace(/\*/g, '').trim();
-  if (!p) p = 'Powered by Confronter';
-  return `\n\n_${p} ©${y}_`;
+  // Keep exact format the user requested
+  const p = config.POWERED_BY || '> *Powered by Confronter💫*';
+  return '\n\n' + p;
 }
 
 // ============ FANCY FONTS ============
@@ -1012,11 +1010,36 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  const data = await downloadViaYtdl(url, audioOnly);
+  // Primary: ytdl
+  let data = await downloadViaYtdl(url, audioOnly);
   if (data?.buffer) {
     data.title = data.title || title;
     return data;
   }
+  // Fallback 1: siputzx
+  try {
+    const path = audioOnly ? 'ytmp3' : 'ytmp4';
+    const r = await dlGet('https://api.siputzx.my.id/api/d/' + path + '?url=' + encodeURIComponent(url), { timeout: 60000 });
+    const d = r?.data?.data || r?.data?.result || r?.data;
+    const mediaUrl = d?.dl || d?.download || d?.url || d?.link || d?.audio || d?.video;
+    if (mediaUrl) {
+      const buf = await fetchBuffer(String(mediaUrl), 180000);
+      if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: mediaUrl };
+    }
+  } catch {}
+  // Fallback 2: gifted
+  try {
+    const endpoint = audioOnly
+      ? 'https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url='
+      : 'https://api.giftedtech.web.id/api/download/ytmp4?apikey=gifted&url=';
+    const r = await dlGet(endpoint + encodeURIComponent(url), { timeout: 60000 });
+    const d = r?.data?.result || r?.data?.data || r?.data;
+    const mediaUrl = d?.url || d?.download_url || d?.dl || d?.link;
+    if (mediaUrl) {
+      const buf = await fetchBuffer(String(mediaUrl), 180000);
+      if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: mediaUrl };
+    }
+  } catch {}
   return null;
 }
 
@@ -1047,8 +1070,8 @@ async function askAI(text, opts = {}) {
   const isSwahili = /[àáâãäåèéêëìíîïòóôõöùúûüç]|sema|habari|vipi|sasa|asante|karibu|ndio|hapana|tafadhali|naomba|nataka|nina|wewe|mimi|yeye|hao|huyu|hawa|watu|siku|leo|kesho|jana|mzuri|mbaya|pole|hongera|niaje|uko|poa|sawa|bana|bro|dada|kaka/i.test(q);
 
   const system = isSwahili
-    ? `Wewe ni msaidizi wa WhatsApp. Jibu kwa Kiswahili rahisi tu. Jibu fupi sana (1-3 sentensi). Usifikirie sana. Usiseme wewe ni AI. Jibu kama rafiki wa kawaida.`
-    : `You are a casual WhatsApp assistant. Reply ONLY in simple English. Keep answers very short (1-3 sentences). Never overthink. Never say you are an AI. Talk like a normal friend.`;
+    ? `Wewe ni mtu wa kawaida unaye-chat kwenye WhatsApp. Jibu kwa Kiswahili tu, fupi sana kama binadamu (1-3 sentensi). Usiseme wewe ni bot au AI. Jibu kama rafiki wa karibu. Tumia emoji kidogo kama kawaida.`
+    : `You are a real person chatting on WhatsApp. Reply in simple casual English only. Keep it very short like a human (1-3 sentences). Never say you are a bot or AI. Talk exactly like a close friend. Use light emojis naturally.`;
 
   try {
     const r = await axios.post('https://text.pollinations.ai/openai', {
@@ -1089,114 +1112,123 @@ async function askAI(text, opts = {}) {
 // ============ LYRICS ============
 async function getLyrics(text) {
   try {
-    const r = await dlGet('https://api.siputzx.my.id/api/s/lyrics?query=' + encodeURIComponent(text), { timeout: 20000 });
-    const d = r?.data?.data || r?.data?.result || r?.data;
-    if (d?.lyrics || d?.lyric) return { title: d.title || text, artist: d.artist || d.author || '', lyrics: d.lyrics || d.lyric };
+    const { getLyrics: real } = require('./apis');
+    const r = await real(text);
+    if (r?.lyrics) return r;
   } catch {}
+  // Multiple fallbacks
+  const endpoints = [
+    'https://api.siputzx.my.id/api/s/lyrics?query=',
+    'https://api.siputzx.my.id/api/lyrics?query=',
+    'https://api.ryzendesu.vip/api/search/lyrics?query=',
+    'https://api.giftedtech.web.id/api/search/lyrics?apikey=gifted&query='
+  ];
+  for (const base of endpoints) {
+    try {
+      const r = await dlGet(base + encodeURIComponent(text), { timeout: 20000 });
+      const d = r?.data?.data || r?.data?.result || r?.data;
+      const lyrics = d?.lyrics || d?.lyric || d?.text;
+      if (lyrics && String(lyrics).length > 20) {
+        return {
+          title: d.title || d.song || text,
+          artist: d.artist || d.author || d.singer || '',
+          lyrics: String(lyrics)
+        };
+      }
+    } catch {}
+  }
   return null;
 }
 
 // ============ TEXTMAKER ============
 const TEXTMAKER_STYLES = {
-  neon:      ['neon', 'neon-light', 'green-neon', 'neon2', 'blue-neon'],
-  fire:      ['fire', 'flame-letter', 'fire-text-effect', 'hotmetal', 'burning'],
-  glitch:    ['glitch', 'glitch-tiktok', 'glitchtext', 'glitch-effect'],
-  ice:       ['ice', 'frozen-winter', 'ice-cold', 'frozen', 'ice-text'],
-  matrix:    ['matrix', 'green-matrix', 'hacker', 'cyber'],
-  luxury:    ['luxury', 'luxury-gold', 'gold-text', 'golden', 'rich'],
-  blackpink: ['blackpink', 'blackpink-logo', 'pink-glitter', 'pink'],
-  metallic:  ['metallic', 'metal-dark-gold', 'chrome', 'silver-metal', 'steel'],
-  devil:     ['devil-wings', 'demon', 'devil', 'red-devil', 'satan'],
-  light:     ['light-text', 'light-effect', 'light-glow', 'glowing', 'shine'],
-  sand:      ['sand', 'writing-sand', 'sand-writing', 'summersand', 'beach'],
-  thunder:   ['thunder', 'thundertext', 'lightning', 'electric', 'storm'],
-  hacker:    ['hacker', 'matrix', 'green-matrix', 'green-horror', 'cyber'],
-  naruto:    ['naruto', 'anime', 'manga', 'cartoon', '3d-cartoon'],
-  paper:     ['paper', 'write-paper'],
-  fire2:     ['fire', 'flame-letter'],
-  glow:      ['glow', 'glowing'],
-  gold:      ['gold', 'gold-text', 'luxury-gold'],
-  rainbow:   ['rainbow', 'colorful']
+  neon:      'neon glowing text effect, cyberpunk city background, purple blue neon lights, futuristic',
+  fire:      'text made of fire and flames, burning letters, dark dramatic background, intense heat',
+  glitch:    'glitch text effect, digital distortion, cyberpunk glitch art, RGB split, dark background',
+  ice:       'frozen ice crystal text, blue ice letters, cold winter, crystalline, frost',
+  matrix:    'green matrix code rain, digital green text, hacker matrix style, dark background with code',
+  luxury:    'luxury gold text, elegant golden letters, premium black background, crown, expensive look',
+  blackpink: 'blackpink style text, hot pink graffiti, black background, kpop aesthetic, heart',
+  metallic:  'chrome metallic 3D text, silver steel letters, chains, dark background, reflective metal',
+  devil:     'demonic red text, devil horns, dark red fire, hellish, trident, evil style',
+  light:     'glowing light text, bright divine glow, clouds, heavenly light rays, soft golden white',
+  sand:      'text written in beach sand, realistic sand letters, sunny beach, top view sand writing',
+  thunder:   '3D rocky metallic text with blue lightning, stormy dark sky, electric bolts, dramatic',
+  hacker:    'green neon hacker text, hooded hacker with glowing mask, matrix code, dark room, cyber',
+  naruto:    'Naruto anime style, ninja character, bold anime logo text, Konoha village background, orange black',
+  paper:     'text written on paper, handwritten style, simple paper background',
+  glow:      'glowing neon text, soft glow, dark background',
+  gold:      'golden luxury text, shiny gold letters, premium look',
+  rainbow:   'colorful rainbow text, vibrant multicolor letters'
 };
 
 async function generateTextImage(effect, text) {
+  const q = String(text || '').slice(0, 40).trim();
+  if (!q) return null;
+
+  const style = String(effect || 'neon').toLowerCase();
+  const stylePrompt = TEXTMAKER_STYLES[style] || TEXTMAKER_STYLES.neon || 'cool text effect';
+
+  // Build a strong prompt matching the sample quality the user wants
+  const prompt = `${stylePrompt}, the text says "${q}", highly detailed, 4k, dramatic lighting, centered text, masterpiece`;
+
+  // ========== 1) AI Image generation (closest to your samples) ==========
+  const aiUrls = [
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=720&nologo=true&enhance=true`,
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`,
+    `https://text.pollinations.ai/image/${encodeURIComponent(prompt)}?width=1280&height=720`
+  ];
+
+  for (const url of aiUrls) {
+    try {
+      const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 60000 });
+      if (r.status >= 400 || !r.data) continue;
+      const buf = Buffer.from(r.data);
+      if (buf.length < 2000) continue;
+      const head = buf.slice(0, 20).toString('utf8').toLowerCase();
+      if (head.includes('<!doctype') || head.includes('<html') || head.includes('{')) continue;
+      const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
+      const isPng  = buf[0] === 0x89 && buf[1] === 0x50;
+      const isWebp = buf.slice(0, 4).toString() === 'RIFF';
+      if (isJpeg || isPng || isWebp) return buf;
+    } catch {}
+  }
+
+  // ========== 2) Photo360 / ephoto fallbacks ==========
   try {
     const { generateTextImage: real } = require('./apis');
     const buf = await real(effect, text);
     if (buf && Buffer.isBuffer(buf) && buf.length > 500) return buf;
   } catch {}
 
-  const q = String(text || '').slice(0, 40).trim();
-  if (!q) return null;
-
-  const style = String(effect || 'neon').toLowerCase();
-  const aliases = TEXTMAKER_STYLES[style] || [style];
-
-  const urls = [];
-
-  for (const s of aliases) {
-    const encS = encodeURIComponent(s);
-    const encQ = encodeURIComponent(q);
-
-    urls.push(
-      `https://api.siputzx.my.id/api/ephoto/${encS}?text=${encQ}`,
-      `https://api.siputzx.my.id/api/canvas/textpro?text=${encQ}&style=${encS}`,
-      `https://api.siputzx.my.id/api/photooxy/${encS}?text=${encQ}`,
-      `https://api.ryzendesu.vip/api/ephoto/${encS}?text=${encQ}`,
-      `https://api.ryzendesu.vip/api/textpro/${encS}?text=${encQ}`,
-      `https://api.giftedtech.web.id/api/ephoto360/${encS}?apikey=gifted&text=${encQ}`,
-      `https://api.giftedtech.web.id/api/textpro/${encS}?apikey=gifted&text=${encQ}`,
-      `https://api.lolhuman.xyz/api/ephoto1/${encS}?apikey=GataDios&text=${encQ}`,
-      `https://api.lolhuman.xyz/api/textprome/${encS}?apikey=GataDios&text=${encQ}`
-    );
+  const aliases = {
+    neon: ['neon', 'neon-light'], fire: ['fire', 'flame-letter'], glitch: ['glitch'],
+    ice: ['ice'], matrix: ['matrix'], luxury: ['luxury-gold', 'gold'], blackpink: ['blackpink'],
+    metallic: ['metallic'], devil: ['devil-wings'], light: ['light-text'], sand: ['sand', 'writing-sand'],
+    thunder: ['thunder', 'lightning'], hacker: ['matrix', 'hacker'], naruto: ['anime']
+  };
+  const list = aliases[style] || [style];
+  for (const s of list) {
+    const urls = [
+      `https://api.siputzx.my.id/api/ephoto/${encodeURIComponent(s)}?text=${encodeURIComponent(q)}`,
+      `https://api.ryzendesu.vip/api/ephoto/${encodeURIComponent(s)}?text=${encodeURIComponent(q)}`,
+      `https://api.giftedtech.web.id/api/ephoto360/${encodeURIComponent(s)}?apikey=gifted&text=${encodeURIComponent(q)}`
+    ];
+    for (const url of urls) {
+      try {
+        const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 40000 });
+        if (r.status >= 400 || !r.data) continue;
+        const buf = Buffer.from(r.data);
+        if (buf.length < 800) continue;
+        const head = buf.slice(0, 20).toString('utf8').toLowerCase();
+        if (head.includes('<!doctype') || head.includes('<html') || head.includes('{')) continue;
+        if ((buf[0] === 0xFF && buf[1] === 0xD8) || (buf[0] === 0x89 && buf[1] === 0x50)) return buf;
+      } catch {}
+    }
   }
-
-  if (style === 'sand') {
-    urls.unshift(
-      `https://api.siputzx.my.id/api/ephoto/sand?text=${encodeURIComponent(q)}`,
-      `https://api.siputzx.my.id/api/ephoto/writing-sand?text=${encodeURIComponent(q)}`
-    );
-  }
-  if (style === 'thunder') {
-    urls.unshift(
-      `https://api.siputzx.my.id/api/ephoto/thunder?text=${encodeURIComponent(q)}`,
-      `https://api.siputzx.my.id/api/ephoto/lightning?text=${encodeURIComponent(q)}`
-    );
-  }
-  if (['hacker', 'matrix'].includes(style)) {
-    urls.unshift(
-      `https://api.siputzx.my.id/api/ephoto/matrix?text=${encodeURIComponent(q)}`,
-      `https://api.popcat.xyz/matrix?text=${encodeURIComponent(q)}`
-    );
-  }
-  if (style === 'neon') {
-    urls.unshift(`https://api.popcat.xyz/outrank?text=${encodeURIComponent(q)}`);
-  }
-
-  for (const url of urls) {
-    try {
-      const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 45000 });
-      if (r.status >= 400 || !r.data) continue;
-
-      const buf = Buffer.from(r.data);
-      if (buf.length < 800) continue;
-
-      const head = buf.slice(0, 30).toString('utf8').toLowerCase();
-      if (head.includes('<!doctype') || head.includes('<html') || head.includes('{"') || head.includes('error') || head.includes('not found')) {
-        continue;
-      }
-
-      const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-      const isPng  = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E;
-      const isWebp = buf.slice(0, 4).toString() === 'RIFF';
-      if (!isJpeg && !isPng && !isWebp) continue;
-
-      return buf;
-    } catch {}
-  }
-
   return null;
 }
+
 
 // ============ MAIN BOT ============
 async function startBot() {
@@ -1818,9 +1850,11 @@ async function startBot() {
       if (!cleanBody) return;
 
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
+        // Human-like delay before reply
+        await delay(800 + Math.floor(Math.random() * 1500));
         const ans = await askAI(cleanBody, { chat: true, userName: m.pushName || 'User' });
-        if (ans && !/<html|doctype|cannot post/i.test(ans)) {
-          const t = ans.length > 3000 ? ans.slice(0, 3000) + '…' : ans;
+        if (ans && !/<html|doctype|cannot post|AI|bot|assistant/i.test(ans)) {
+          const t = ans.length > 500 ? ans.slice(0, 500) + '…' : ans;
           await sock.sendMessage(from, { text: t }).catch(() => {});
         }
         return;
