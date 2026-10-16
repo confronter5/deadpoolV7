@@ -39,7 +39,7 @@ const defaults = {
   DEVELOPERS: [],
   MODE: 'public',
   SESSION: '',
-  POWERED_BY: '> *𝕻𝖔ω𝖊𝖗𝖊𝖉 𝐛ყ 𝖈𝖔𝖓𝖋𝖗𝖔𝖓𝖙𝖊𝖗 💧*',
+  POWERED_BY: '> Powered by Confronter✨️',
   FONT: 'random',
   AUTO_VIEW_STATUS: true,
   AUTO_LIKE_STATUS: true,
@@ -275,10 +275,8 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 
 // ============ FOOTER ============
 function buildFooter() {
-  const y = new Date().getFullYear();
-  let p = (config.POWERED_BY || 'Powered by Confronter').replace(/©?\d{4}/g, '').replace(/^>\s*/, '').replace(/\*/g, '').trim();
-  if (!p) p = 'Powered by Confronter';
-  return `\n\n_${p} ©${y}_`;
+  // Exact format requested
+  return `\n\n> Powered by Confronter✨️`;
 }
 
 // ============ FONTS ============
@@ -498,7 +496,7 @@ function buildStartMessage() {
 │ ✅ Online
 │ ⚡ Prefix : *${p}*
 │ 🌐 Mode   : *${mode}*
-│ 👑 ${(config.POWERED_BY || 'Powered by Confronter').replace(/^>\s*/, '').replace(/\*/g, '').trim()}
+│ 👑 Powered by Confronter✨️
 │ 💬 Type *${p}menu*
 └────────────`
   );
@@ -1536,7 +1534,7 @@ async function startBot() {
         const t0 = Date.now();
         try { await sock.sendPresenceUpdate('composing', from); } catch {}
         const speed = Date.now() - t0;
-        await reply(`❖ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐕𝟕 𝐩𝐢𝐧𝐠𝐢𝐧𝐠 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫..➣*\nSpeed*${speed}ms*`);
+        await reply(`❖ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐕𝟕 𝐩𝐢𝐧𝐠𝐢𝐧𝐠 𝐌𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫..➣..*\nSpeed ~~ *${speed}ms*`);
         return;
       }
 
