@@ -230,7 +230,7 @@ async function jidToPhoneAsync(jid, msg, from) {
 async function whoLabel(jid, msg, from, pushName) {
   const phone = await jidToPhoneAsync(jid, msg, from);
   if (phone) return '+' + phone;
-  const name = pushName || (await sock.getName?.(jid).catch(() => null));
+  const name = pushName || null;
   if (name && name !== 'Unknown' && name.trim()) return '@' + String(name).replace(/[@\n]/g, '').trim();
   const raw = String(jid || '').split('@')[0];
   return raw || 'Unknown';
@@ -390,7 +390,7 @@ function buildMainMenu(pushName, userCount) {
     s += `└────────────\n\n`;
     return s;
   };
-  m += box('DOWNLOADS', ['play <song>', 'song <name>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'lyrics <song>', 'apk <name>', 'xnxx <query>']);
+  m += box('DOWNLOADS', ['play <song>', 'song <name>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'lyrics <song>', 'apk <name>', 'xvideos <query|url>', 'xnxx <query|url>']);
   m += box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
   m += box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off']);
   m += box('GAMES', ['family100', 'tebak <type>', 'math <easy|medium|hard>']);
@@ -417,6 +417,7 @@ function buildMainMenu(pushName, userCount) {
     'antibug on/off', 'pair <number>'
   ]);
   m += box('PANEL', ['panel', '1gb user,number', '2gb ...', 'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist']);
+  m += box('FUN & MORE', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'news', 'livescore', 'epl', 'imagine <prompt>', 'xvideos <q|url>']);
   m += box('TEXTMAKER', ['neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
   m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
   m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'togcstatus']);
@@ -957,7 +958,153 @@ async function searchYoutube(query) {
   return null;
 }
 
+
+// ============ KEITH API (apis.keithsite.lol) ============
+const KEITH_API = 'https://apis.keithsite.lol';
+
+async function keithGet(path, timeout = 60000) {
+  try {
+    const r = await dlGet(KEITH_API + path, { timeout });
+    return r?.data || null;
+  } catch (e) {
+    console.log('keith:', (e.message || '').slice(0, 80));
+    return null;
+  }
+}
+
+function keithExtractUrl(data) {
+  if (!data) return null;
+  if (typeof data === 'string' && /^https?:\/\//i.test(data)) return data;
+  if (data.result) {
+    if (typeof data.result === 'string' && /^https?:\/\//i.test(data.result)) return data.result;
+    if (data.result.url) return data.result.url;
+    if (data.result.dl) return data.result.dl;
+    if (data.result.download) return data.result.download;
+    if (data.result.audio) return data.result.audio;
+    if (data.result.video) return data.result.video;
+  }
+  return data.url || data.dl || data.download || data.link || data.audio || data.video || null;
+}
+
+async function downloadViaKeith(url, audioOnly = true) {
+  const endpoints = audioOnly
+    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/dlmp3?url=', '/download/mp3?url=', '/download/yta?url=']
+    : ['/download/ytmp4?url=', '/download/video?url=', '/download/dlmp4?url=', '/download/mp4?url=', '/download/ytv?url='];
+  for (const ep of endpoints) {
+    try {
+      const data = await keithGet(ep + encodeURIComponent(url), 70000);
+      if (!data || data.status === false) continue;
+      const mediaUrl = keithExtractUrl(data);
+      if (!mediaUrl) continue;
+      const title = data.result?.title || data.title || data.result?.n || 'YouTube';
+      const buf = await fetchBuffer(String(mediaUrl), 180000);
+      if (buf && buf.length > 5000) return { buffer: buf, title: String(title).slice(0, 80), url: mediaUrl };
+      // If buffer fails but we have a direct URL, still return url for streaming send
+      return { buffer: null, title: String(title).slice(0, 80), url: mediaUrl };
+    } catch {}
+  }
+  return null;
+}
+
+async function downloadInstagramKeith(url) {
+  for (const ep of ['/download/instadl?url=', '/download/instagramdl?url=']) {
+    try {
+      const data = await keithGet(ep + encodeURIComponent(url), 60000);
+      if (!data || data.status === false) continue;
+      // result may be array or object
+      const r = data.result || data;
+      if (Array.isArray(r)) {
+        const urls = r.map(x => x.url || x.dl || x).filter(u => typeof u === 'string' && u.startsWith('http'));
+        if (urls.length) return { urls, title: 'Instagram' };
+      }
+      const mediaUrl = keithExtractUrl(data);
+      if (mediaUrl) return { urls: [mediaUrl], title: data.title || 'Instagram' };
+    } catch {}
+  }
+  return null;
+}
+
+
+async function searchXvideosKeith(query) {
+  try {
+    const data = await keithGet('/search/xvideos?q=' + encodeURIComponent(query), 30000);
+    if (!data || data.status === false) return [];
+    const list = Array.isArray(data.result) ? data.result : [];
+    return list.slice(0, 10).map(x => ({
+      title: x.title || 'Video',
+      duration: x.duration || '',
+      url: x.url || '',
+      thumb: x.thumb || x.thumbnail || ''
+    })).filter(x => x.url);
+  } catch { return []; }
+}
+
+async function downloadXvideosKeith(url) {
+  try {
+    const data = await keithGet('/download/xvideos?url=' + encodeURIComponent(url), 90000);
+    if (!data || data.status === false) return null;
+    const r = data.result || data;
+    const dl = r.download_url || r.url || r.dl || r.video || keithExtractUrl(data);
+    if (!dl) return null;
+    return {
+      title: r.title || 'XVideos',
+      url: dl,
+      thumb: r.thumbnail || r.thumb || '',
+      size: r.size || r.sizeReadable || ''
+    };
+  } catch { return null; }
+}
+
+async function downloadTiktokKeith(url) {
+  try {
+    const data = await keithGet('/download/tiktokdl3?url=' + encodeURIComponent(url), 60000);
+    if (!data || data.status === false) return null;
+    const mediaUrl = keithExtractUrl(data) || data.result?.play || data.result?.video;
+    if (!mediaUrl) return null;
+    return { url: mediaUrl, title: data.result?.title || data.title || 'TikTok' };
+  } catch { return null; }
+}
+
+
 async function downloadViaYtdl(url, audioOnly) {
+  // 1) Prefer yt-dlp binary (downloaded in postinstall on Heroku)
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const ytdlp = fs.existsSync('./yt-dlp') ? './yt-dlp' : (fs.existsSync('/usr/bin/yt-dlp') ? 'yt-dlp' : null);
+    if (ytdlp) {
+      const outTpl = '/tmp/dp_' + Date.now() + (audioOnly ? '.mp3' : '.mp4');
+      const fmt = audioOnly
+        ? '-x --audio-format mp3 --audio-quality 0 -o "' + outTpl + '"'
+        : '-f "best[height<=720]/best" -o "' + outTpl + '"';
+      const cmd = ytdlp + ' --no-playlist --no-warnings ' + fmt + ' "' + url + '"';
+      await execP(cmd, { timeout: 120000, maxBuffer: 30 * 1024 * 1024 });
+      // yt-dlp may change extension
+      let file = outTpl;
+      if (!fs.existsSync(file)) {
+        const base = outTpl.replace(/\.(mp3|mp4)$/, '');
+        for (const ext of (audioOnly ? ['.mp3', '.m4a', '.opus', '.webm'] : ['.mp4', '.mkv', '.webm'])) {
+          if (fs.existsSync(base + ext)) { file = base + ext; break; }
+        }
+      }
+      if (fs.existsSync(file)) {
+        const buf = fs.readFileSync(file);
+        try { fs.unlinkSync(file); } catch {}
+        if (buf && buf.length > 5000) {
+          let title = 'YouTube';
+          try {
+            const { stdout } = await execP(ytdlp + ' --get-title --no-playlist "' + url + '"', { timeout: 20000 });
+            if (stdout?.trim()) title = stdout.trim().slice(0, 80);
+          } catch {}
+          return { buffer: buf, title, url };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('yt-dlp error:', (e.message || '').slice(0, 120));
+  }
+
+  // 2) Fallback: ytdl-core / @distube/ytdl-core
   try {
     let ytdl;
     try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = require('ytdl-core'); }
@@ -1010,13 +1157,19 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  // Primary: ytdl
-  let data = await downloadViaYtdl(url, audioOnly);
+  // 1) Keith API (primary - apis.keithsite.lol)
+  let data = await downloadViaKeith(url, audioOnly);
+  if (data?.buffer || data?.url) {
+    data.title = data.title || title;
+    return data;
+  }
+  // 2) yt-dlp / ytdl-core
+  data = await downloadViaYtdl(url, audioOnly);
   if (data?.buffer) {
     data.title = data.title || title;
     return data;
   }
-  // Fallback 1: siputzx
+  // 3) siputzx
   try {
     const path = audioOnly ? 'ytmp3' : 'ytmp4';
     const r = await dlGet('https://api.siputzx.my.id/api/d/' + path + '?url=' + encodeURIComponent(url), { timeout: 60000 });
@@ -1027,7 +1180,7 @@ async function downloadYouTube(query, audioOnly = true) {
       if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: mediaUrl };
     }
   } catch {}
-  // Fallback 2: gifted
+  // 4) gifted
   try {
     const endpoint = audioOnly
       ? 'https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url='
@@ -1044,20 +1197,31 @@ async function downloadYouTube(query, audioOnly = true) {
 }
 
 async function sendAsMp3(sock, jid, data) {
-  if (!data?.buffer) return false;
+  if (!data) return false;
   try {
-    await sock.sendMessage(jid, {
-      audio: data.buffer, mimetype: 'audio/mpeg',
-      fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
-    });
+    if (data.buffer && data.buffer.length > 5000) {
+      await sock.sendMessage(jid, {
+        audio: data.buffer, mimetype: 'audio/mpeg',
+        fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
+      });
+    } else if (data.url) {
+      await sock.sendMessage(jid, {
+        audio: { url: data.url }, mimetype: 'audio/mpeg',
+        fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
+      });
+    } else return false;
     if (data.title) await sock.sendMessage(jid, { text: `🎵 *${data.title}*` }).catch(() => {});
     return true;
   } catch (e) { console.log('sendAsMp3:', e.message); return false; }
 }
 async function sendAsVideo(sock, jid, data) {
-  if (!data?.buffer) return false;
+  if (!data) return false;
   try {
-    await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
+    if (data.buffer && data.buffer.length > 5000) {
+      await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
+    } else if (data.url) {
+      await sock.sendMessage(jid, { video: { url: data.url }, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
+    } else return false;
     return true;
   } catch (e) { console.log('sendAsVideo:', e.message); return false; }
 }
@@ -1069,6 +1233,30 @@ async function askAI(text, opts = {}) {
 
   const isSwahili = /[àáâãäåèéêëìíîïòóôõöùúûüç]|sema|habari|vipi|sasa|asante|karibu|ndio|hapana|tafadhali|naomba|nataka|nina|wewe|mimi|yeye|hao|huyu|hawa|watu|siku|leo|kesho|jana|mzuri|mbaya|pole|hongera|niaje|uko|poa|sawa|bana|bro|dada|kaka/i.test(q);
 
+  // 1) Keith AI (human-like, supports Swahili)
+  try {
+    const endpoints = [
+      '/keithai?q=',
+      '/ai/gemini?q=',
+      '/ai/gpt?q=',
+      '/ai/deepseek?q=',
+      '/ai/mistral?q='
+    ];
+    const prompt = isSwahili
+      ? ('Jibu kwa Kiswahili fupi kama rafiki wa WhatsApp (1-3 sentensi). Usiseme wewe ni AI. Swali: ' + q)
+      : ('Reply short like a WhatsApp friend (1-3 sentences). Never say you are AI. Question: ' + q);
+    for (const ep of endpoints) {
+      const data = await keithGet(ep + encodeURIComponent(prompt), 25000);
+      if (!data || data.status === false) continue;
+      let ans = data.result || data.response || data.message || data.answer || data.text;
+      if (typeof ans === 'object') ans = ans.text || ans.message || ans.response || null;
+      if (ans && typeof ans === 'string' && ans.length > 2 && !/<html|doctype/i.test(ans)) {
+        return ans.trim().slice(0, 1500);
+      }
+    }
+  } catch {}
+
+  // 2) pollinations fallback
   const system = isSwahili
     ? `Wewe ni mtu wa kawaida unaye-chat kwenye WhatsApp. Jibu kwa Kiswahili tu, fupi sana kama binadamu (1-3 sentensi). Usiseme wewe ni bot au AI. Jibu kama rafiki wa karibu. Tumia emoji kidogo kama kawaida.`
     : `You are a real person chatting on WhatsApp. Reply in simple casual English only. Keep it very short like a human (1-3 sentences). Never say you are a bot or AI. Talk exactly like a close friend. Use light emojis naturally.`;
@@ -1080,43 +1268,40 @@ async function askAI(text, opts = {}) {
         { role: 'system', content: system },
         { role: 'user', content: q }
       ]
-    }, {
-      timeout: 25000,
-      headers: { 'User-Agent': UA, 'Content-Type': 'application/json' },
-      validateStatus: () => true
-    });
-
-    const ans = r?.data?.choices?.[0]?.message?.content;
-    if (ans && typeof ans === 'string' && ans.trim().length > 1 && !/<html|doctype|404|error/i.test(ans)) {
-      return ans.trim().slice(0, 600);
-    }
+    }, { timeout: 25000 });
+    const ans = r?.data?.choices?.[0]?.message?.content || r?.data?.content || r?.data;
+    if (typeof ans === 'string' && ans.length > 2) return ans.trim().slice(0, 1500);
   } catch {}
 
   try {
-    const prompt = system + '\n\nUser: ' + q + '\nAssistant:';
+    const prompt = system + '\n\nUser: ' + q + '\nReply:';
     const r = await axios.get('https://text.pollinations.ai/' + encodeURIComponent(prompt.slice(0, 1200)), {
-      timeout: 20000,
-      headers: { 'User-Agent': UA, Accept: 'text/plain' },
-      validateStatus: () => true,
-      responseType: 'text'
+      timeout: 20000, responseType: 'text'
     });
-    if (typeof r.data === 'string' && r.data.trim().length > 1 && !/<html|doctype|404/i.test(r.data)) {
-      return r.data.trim().slice(0, 600);
-    }
+    if (typeof r.data === 'string' && r.data.length > 2 && !/<html/i.test(r.data)) return r.data.trim().slice(0, 1500);
   } catch {}
-
-  if (isSwahili) return 'Sawa, nimeelewa. Unaweza kuuliza tena?';
-  return 'Okay, got it. Can you say that again?';
+  return null;
 }
 
-// ============ LYRICS ============
 async function getLyrics(text) {
+  // 1) Keith lyrics
+  try {
+    for (const ep of ['/search/lyrics?query=', '/search/lyrics2?query=', '/search/lyrics3?query=']) {
+      const data = await keithGet(ep + encodeURIComponent(text), 25000);
+      if (!data || data.status === false) continue;
+      const r = data.result;
+      if (Array.isArray(r) && r[0]?.lyrics) {
+        return { title: r[0].song || r[0].title || text, artist: r[0].artist || '', lyrics: r[0].lyrics };
+      }
+      if (r?.lyrics) return { title: r.song || r.title || text, artist: r.artist || '', lyrics: r.lyrics };
+      if (typeof r === 'string' && r.length > 30) return { title: text, artist: '', lyrics: r };
+    }
+  } catch {}
   try {
     const { getLyrics: real } = require('./apis');
     const r = await real(text);
     if (r?.lyrics) return r;
   } catch {}
-  // Multiple fallbacks
   const endpoints = [
     'https://api.siputzx.my.id/api/s/lyrics?query=',
     'https://api.siputzx.my.id/api/lyrics?query=',
@@ -1140,97 +1325,83 @@ async function getLyrics(text) {
   return null;
 }
 
-// ============ TEXTMAKER ============
 const TEXTMAKER_STYLES = {
-  neon:      'neon glowing text effect, cyberpunk city background, purple blue neon lights, futuristic',
-  fire:      'text made of fire and flames, burning letters, dark dramatic background, intense heat',
-  glitch:    'glitch text effect, digital distortion, cyberpunk glitch art, RGB split, dark background',
-  ice:       'frozen ice crystal text, blue ice letters, cold winter, crystalline, frost',
-  matrix:    'green matrix code rain, digital green text, hacker matrix style, dark background with code',
-  luxury:    'luxury gold text, elegant golden letters, premium black background, crown, expensive look',
-  blackpink: 'blackpink style text, hot pink graffiti, black background, kpop aesthetic, heart',
-  metallic:  'chrome metallic 3D text, silver steel letters, chains, dark background, reflective metal',
-  devil:     'demonic red text, devil horns, dark red fire, hellish, trident, evil style',
-  light:     'glowing light text, bright divine glow, clouds, heavenly light rays, soft golden white',
-  sand:      'text written in beach sand, realistic sand letters, sunny beach, top view sand writing',
-  thunder:   '3D rocky metallic text with blue lightning, stormy dark sky, electric bolts, dramatic',
-  hacker:    'green neon hacker text, hooded hacker with glowing mask, matrix code, dark room, cyber',
-  naruto:    'Naruto anime style, ninja character, bold anime logo text, Konoha village background, orange black',
-  paper:     'text written on paper, handwritten style, simple paper background',
-  glow:      'glowing neon text, soft glow, dark background',
-  gold:      'golden luxury text, shiny gold letters, premium look',
-  rainbow:   'colorful rainbow text, vibrant multicolor letters'
+  neon:      'cinematic neon glowing text "TEXT" with crown, purple blue cyberpunk city night, wet reflective streets, highly detailed 4k',
+  fire:      'cinematic text "TEXT" made of roaring fire and flames with crown, dark dramatic background, intense heat 4k',
+  glitch:    'cinematic glitch text "TEXT", digital RGB distortion, cyberpunk glitch art, dark tech background 4k',
+  ice:       'cinematic frozen ice crystal text "TEXT", blue ice letters, cold winter crystals, frost, dramatic 4k',
+  matrix:    'cinematic green matrix code rain, digital green text "TEXT", hooded hackers, dark matrix background 4k',
+  luxury:    'cinematic luxury gold text "TEXT" with crown, elegant golden letters, luxury watch perfume, premium black 4k',
+  blackpink: 'cinematic blackpink style text "TEXT", hot pink graffiti brush, crown, heart, kpop aesthetic 4k',
+  metallic:  'cinematic chrome metallic 3D text "TEXT", silver steel letters, metal chains, dark reflective 4k',
+  devil:     'cinematic demonic red text "TEXT", devil horns, trident, dark red hellfire, evil style 4k',
+  light:     'cinematic glowing divine light text "TEXT" with crown, bright heavenly rays, soft clouds golden 4k',
+  sand:      'photorealistic text "TEXT" carved written in beach sand, top-down view, sunny beach, sand texture 4k',
+  thunder:   'cinematic 3D rocky metallic text "TEXT" with blue lightning bolts, stormy dark clouds, electric water reflection 4k',
+  hacker:    'cinematic green neon hacker text "TEXT", hooded figure with glowing smile mask, matrix code, dark room 4k',
+  naruto:    'anime Naruto style art, ninja character, bold orange black text logo "TEXT", Konoha village background 4k',
+  paper:     'text "TEXT" written on paper handwritten',
+  glow:      'glowing neon text "TEXT" soft glow dark background 4k',
+  gold:      'golden luxury 3D text "TEXT" shiny gold letters 4k',
+  rainbow:   'colorful rainbow text "TEXT" vibrant multicolor 4k'
 };
 
 async function generateTextImage(effect, text) {
   const q = String(text || '').slice(0, 40).trim();
   if (!q) return null;
-
   const style = String(effect || 'neon').toLowerCase();
-  const stylePrompt = TEXTMAKER_STYLES[style] || TEXTMAKER_STYLES.neon || 'cool text effect';
+  const template = TEXTMAKER_STYLES[style] || TEXTMAKER_STYLES.neon;
+  const prompt = template.replace(/TEXT/g, q) + ', masterpiece, centered text, no watermark, ultra detailed';
 
-  // Build a strong prompt matching the sample quality the user wants
-  const prompt = `${stylePrompt}, the text says "${q}", highly detailed, 4k, dramatic lighting, centered text, masterpiece`;
+  // 1) Keith Flux (matches your sample quality)
+  try {
+    const data = await keithGet('/ai/flux?q=' + encodeURIComponent(prompt), 90000);
+    let url = null;
+    if (data) {
+      url = (typeof data.result === 'string' && data.result.startsWith('http')) ? data.result
+        : (data.result?.url || data.url || data.image || keithExtractUrl(data));
+    }
+    if (url && String(url).startsWith('http')) {
+      const buf = await fetchBuffer(String(url), 90000);
+      if (buf && buf.length > 2000) return buf;
+    }
+  } catch (e) { console.log('flux:', (e.message||'').slice(0,60)); }
 
-  // ========== 1) AI Image generation (closest to your samples) ==========
-  const aiUrls = [
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=720&nologo=true&enhance=true`,
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`,
-    `https://text.pollinations.ai/image/${encodeURIComponent(prompt)}?width=1280&height=720`
-  ];
+  // 2) Keith magicstudio
+  try {
+    const data = await keithGet('/ai/magicstudio?prompt=' + encodeURIComponent(prompt), 90000);
+    const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
+    if (url && String(url).startsWith('http')) {
+      const buf = await fetchBuffer(String(url), 90000);
+      if (buf && buf.length > 2000) return buf;
+    }
+  } catch {}
 
-  for (const url of aiUrls) {
+  // 3) Pollinations
+  for (const url of [
+    'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1280&height=720&nologo=true&enhance=true',
+    'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1024&height=1024&nologo=true'
+  ]) {
     try {
       const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 60000 });
       if (r.status >= 400 || !r.data) continue;
       const buf = Buffer.from(r.data);
       if (buf.length < 2000) continue;
-      const head = buf.slice(0, 20).toString('utf8').toLowerCase();
+      const head = buf.slice(0, 15).toString('utf8').toLowerCase();
       if (head.includes('<!doctype') || head.includes('<html') || head.includes('{')) continue;
-      const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-      const isPng  = buf[0] === 0x89 && buf[1] === 0x50;
-      const isWebp = buf.slice(0, 4).toString() === 'RIFF';
-      if (isJpeg || isPng || isWebp) return buf;
+      if ((buf[0]===0xFF&&buf[1]===0xD8)||(buf[0]===0x89&&buf[1]===0x50)) return buf;
     } catch {}
   }
 
-  // ========== 2) Photo360 / ephoto fallbacks ==========
+  // 4) ephoto fallback
   try {
     const { generateTextImage: real } = require('./apis');
     const buf = await real(effect, text);
     if (buf && Buffer.isBuffer(buf) && buf.length > 500) return buf;
   } catch {}
-
-  const aliases = {
-    neon: ['neon', 'neon-light'], fire: ['fire', 'flame-letter'], glitch: ['glitch'],
-    ice: ['ice'], matrix: ['matrix'], luxury: ['luxury-gold', 'gold'], blackpink: ['blackpink'],
-    metallic: ['metallic'], devil: ['devil-wings'], light: ['light-text'], sand: ['sand', 'writing-sand'],
-    thunder: ['thunder', 'lightning'], hacker: ['matrix', 'hacker'], naruto: ['anime']
-  };
-  const list = aliases[style] || [style];
-  for (const s of list) {
-    const urls = [
-      `https://api.siputzx.my.id/api/ephoto/${encodeURIComponent(s)}?text=${encodeURIComponent(q)}`,
-      `https://api.ryzendesu.vip/api/ephoto/${encodeURIComponent(s)}?text=${encodeURIComponent(q)}`,
-      `https://api.giftedtech.web.id/api/ephoto360/${encodeURIComponent(s)}?apikey=gifted&text=${encodeURIComponent(q)}`
-    ];
-    for (const url of urls) {
-      try {
-        const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 40000 });
-        if (r.status >= 400 || !r.data) continue;
-        const buf = Buffer.from(r.data);
-        if (buf.length < 800) continue;
-        const head = buf.slice(0, 20).toString('utf8').toLowerCase();
-        if (head.includes('<!doctype') || head.includes('<html') || head.includes('{')) continue;
-        if ((buf[0] === 0xFF && buf[1] === 0xD8) || (buf[0] === 0x89 && buf[1] === 0x50)) return buf;
-      } catch {}
-    }
-  }
   return null;
 }
 
-
-// ============ MAIN BOT ============
 async function startBot() {
   await ensureData();
   if (typeof config.FONT === 'undefined') config.FONT = 'random';
@@ -1443,33 +1614,38 @@ async function startBot() {
         if (!phone) {
           phone = await jidToPhoneAsync(p, null, id);
         }
-        if (!phone && !String(p).includes('@lid')) {
+        // Direct from jid if normal number
+        if (!phone) {
           const raw = String(p).split('@')[0].split(':')[0];
           if (/^\d{6,15}$/.test(raw)) phone = raw;
         }
-
-        let pushName = entry?.name || null;
-        if (!pushName) {
-          try { pushName = await sock.getName(p); } catch {}
-        }
-        if (!pushName || pushName === 'Unknown' || pushName === 'User') {
-          pushName = null;
+        // Last resort: any digits from the jid
+        if (!phone) {
+          const digits = String(p).replace(/\D/g, '');
+          if (digits.length >= 6 && digits.length <= 15) phone = digits;
         }
 
-        const tag = phone
-          ? '@' + phone
-          : (pushName ? '@' + String(pushName).replace(/[@\n]/g, '').trim() : '@user');
+        // Build tag - NEVER use literal "@user"
+        let tag;
+        if (phone) {
+          tag = '@' + phone;
+        } else if (entry?.name && entry.name !== 'Unknown' && entry.name !== 'User') {
+          tag = '@' + String(entry.name).replace(/[@\n]/g, '').trim();
+        } else {
+          // Use the local part of jid so something real always shows
+          const local = String(p).split('@')[0].split(':')[0];
+          tag = '@' + (local || 'member');
+        }
 
-        const mentionJid = phone
-          ? phone + '@s.whatsapp.net'
-          : p;
+        const mentionJid = phone ? (phone + '@s.whatsapp.net') : p;
 
         if (action === 'add' && config.WELCOME) {
           const raw = (config.WELCOME_MSG || 'Welcome @user to *@group*!')
             .replace(/@user/gi, tag)
             .replace(/@group/gi, gname);
+          // Send WITHOUT heavy font styling so the phone number stays readable
           await sock.sendMessage(id, {
-            text: styleReplyText(raw),
+            text: raw + buildFooter(),
             mentions: [mentionJid, p].filter(Boolean)
           });
         }
@@ -1479,7 +1655,7 @@ async function startBot() {
             .replace(/@user/gi, tag)
             .replace(/@group/gi, gname);
           await sock.sendMessage(id, {
-            text: styleReplyText(raw),
+            text: raw + buildFooter(),
             mentions: [mentionJid, p].filter(Boolean)
           });
         }
@@ -1981,7 +2157,7 @@ async function startBot() {
           let displayName = 'User';
           try {
             const jid = config.OWNER_NUMBER + '@s.whatsapp.net';
-            const realName = await sock.getName(jid).catch(() => null);
+            const realName = null;
             if (realName && realName.trim() && realName !== 'User' && realName !== 'Unknown') {
               displayName = String(realName).replace(/[@\n]/g, '').trim().slice(0, 30);
             }
@@ -2043,11 +2219,11 @@ async function startBot() {
         await reply('⏳ Searching & downloading…');
         const q = text.replace(/\s+/g, ' ').trim();
         let data = await downloadYouTube(q, true);
-        if (!data?.buffer && q.split(' ').length > 2) {
+        if (!data?.buffer && !data?.url && q.split(' ').length > 2) {
           const simple = q.split(' ').filter(w => w.length > 2).join(' ');
           if (simple && simple !== q) data = await downloadYouTube(simple, true);
         }
-        if (!data?.buffer) { await reply('❌ Could not find that track.\nTry a clearer name or paste a YouTube link.'); return; }
+        if (!data?.buffer && !data?.url) { await reply('❌ Could not find that track.\nTry a clearer name or paste a YouTube link.'); return; }
         const ok = await sendAsMp3(sock, from, data);
         if (!ok) await reply('❌ Downloaded but failed to send audio.');
         return;
@@ -2059,11 +2235,11 @@ async function startBot() {
         await reply('⏳ Downloading video…');
         const q = text.replace(/\s+/g, ' ').trim();
         let data = await downloadYouTube(q, false);
-        if (!data?.buffer && q.split(' ').length > 2) {
+        if (!data?.buffer && !data?.url && q.split(' ').length > 2) {
           const simple = q.split(' ').filter(w => w.length > 2).join(' ');
           if (simple && simple !== q) data = await downloadYouTube(simple, false);
         }
-        if (!data?.buffer) { await reply('❌ Could not download video.\nTry a direct YouTube link.'); return; }
+        if (!data?.buffer && !data?.url) { await reply('❌ Could not download video.\nTry a direct YouTube link.'); return; }
         const ok = await sendAsVideo(sock, from, data);
         if (!ok) await reply('❌ Downloaded but failed to send video.');
         return;
@@ -2073,17 +2249,24 @@ async function startBot() {
       if (['tiktok', 'tt'].includes(cmd)) {
         if (!text || !text.includes('tiktok')) { await reply(`Usage: ${prefix}tiktok <url>`); return; }
         await reply('⏳ Downloading TikTok…');
-        let data = null;
+        let data = await downloadTiktokKeith(text);
+        if (!data?.url) {
+          try {
+            const r = await dlGet('https://tikwm.com/api/?url=' + encodeURIComponent(text));
+            const d = r?.data?.data;
+            if (d?.play) data = { url: d.play, title: d.title || 'TikTok' };
+          } catch {}
+        }
+        if (!data?.url) { await reply('❌ Failed to download TikTok'); return; }
         try {
-          const r = await dlGet('https://tikwm.com/api/?url=' + encodeURIComponent(text));
-          const d = r?.data?.data;
-          if (d?.play) data = { url: d.play, title: d.title || 'TikTok' };
-        } catch {}
-        if (!data) { await reply('❌ Failed'); return; }
-        try {
-          const buf = await fetchBuffer(data.url);
-          await sock.sendMessage(from, { video: buf, caption: '🎵 ' + data.title, mimetype: 'video/mp4' });
-        } catch { await reply(`✅ ${data.url}`); }
+          await sock.sendMessage(from, { video: { url: data.url }, caption: '🎵 ' + (data.title || 'TikTok'), mimetype: 'video/mp4' });
+        } catch {
+          try {
+            const buf = await fetchBuffer(data.url);
+            if (buf) await sock.sendMessage(from, { video: buf, caption: '🎵 ' + (data.title || 'TikTok'), mimetype: 'video/mp4' });
+            else await reply(`✅ ${data.url}`);
+          } catch { await reply(`✅ ${data.url}`); }
+        }
         return;
       }
 
@@ -2092,15 +2275,134 @@ async function startBot() {
         if (!text || !text.includes('instagram')) { await reply(`Usage: ${prefix}ig <url>`); return; }
         await reply('⏳ Downloading Instagram…');
         try {
-          const r = await dlGet('https://api.siputzx.my.id/api/d/igdl?url=' + encodeURIComponent(text));
-          const arr = r?.data?.data || r?.data?.result || [];
-          const first = Array.isArray(arr) ? arr[0] : null;
-          const url = first?.url || first?.download_link || first;
-          if (!url) { await reply('❌ Failed'); return; }
-          const isV = String(url).includes('.mp4') || first?.type === 'video';
-          if (isV) await sock.sendMessage(from, { video: { url: String(url) }, caption: '📸 Instagram' });
-          else await sock.sendMessage(from, { image: { url: String(url) }, caption: '📸 Instagram' });
-        } catch { await reply('❌ IG failed'); }
+          let urls = [];
+          const keith = await downloadInstagramKeith(text);
+          if (keith?.urls?.length) urls = keith.urls;
+          if (!urls.length) {
+            const r = await dlGet('https://api.siputzx.my.id/api/d/igdl?url=' + encodeURIComponent(text));
+            const arr = r?.data?.data || r?.data?.result || [];
+            if (Array.isArray(arr)) urls = arr.map(x => x.url || x.download_link || x).filter(u => typeof u === 'string' && String(u).startsWith('http'));
+            else if (arr?.url) urls = [arr.url];
+          }
+          if (!urls.length) { await reply('❌ Failed to download Instagram'); return; }
+          for (const url of urls.slice(0, 5)) {
+            const isV = /\.(mp4|webm|mov)(\?|$)/i.test(String(url)) || String(url).includes('video');
+            if (isV) await sock.sendMessage(from, { video: { url: String(url) }, caption: '📸 Instagram' });
+            else await sock.sendMessage(from, { image: { url: String(url) }, caption: '📸 Instagram' });
+          }
+        } catch (e) { await reply('❌ IG failed: ' + (e.message || '').slice(0, 80)); }
+        return;
+      }
+
+      // ========== XVIDEOS (Keith API) ==========
+      if (['xvideos', 'xv', 'xnxx'].includes(cmd)) {
+        if (!text) {
+          await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <xvideos.com url>`);
+          return;
+        }
+        const isUrl = /xvideos\.com|xnxx\.com/i.test(text);
+        if (isUrl) {
+          await reply('⏳ Downloading…');
+          const data = await downloadXvideosKeith(text.trim());
+          if (!data?.url) { await reply('❌ Download failed'); return; }
+          try {
+            await sock.sendMessage(from, {
+              video: { url: data.url },
+              caption: `🎬 *${data.title}*${data.size ? '\n📦 ' + data.size : ''}`,
+              mimetype: 'video/mp4'
+            });
+          } catch {
+            try {
+              const buf = await fetchBuffer(data.url, 180000);
+              if (buf) await sock.sendMessage(from, { video: buf, caption: `🎬 *${data.title}*`, mimetype: 'video/mp4' });
+              else await reply(`✅ ${data.url}`);
+            } catch { await reply(`✅ ${data.url}`); }
+          }
+        } else {
+          await reply('⏳ Searching…');
+          const list = await searchXvideosKeith(text);
+          if (!list.length) { await reply('❌ No results'); return; }
+          let msg = `🔍 *XVideos results for:* ${text}\n\n`;
+          list.forEach((v, i) => {
+            msg += `*${i + 1}.* ${v.title}\n⏱ ${v.duration || '?'}\n🔗 ${v.url}\n\n`;
+          });
+          msg += `_Reply with ${prefix}xvideos <url> to download_`;
+          await reply(msg.slice(0, 4000));
+        }
+        return;
+      }
+
+
+      // ========== FUN (Keith) ==========
+      if (['joke', 'jokes', 'meme', 'fact', 'quote', 'truth', 'dare', 'pickup', 'insult'].includes(cmd)) {
+        const map = {
+          joke: '/fun/jokes', jokes: '/fun/jokes', meme: '/fun/meme', fact: '/fun/fact',
+          quote: '/fun/quote', truth: '/fun/truth', dare: '/fun/dare',
+          pickup: '/fun/pickuplines', insult: '/fun/insult'
+        };
+        const data = await keithGet(map[cmd], 20000);
+        let textOut = null;
+        if (data) {
+          textOut = data.result || data.joke || data.meme || data.fact || data.quote || data.message || data.data;
+          if (typeof textOut === 'object') textOut = textOut.joke || textOut.text || textOut.quote || textOut.meme || JSON.stringify(textOut).slice(0, 500);
+        }
+        if (cmd === 'meme' && textOut && String(textOut).startsWith('http')) {
+          await sock.sendMessage(from, { image: { url: String(textOut) }, caption: '😂 Meme' });
+        } else if (textOut) {
+          await reply(String(textOut).slice(0, 2000));
+        } else await reply('❌ Try again');
+        return;
+      }
+
+      // ========== NEWS (Keith) ==========
+      if (cmd === 'news') {
+        const src = (text || 'bbc').toLowerCase();
+        const path = src.includes('tech') ? '/news/tech' : src.includes('citizen') ? '/news/citizen' : src.includes('ntv') ? '/news/ntv' : src.includes('kbc') ? '/news/kbc' : src.includes('kenya') ? '/news/kenyans' : '/news/bbc';
+        await reply('⏳ Fetching news…');
+        const data = await keithGet(path, 25000);
+        if (!data || data.status === false) { await reply('❌ News unavailable'); return; }
+        let items = data.result || data.data || data.articles || data;
+        if (!Array.isArray(items)) items = [items];
+        let msg = '📰 *News*\n\n';
+        for (const it of items.slice(0, 8)) {
+          if (typeof it === 'string') msg += `• ${it}\n`;
+          else msg += `• *${it.title || it.headline || 'Story'}*\n${it.description || it.summary || it.url || ''}\n\n`;
+        }
+        await reply(msg.slice(0, 3500));
+        return;
+      }
+
+      // ========== SPORTS (Keith) ==========
+      if (['livescore', 'epl', 'standings', 'scorers'].includes(cmd)) {
+        await reply('⏳ Sports data…');
+        let path = '/livescore';
+        if (cmd === 'epl') path = text && text.includes('stand') ? '/epl/standings' : text && text.includes('scorer') ? '/epl/scorers' : '/epl/matches';
+        if (cmd === 'standings') path = '/epl/standings';
+        if (cmd === 'scorers') path = '/epl/scorers';
+        if (cmd === 'livescore') path = '/livescore';
+        const data = await keithGet(path, 25000);
+        if (!data || data.status === false) { await reply('❌ Sports data unavailable'); return; }
+        let out = data.result || data.data || data;
+        if (typeof out === 'object') out = JSON.stringify(out, null, 1).slice(0, 3000);
+        await reply(`⚽ *${cmd.toUpperCase()}*\n\n${String(out).slice(0, 3000)}`);
+        return;
+      }
+
+      // ========== AI IMAGE / IMAGINE (Keith Flux) ==========
+      if (['imagine', 'flux', 'draw', 'aiimage'].includes(cmd)) {
+        if (!text) { await reply(`Usage: ${prefix}imagine <prompt>`); return; }
+        await reply('🎨 Generating image…');
+        try {
+          const data = await keithGet('/ai/flux?q=' + encodeURIComponent(text), 90000);
+          const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
+          if (url && String(url).startsWith('http')) {
+            await sock.sendMessage(from, { image: { url: String(url) }, caption: `🎨 ${text.slice(0, 80)}` });
+          } else {
+            // pollinations fallback
+            const pUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(text) + '?width=1024&height=1024&nologo=true';
+            await sock.sendMessage(from, { image: { url: pUrl }, caption: `🎨 ${text.slice(0, 80)}` });
+          }
+        } catch (e) { await reply('❌ Image gen failed'); }
         return;
       }
 
@@ -2881,7 +3183,7 @@ async function startBot() {
           await sock.groupParticipantsUpdate(from, users, action);
           const labels = [];
           for (const u of users) {
-            const name = getDisplayName(u, m) || (await sock.getName(u).catch(() => null)) || u.split('@')[0];
+            const name = getDisplayName(u, m) || (String(u).split('@')[0].split(':')[0]) || 'user';
             labels.push(name.startsWith('@') ? name : '@' + name);
           }
           await sock.sendMessage(from, { text: styleReplyText(`✅ *${cmd.toUpperCase()}*\n${labels.join(', ')} ${cmd === 'kick' ? 'removed' : cmd + 'd'}.`), mentions: users });
