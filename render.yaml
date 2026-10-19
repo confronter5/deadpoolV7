@@ -1,26 +1,12 @@
-# Pair dashboard (Web Service)
 services:
   - type: web
-    name: deadpoolv7-pair
-    env: node
-    buildCommand: npm install
+    name: deadpool-pair
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
     startCommand: node server.js
     envVars:
-      - key: DEV_LINK
-        value: https://wa.me/254796283064
-      - key: BOT_NAME
-        value: Deadpool V7
-      - key: POWERED_BY
-        value: Powered by @confronter ©2026
-
-  # Bot worker (optional second service — set SESSION in dashboard)
-  - type: worker
-    name: deadpoolv7-bot
-    env: node
-    buildCommand: npm install
-    startCommand: node index.js
-    envVars:
-      - key: SESSION
-        sync: false
-      - key: OWNER_NUMBER
-        sync: false
+      - key: NODE_VERSION
+        value: "22"
+      - key: CONFRONTER_API
+        value: https://apis.techwizardx.top
