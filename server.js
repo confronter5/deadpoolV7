@@ -422,7 +422,7 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 // ==================== MUSIC (Confronter APIs — real songs) ====================
-const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://confronter-apis.onrender.com').replace(/\/+$/, '');
 
 async function confronterGet(path, timeout = 60000) {
   const p = path.startsWith('/') ? path : '/' + path;
@@ -434,6 +434,84 @@ async function confronterGet(path, timeout = 60000) {
   });
   if (r.status >= 400) throw new Error('API HTTP ' + r.status);
   return r.data;
+}
+
+
+/** Resolve song name / query → first YouTube watch URL (local yt-search) */
+async function resolveYoutubeUrl(query) {
+  const q = String(query || '').trim();
+  if (!q) return null;
+  if (/^https?:\/\//i.test(q) && /(youtube\.com|youtu\.be)/i.test(q)) return q;
+  if (/^https?:\/\//i.test(q)) return q; // allow direct media URLs
+
+  // 1) yt-search (in package.json)
+  try {
+    const yts = require('yt-search');
+    const r = await yts(q);
+    const v = (r.videos || [])[0];
+    if (v?.url) return v.url;
+    if (v?.videoId) return 'https://www.youtube.com/watch?v=' + v.videoId;
+  } catch (e) {
+    console.log('yt-search:', e.message);
+  }
+
+  // 2) youtube-sr
+  try {
+    const YouTube = require('youtube-sr').default || require('youtube-sr');
+    const list = await YouTube.search(q, { limit: 3, type: 'video' });
+    if (list?.[0]?.url) return list[0].url;
+    if (list?.[0]?.id) return 'https://www.youtube.com/watch?v=' + list[0].id;
+  } catch (e) {
+    console.log('youtube-sr:', e.message);
+  }
+
+  // 3) Confronter search endpoints (if any)
+  for (const path of [
+    '/search/yts?query=',
+    '/search/youtube?q=',
+    '/api/search/yts?query='
+  ]) {
+    try {
+      const data = await confronterGet(path + encodeURIComponent(q), 25000);
+      const list = data?.result?.results || data?.result || data?.data || [];
+      const arr = Array.isArray(list) ? list : [];
+      const first = arr[0];
+      if (first?.url) return first.url;
+      if (first?.id) return 'https://www.youtube.com/watch?v=' + first.id;
+    } catch {}
+  }
+  return null;
+}
+
+async function searchYoutubeList(query, limit = 10) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  try {
+    const yts = require('yt-search');
+    const r = await yts(q);
+    return (r.videos || []).slice(0, limit).map((v) => ({
+      title: v.title,
+      url: v.url,
+      duration: v.timestamp || v.duration?.timestamp || null,
+      channel: v.author?.name || v.author?.url || null,
+      views: v.views || null,
+      thumbnail: v.thumbnail || null
+    }));
+  } catch (e) {
+    console.log('searchYoutubeList:', e.message);
+  }
+  try {
+    const YouTube = require('youtube-sr').default || require('youtube-sr');
+    const list = await YouTube.search(q, { limit, type: 'video' });
+    return (list || []).map((v) => ({
+      title: v.title,
+      url: v.url || (v.id ? 'https://www.youtube.com/watch?v=' + v.id : null),
+      duration: v.durationFormatted || null,
+      channel: v.channel?.name || null,
+      thumbnail: v.thumbnail?.url || null
+    })).filter((x) => x.url);
+  } catch {}
+  return [];
 }
 
 function extractMediaUrl(data) {
@@ -482,27 +560,8 @@ app.get('/api/music/search', async (req, res) => {
   try {
     const q = String(req.query.q || req.query.query || '').trim();
     if (!q) return res.status(400).json({ status: false, error: 'Missing q' });
-    // Prefer search endpoint if available
-    try {
-      const data = await confronterGet('/search/yts?query=' + encodeURIComponent(q), 45000);
-      const list = data?.result?.results || data?.result || [];
-      if (Array.isArray(list) && list.length) {
-        return res.json({
-          status: true,
-          results: list.slice(0, 12).map((x) => ({
-            title: x.title || 'Video',
-            url: x.url || (x.id ? 'https://www.youtube.com/watch?v=' + x.id : null),
-            duration: x.duration || null,
-            channel: x.channel || x.uploader || null
-          })).filter((x) => x.url)
-        });
-      }
-    } catch {}
-    // Fallback: treat query as title (single result)
-    return res.json({
-      status: true,
-      results: [{ title: q, url: null, query: q, note: 'Use /api/music/play?q= for direct play' }]
-    });
+    const results = await searchYoutubeList(q, 12);
+    return res.json({ status: true, results });
   } catch (e) {
     res.status(502).json({ status: false, error: e.message });
   }
@@ -521,31 +580,28 @@ app.get('/api/music/play', async (req, res) => {
       return res.json({ status: true, ...cached.data });
     }
 
-    let ytUrl = /^https?:\/\//i.test(q) ? q : null;
+    // Name → YouTube URL (API needs full URL — search alone is not enough)
+    const ytUrl = await resolveYoutubeUrl(q);
     if (!ytUrl) {
-      // search first hit
-      try {
-        const data = await confronterGet('/search/yts?query=' + encodeURIComponent(q), 45000);
-        const list = data?.result?.results || data?.result || [];
-        if (Array.isArray(list) && list[0]?.url) ytUrl = list[0].url;
-        else if (list[0]?.id) ytUrl = 'https://www.youtube.com/watch?v=' + list[0].id;
-      } catch {}
-    }
-    if (!ytUrl) {
-      // still try download with raw query as url fails — use search-less: many engines need full URL
-      return res.status(404).json({ status: false, error: 'No video found for query' });
+      return res.status(404).json({
+        status: false,
+        error: 'No video found for query. Try a clearer name or paste a YouTube link.'
+      });
     }
 
     const path =
       type === 'video'
         ? '/download/ytmp4?url=' + encodeURIComponent(ytUrl)
         : '/download/ytmp3?url=' + encodeURIComponent(ytUrl);
+
     const data = await confronterGet(path, 90000);
     if (!data || data.status === false) {
-      return res.status(502).json({ status: false, error: data?.error || 'Download failed' });
+      return res.status(502).json({ status: false, error: data?.error || 'Download failed', youtubeUrl: ytUrl });
     }
     const mediaUrl = extractMediaUrl(data);
-    if (!mediaUrl) return res.status(502).json({ status: false, error: 'No media URL' });
+    if (!mediaUrl) {
+      return res.status(502).json({ status: false, error: 'No media URL from API', youtubeUrl: ytUrl });
+    }
     const meta = extractMeta(data);
     const payload = {
       title: meta.title || q,
