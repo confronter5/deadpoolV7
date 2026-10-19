@@ -17,7 +17,7 @@ const {
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
 const axios = require('axios');
-const { searchSong } = require('./apis');
+let searchSong = null; try { searchSong = require('./apis').searchSong; } catch {}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -428,67 +428,176 @@ app.get('/api/session/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== MUSIC (Audius) ====================
-// Real searchable tracks (Audius has indie/creative-commons heavy catalog)
-// Queries tuned so searchSong finds streamable results with real titles
+// ==================== MUSIC (Confronter APIs — real songs) ====================
+const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+
+async function confronterGet(apiPath, timeout = 90000) {
+  let p = apiPath.startsWith('/') ? apiPath : '/' + apiPath;
+  if (!p.startsWith('/api/')) p = '/api' + p;
+  const url = CONFRONTER_API + p;
+  const r = await axios.get(url, {
+    timeout,
+    headers: { 'User-Agent': 'DeadpoolPair/1.0', Accept: 'application/json' },
+    validateStatus: () => true
+  });
+  if (r.status >= 400) throw new Error('API HTTP ' + r.status);
+  return r.data;
+}
+
+function extractMediaUrl(data) {
+  if (!data) return null;
+  if (typeof data === 'string' && /^https?:\/\//i.test(data)) return data;
+  const r = data.result && typeof data.result === 'object' ? data.result : data;
+  return (
+    r.url || r.dl || r.download || r.download_url || r.audio || r.video ||
+    r.high || r.low ||
+    (typeof data.result === 'string' && /^https?:\/\//i.test(data.result) ? data.result : null)
+  );
+}
+
+function extractMeta(data) {
+  const r = data?.result && typeof data.result === 'object' ? data.result : (data || {});
+  return {
+    title: r.title || r.name || null,
+    artist: r.artist || r.author || r.channel || r.uploader || null,
+    thumbnail: r.thumbnail || r.thumb || null
+  };
+}
+
+/** Name or YouTube URL → watch URL */
+async function resolveYoutubeUrl(query) {
+  const q = String(query || '').trim();
+  if (!q) return null;
+  if (/^https?:\/\//i.test(q) && /(youtube\.com|youtu\.be)/i.test(q)) return q;
+
+  try {
+    const yts = require('yt-search');
+    const r = await yts(q);
+    const v = (r.videos || [])[0];
+    if (v?.url) return v.url;
+    if (v?.videoId) return 'https://www.youtube.com/watch?v=' + v.videoId;
+  } catch (e) {
+    log('yt-search', e.message);
+  }
+  try {
+    const YT = require('youtube-sr').default || require('youtube-sr');
+    const list = await YT.search(q, { limit: 1, type: 'video' });
+    if (list?.[0]?.url) return list[0].url;
+    if (list?.[0]?.id) return 'https://www.youtube.com/watch?v=' + list[0].id;
+  } catch (e) {
+    log('youtube-sr', e.message);
+  }
+  return null;
+}
+
+// Real popular tracks (resolved via YouTube + your API)
 const MUSIC_TRACKS = [
-  { q: 'electronic chill beats',        name: 'Chill Electronic Beats' },
-  { q: 'lofi hip hop study',            name: 'Lo-Fi Hip Hop' },
-  { q: 'dance pop upbeat',              name: 'Upbeat Dance Pop' },
-  { q: 'afrobeats summer',              name: 'Afrobeats Summer' },
-  { q: 'trap instrumental banger',      name: 'Trap Instrumental' },
-  { q: 'reggae roots vibes',            name: 'Reggae Roots' },
-  { q: 'house music progressive',       name: 'Progressive House' },
-  { q: 'rnb soul smooth',               name: 'Smooth R&B Soul' },
-  { q: 'drill type beat',               name: 'Drill Type Beat' },
-  { q: 'ambient atmospheric',           name: 'Ambient Atmosphere' },
-  { q: 'jazz lounge relax',             name: 'Jazz Lounge' },
-  { q: 'future bass energy',            name: 'Future Bass' }
+  { q: 'Alan Walker Faded', name: 'Alan Walker — Faded' },
+  { q: 'The Weeknd Blinding Lights', name: 'The Weeknd — Blinding Lights' },
+  { q: 'Ed Sheeran Shape of You', name: 'Ed Sheeran — Shape of You' },
+  { q: 'Burna Boy Last Last', name: 'Burna Boy — Last Last' },
+  { q: 'Rema Calm Down', name: 'Rema — Calm Down' },
+  { q: 'Sauti Sol Suzanna', name: 'Sauti Sol — Suzanna' },
+  { q: 'Central Cee Doja', name: 'Central Cee — Doja' },
+  { q: 'Lil Baby Woah', name: 'Lil Baby — Woah' },
+  { q: 'Diamond Platnumz Jeje', name: 'Diamond Platnumz — Jeje' },
+  { q: 'Vybz Kartel Fever', name: 'Vybz Kartel — Fever' }
 ];
 const musicCache = new Map();
 
 app.get('/api/music/playlist', (req, res) => {
-  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name })) });
+  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name, q: t.q })) });
 });
 
 app.get('/api/music/:index', async (req, res) => {
   const idx = Number(req.params.index) || 0;
   const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
   const track = MUSIC_TRACKS[i];
-  let name = track.name;
-  try {
-    const data = await searchSong(track.q);
-    if (data?.title) {
-      name = data.artist ? `${data.artist} — ${data.title}` : data.title;
-    }
-  } catch {}
   res.json({
     i,
-    name,
+    name: track.name,
+    q: track.q,
     url: '/api/stream-song/' + encodeURIComponent(track.q),
     next: (i + 1) % MUSIC_TRACKS.length
   });
 });
 
+/** Resolve + download real audio via apis.techwizardx.top ytmp3 */
 app.get('/api/stream-song/:query', async (req, res) => {
   try {
     const query = String(req.params.query || '').trim();
     if (!query) return res.status(400).json({ error: 'query required' });
+
     const cached = musicCache.get(query);
-    if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
-    const data = await searchSong(query);
-    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
-    // Always return real title/artist from Audius (never "unknown")
+    if (cached && Date.now() - cached.ts < 25 * 60 * 1000) return res.json(cached.data);
+
+    const ytUrl = await resolveYoutubeUrl(query);
+    if (!ytUrl) return res.status(404).json({ error: 'No video found', query });
+
+    const data = await confronterGet('/download/ytmp3?url=' + encodeURIComponent(ytUrl), 90000);
+    if (!data || data.status === false) {
+      return res.status(502).json({ error: data?.error || 'Download failed', youtubeUrl: ytUrl });
+    }
+    const streamUrl = extractMediaUrl(data);
+    if (!streamUrl) return res.status(502).json({ error: 'No media URL', youtubeUrl: ytUrl });
+
+    const meta = extractMeta(data);
+    // Same-origin proxy so browser can play (googlevideo blocks CORS)
+    const proxy = '/api/music/proxy?u=' + encodeURIComponent(streamUrl);
     const payload = {
-      title: data.title || query,
-      artist: data.artist || 'Artist',
-      streamUrl: data.streamUrl,
-      artwork: data.artwork || null,
-      name: `${data.artist || 'Artist'} — ${data.title || query}`
+      title: meta.title || query,
+      artist: meta.artist || 'YouTube',
+      streamUrl: proxy,
+      directUrl: streamUrl,
+      youtubeUrl: ytUrl,
+      artwork: meta.thumbnail || null,
+      name: [meta.artist, meta.title || query].filter(Boolean).join(' — ')
     };
     musicCache.set(query, { data: payload, ts: Date.now() });
     res.json(payload);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Proxy stream for <audio> playback */
+app.get('/api/music/proxy', async (req, res) => {
+  try {
+    let mediaUrl = String(req.query.u || req.query.url || '').trim();
+    if (!mediaUrl) return res.status(400).json({ error: 'Missing u' });
+    try { mediaUrl = decodeURIComponent(mediaUrl); } catch {}
+    if (!/^https?:\/\//i.test(mediaUrl)) return res.status(400).json({ error: 'Invalid url' });
+
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: '*/*',
+      Referer: 'https://www.youtube.com/',
+      Origin: 'https://www.youtube.com'
+    };
+    if (req.headers.range) headers.Range = req.headers.range;
+
+    const upstream = await axios.get(mediaUrl, {
+      responseType: 'stream',
+      timeout: 120000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+      headers
+    });
+    if (upstream.status >= 400) {
+      return res.status(502).json({ error: 'Upstream HTTP ' + upstream.status });
+    }
+    res.status(upstream.status === 206 ? 206 : 200);
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (upstream.headers['content-length']) res.setHeader('Content-Length', upstream.headers['content-length']);
+    if (upstream.headers['content-range']) res.setHeader('Content-Range', upstream.headers['content-range']);
+    upstream.data.on('error', () => { try { res.end(); } catch {} });
+    upstream.data.pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: e.message });
+  }
 });
 
 app.get('/api/music/stream/:index', async (req, res) => {
@@ -496,21 +605,36 @@ app.get('/api/music/stream/:index', async (req, res) => {
     const idx = Number(req.params.index) || 0;
     const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
     const track = MUSIC_TRACKS[i];
-    let data = musicCache.get(track.q)?.data;
-    if (!data?.streamUrl) {
-      data = await searchSong(track.q);
-      if (data?.streamUrl) musicCache.set(track.q, { data, ts: Date.now() });
+    // Reuse stream-song logic via internal call shape
+    const r = await axios.get(
+      `http://127.0.0.1:${PORT}/api/stream-song/` + encodeURIComponent(track.q),
+      { timeout: 100000, validateStatus: () => true }
+    );
+    const streamUrl = r.data?.directUrl || r.data?.streamUrl;
+    if (!streamUrl || streamUrl.startsWith('/')) {
+      // if only proxy path, resolve direct
+      if (r.data?.directUrl) {
+        const upstream = await axios.get(r.data.directUrl, {
+          responseType: 'stream', timeout: 90000, validateStatus: () => true,
+          headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://www.youtube.com/' }
+        });
+        if (upstream.status >= 400) return res.status(502).json({ error: 'Upstream failed' });
+        res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
+        return upstream.data.pipe(res);
+      }
+      return res.status(404).json({ error: 'No audio' });
     }
-    if (!data?.streamUrl) return res.status(404).json({ error: 'No audio' });
-    const upstream = await axios.get(data.streamUrl, {
+    const upstream = await axios.get(streamUrl, {
       responseType: 'stream', timeout: 90000, validateStatus: () => true,
-      headers: { 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5
+      headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://www.youtube.com/' }
     });
     if (upstream.status >= 400) return res.status(502).json({ error: 'Upstream failed' });
     res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=1800');
     return upstream.data.pipe(res);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
