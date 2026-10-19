@@ -17,7 +17,7 @@ const {
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
 const axios = require('axios');
-let searchSong; try { searchSong = require('./apis').searchSong; } catch (e) { console.log('apis.js optional:', e.message); searchSong = null; }
+const { searchSong } = require('./apis');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -450,11 +450,9 @@ app.get('/api/music/:index', async (req, res) => {
   const track = MUSIC_TRACKS[i];
   let name = track.name;
   try {
-    if (searchSong) {
-      const data = await searchSong(track.q);
-      if (data?.title) {
-        name = data.artist ? `${data.artist} — ${data.title}` : data.title;
-      }
+    const data = await searchSong(track.q);
+    if (data?.title) {
+      name = data.artist ? `${data.artist} — ${data.title}` : data.title;
     }
   } catch {}
   res.json({
@@ -471,9 +469,9 @@ app.get('/api/stream-song/:query', async (req, res) => {
     if (!query) return res.status(400).json({ error: 'query required' });
     const cached = musicCache.get(query);
     if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
-    if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
     const data = await searchSong(query);
     if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
+    // Always return real title/artist from Audius (never "unknown")
     const payload = {
       title: data.title || query,
       artist: data.artist || 'Artist',
@@ -493,7 +491,6 @@ app.get('/api/music/stream/:index', async (req, res) => {
     const track = MUSIC_TRACKS[i];
     let data = musicCache.get(track.q)?.data;
     if (!data?.streamUrl) {
-      if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
       data = await searchSong(track.q);
       if (data?.streamUrl) musicCache.set(track.q, { data, ts: Date.now() });
     }
@@ -509,7 +506,7 @@ app.get('/api/music/stream/:index', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-;
+app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
 
 // ---------- Keep-alive (stop free dyno sleep) ----------
 const KEEP_URL = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
