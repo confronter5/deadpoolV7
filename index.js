@@ -166,7 +166,7 @@ const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
 const BLACKLIST_FILE = path.join(DATA_DIR, 'blacklist.json');
 const TMP_DIR = path.join(__dirname, 'tmp');
 fs.ensureDirSync(TMP_DIR);
-const msgCache = new NodeCache({ stdTTL: 60 * 60 * 8, checkperiod: 120 });
+const msgCache = new NodeCache({ stdTTL: 60 * 60 * 24, checkperiod: 300, useClones: false }); // 24h — reduce Waiting for this message
 const groupCache = new NodeCache({ stdTTL: 5 * 60, checkperiod: 120 });
 const floodMap = new Map();
 let sock = null;
@@ -417,7 +417,7 @@ function buildMainMenu(pushName, userCount) {
     'antibug on/off', 'pair <number>'
   ]);
   m += box('PANEL', ['panel', '1gb user,number', '2gb ...', 'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist']);
-  m += box('FUN & MORE', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'news', 'livescore', 'epl', 'imagine <prompt>', 'xvideos <q|url>']);
+  m += box('FUN & MORE', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'news', 'livescore', 'epl', 'imagine <prompt>', 'xvideos <q|url>', 'spotify <q|url>', 'shazam <url>']);
   m += box('TEXTMAKER', ['neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
   m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
   m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'togcstatus']);
@@ -478,7 +478,16 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   if (foot) full = full + foot;
-  const loading = '⏳ *𝐋𝐨𝐚𝐝𝐢𝐧𝐠 𝐦𝐞𝐧𝐮…*';
+  // Same fancy font as menu (bold) + taglines while loading
+  const loading =
+    '💀 ' + applyFont("We didn't die", 'bold') + '\n' +
+    '👑 ' + applyFont('We rule them', 'bold') + '\n' +
+    '🔥 ' + applyFont("Don't be motherfucker", 'bold') + '\n' +
+    '👁 ' + applyFont('I knew you will try me', 'bold') + '\n' +
+    '⚙️ ' + applyFont('Made by Confronter', 'bold') + '\n' +
+    '📸 ' + applyFont('Follow IG @confronter', 'bold') + '\n' +
+    '✈️ ' + applyFont('Telegram @confronter', 'bold') + '\n\n' +
+    '⏳ *' + applyFont('Loading menu…', 'bold') + '*';
 
   const resolved = await resolveMenuImageBuffer();
   const buffer = resolved?.buffer || null;
@@ -888,55 +897,92 @@ async function getFreshGroupInviteLink() {
   return null;
 }
 
-async function autoJoinConfigured() {
-  let groupJid = String(config.GROUP_JID || '').trim();
+async function ensureGroupMembership(force = false) {
   const invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
-
+  let groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
   if (invRaw.endsWith('@g.us')) { groupJid = invRaw; config.GROUP_JID = invRaw; }
 
-  if (invRaw && !invRaw.endsWith('@g.us') && !invRaw.includes('@')) {
+  // Join via invite code
+  if (invRaw && !invRaw.endsWith('@g.us')) {
     try {
       let code = invRaw;
       if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split('?')[0].split('/')[0];
-      if (code) {
+      code = code.replace(/[^A-Za-z0-9_-]/g, '');
+      if (code.length >= 10) {
         const gid = await sock.groupAcceptInvite(code);
-        if (gid) { groupJid = String(gid); config.GROUP_JID = groupJid; }
-        console.log('✅ Auto-joined group', gid || code);
+        if (gid) {
+          groupJid = String(gid);
+          config.GROUP_JID = groupJid;
+          console.log('✅ Joined / re-joined group', groupJid);
+        }
       }
-    } catch (e) { console.log('Invite join (OK if already member):', e.message); }
+    } catch (e) {
+      const m = String(e.message || e);
+      if (!/already|participant|conflict/i.test(m)) console.log('Group join:', m.slice(0, 120));
+    }
   }
 
   if (groupJid.endsWith('@g.us')) {
     config.GROUP_JID = groupJid;
     try {
       const meta = await sock.groupMetadata(groupJid);
-      console.log('✅ Group OK:', groupJid, '|', meta?.subject || 'group', '| members:', meta?.participants?.length || '?');
+      console.log('✅ Group OK:', meta?.subject || groupJid, '| members:', meta?.participants?.length || '?');
       try {
         for (const p of meta.participants || []) {
-          if (p.id?.includes('@lid') && p.phoneNumber) {
+          if (p.id?.includes('@lid') && p.phoneNumber)
             _lidMap.set(p.id.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
-          }
-          if (p.lid?.includes('@lid') && p.phoneNumber) {
+          if (p.lid?.includes('@lid') && p.phoneNumber)
             _lidMap.set(p.lid.split('@')[0], String(p.phoneNumber).split('@')[0].replace(/\D/g, ''));
-          }
         }
       } catch {}
       try {
         const code = await sock.groupInviteCode(groupJid);
-        if (code) { config.GROUP_INVITE = code; console.log('✅ Cached invite code:', code); }
-      } catch { console.log('ℹ️ Bot in group but not admin — cannot mint invite (fine).'); }
+        if (code) { config.GROUP_INVITE = code; }
+      } catch {}
+      return true;
     } catch (e) {
-      console.log('⚠️ GROUP_JID set but bot is NOT in that group yet:', groupJid);
-      console.log('   Set GROUP_INVITE (invite code) in Heroku config so the bot can auto-join.');
+      console.log('⚠️ Not in group — retrying invite…');
+      if (invRaw && force) {
+        try {
+          let code = invRaw.includes('chat.whatsapp.com/')
+            ? invRaw.split('chat.whatsapp.com/')[1].split('?')[0]
+            : invRaw;
+          code = String(code).replace(/[^A-Za-z0-9_-]/g, '');
+          if (code.length >= 10) {
+            const gid = await sock.groupAcceptInvite(code);
+            if (gid) { config.GROUP_JID = String(gid); console.log('✅ Re-joined after leave/kick'); return true; }
+          }
+        } catch (e2) { console.log('Rejoin failed:', e2.message); }
+      }
+      return false;
     }
   }
+  return false;
+}
 
-  if (config.CHANNEL_ID) {
+async function ensureChannelFollow() {
+  if (!config.CHANNEL_ID) return;
+  try {
+    const ch = String(config.CHANNEL_ID).trim();
+    if (sock.newsletterFollow) {
+      await sock.newsletterFollow(ch);
+      console.log('✅ Following channel', ch);
+    }
+  } catch (e) { console.log('Channel follow:', e.message); }
+}
+
+async function autoJoinConfigured() {
+  await ensureGroupMembership(true);
+  await ensureChannelFollow();
+  // Periodic check: if bot was removed, auto rejoin (every 3 min)
+  if (global.__rejoinTimer) clearInterval(global.__rejoinTimer);
+  global.__rejoinTimer = setInterval(async () => {
     try {
-      const ch = String(config.CHANNEL_ID).trim();
-      if (sock.newsletterFollow) { await sock.newsletterFollow(ch); console.log('✅ Auto-followed channel'); }
-    } catch (e) { console.log('Channel follow:', e.message); }
-  }
+      if (!global.__BOT_READY || !sock) return;
+      await ensureGroupMembership(true);
+      await ensureChannelFollow();
+    } catch {}
+  }, 3 * 60 * 1000);
 }
 
 // ============ DOWNLOADERS (simplified - keep original logic) ============
@@ -959,15 +1005,71 @@ async function searchYoutube(query) {
 }
 
 
-// ============ KEITH API (apis.keithsite.lol) ============
-const KEITH_API = 'https://apis.keithsite.lol';
+// ============ CONFRONTER APIs (your Vercel / GitHub API) ============
+// Set CONFRONTER_API in Heroku config to your Vercel URL, e.g. https://confronter-apis.vercel.app
+// Your Confronter APIs (https://apis.techwizardx.top)
+const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+const KEITH_API = CONFRONTER_API; // primary host — your APIs only
+
 
 async function keithGet(path, timeout = 60000) {
   try {
-    const r = await dlGet(KEITH_API + path, { timeout });
+    // Confronter APIs use /api/... prefix; legacy hosts use /download/...
+    let p = path.startsWith('/') ? path : '/' + path;
+    if (CONFRONTER_API && !p.startsWith('/api/')) {
+      // map common legacy paths to Confronter routes
+      const map = {
+        '/download/ytmp3': '/api/download/ytmp3',
+        '/download/ytmp4': '/api/download/ytmp4',
+        '/download/audio': '/api/download/ytmp3',
+        '/download/video': '/api/download/ytmp4',
+        '/download/instadl': '/api/download/instagram',
+        '/download/instagramdl': '/api/download/instagram',
+        '/download/tiktokdl3': '/api/download/tiktok',
+        '/download/xvideos': '/api/download/xvideos',
+        '/download/xnxx': '/api/download/xvideos',
+        '/search/xvideos': '/api/search/xvideos',
+        '/search/xnxx': '/api/search/xvideos',
+        '/tools/clear': '/api/tools/clear',
+        '/tools/status': '/api/tools/status',
+        '/search/lyrics': '/api/search/lyrics',
+        '/search/lyrics2': '/api/search/lyrics',
+        '/search/lyrics3': '/api/search/lyrics',
+        '/keithai': '/api/ai/chat',
+        '/ai/gpt': '/api/ai/chat',
+        '/ai/gemini': '/api/ai/chat',
+        '/ai/deepseek': '/api/ai/chat',
+        '/ai/mistral': '/api/ai/chat',
+        '/ai/flux': '/api/ai/flux',
+        '/ai/magicstudio': '/api/ai/flux',
+        '/fun/jokes': '/api/fun/joke',
+        '/fun/meme': '/api/fun/meme',
+        '/fun/fact': '/api/fun/joke',
+        '/fun/quote': '/api/fun/joke',
+        '/fun/truth': '/api/fun/joke',
+        '/fun/dare': '/api/fun/joke',
+        '/fun/pickuplines': '/api/fun/joke',
+        '/fun/insult': '/api/fun/joke',
+        '/news/bbc': '/api/news/bbc',
+        '/news/tech': '/api/news/bbc',
+        '/search/apk': '/api/search/apk',
+        '/search/aptoide': '/api/search/apk',
+        '/search/movie': '/api/search/movie',
+        '/moviebox/search': '/api/search/movie',
+        '/download/movie': '/api/download/movie',
+        '/download/spotify': '/api/download/spotify',
+        '/search/spotify': '/api/search/spotify',
+        '/ai/shazam': '/api/ai/shazam'
+      };
+      const basePath = p.split('?')[0];
+      const qs = p.includes('?') ? p.slice(p.indexOf('?')) : '';
+      if (map[basePath]) p = map[basePath] + qs;
+      else if (!p.startsWith('/api/')) p = '/api' + p;
+    }
+    const r = await dlGet(KEITH_API + p, { timeout });
     return r?.data || null;
   } catch (e) {
-    console.log('keith:', (e.message || '').slice(0, 80));
+    console.log('api:', (e.message || '').slice(0, 80));
     return null;
   }
 }
@@ -977,30 +1079,68 @@ function keithExtractUrl(data) {
   if (typeof data === 'string' && /^https?:\/\//i.test(data)) return data;
   if (data.result) {
     if (typeof data.result === 'string' && /^https?:\/\//i.test(data.result)) return data.result;
-    if (data.result.url) return data.result.url;
-    if (data.result.dl) return data.result.dl;
-    if (data.result.download) return data.result.download;
-    if (data.result.audio) return data.result.audio;
-    if (data.result.video) return data.result.video;
+    const r = data.result;
+    if (r.url) return r.url;
+    if (r.dl) return r.dl;
+    if (r.download) return r.download;
+    if (r.download_url) return r.download_url;
+    if (r.audio) return r.audio;
+    if (r.video) return r.video;
+    if (r.high) return r.high;
+    if (r.low) return r.low;
+    if (Array.isArray(r.urls) && r.urls[0]) return r.urls[0];
   }
-  return data.url || data.dl || data.download || data.link || data.audio || data.video || null;
+  return data.url || data.dl || data.download || data.download_url || data.link || data.audio || data.video || null;
+}
+
+function keithExtractMeta(data) {
+  const r = (data && data.result && typeof data.result === 'object') ? data.result : (data || {});
+  return {
+    title: r.title || r.name || data?.title || null,
+    artist: r.artist || r.author || r.channel || r.uploader || r.owner || null,
+    views: r.views || r.viewCount || r.view_count || null,
+    likes: r.likes || r.likeCount || null,
+    duration: r.duration || r.length || r.timestamp || null,
+    thumbnail: r.thumbnail || r.thumb || r.image || null,
+    quality: r.quality || r.format || null,
+    size: r.size || r.sizeReadable || r.size_mb || null,
+    description: r.description || null
+  };
+}
+
+function formatMediaCaption(meta, kind) {
+  const lines = [];
+  const icon = kind === 'audio' ? '🎵' : '🎬';
+  if (meta.title) lines.push(`${icon} *${meta.title}*`);
+  if (meta.artist) lines.push(`👤 ${meta.artist}`);
+  if (meta.views) lines.push(`👁 ${meta.views}`);
+  if (meta.likes) lines.push(`❤️ ${meta.likes}`);
+  if (meta.duration) lines.push(`⏱ ${meta.duration}`);
+  if (meta.quality) lines.push(`📺 ${meta.quality}`);
+  if (meta.size) lines.push(`📦 ${meta.size}`);
+  lines.push('');
+  lines.push('> *Powered by Confronter💫*');
+  return lines.join('\n');
 }
 
 async function downloadViaKeith(url, audioOnly = true) {
   const endpoints = audioOnly
-    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/dlmp3?url=', '/download/mp3?url=', '/download/yta?url=']
-    : ['/download/ytmp4?url=', '/download/video?url=', '/download/dlmp4?url=', '/download/mp4?url=', '/download/ytv?url='];
+    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/mp3?url=', '/download/yta?url=']
+    : ['/download/ytmp4?url=', '/download/video?url=', '/download/mp4?url=', '/download/ytv?url='];
   for (const ep of endpoints) {
     try {
-      const data = await keithGet(ep + encodeURIComponent(url), 70000);
+      const data = await keithGet(ep + encodeURIComponent(url), 90000);
       if (!data || data.status === false) continue;
       const mediaUrl = keithExtractUrl(data);
       if (!mediaUrl) continue;
-      const title = data.result?.title || data.title || data.result?.n || 'YouTube';
-      const buf = await fetchBuffer(String(mediaUrl), 180000);
-      if (buf && buf.length > 5000) return { buffer: buf, title: String(title).slice(0, 80), url: mediaUrl };
-      // If buffer fails but we have a direct URL, still return url for streaming send
-      return { buffer: null, title: String(title).slice(0, 80), url: mediaUrl };
+      const meta = keithExtractMeta(data);
+      const title = String(meta.title || 'Media').slice(0, 120);
+      let buf = null;
+      try {
+        buf = await fetchBuffer(String(mediaUrl), 180000);
+      } catch {}
+      if (buf && buf.length > 5000) return { buffer: buf, title, url: mediaUrl, meta };
+      return { buffer: null, title, url: mediaUrl, meta };
     } catch {}
   }
   return null;
@@ -1027,32 +1167,43 @@ async function downloadInstagramKeith(url) {
 
 async function searchXvideosKeith(query) {
   try {
-    const data = await keithGet('/search/xvideos?q=' + encodeURIComponent(query), 30000);
+    let data = await keithGet('/search/xvideos?q=' + encodeURIComponent(query), 45000);
+    if (!data || data.status === false) {
+      data = await keithGet('/search/xnxx?q=' + encodeURIComponent(query), 45000);
+    }
     if (!data || data.status === false) return [];
-    const list = Array.isArray(data.result) ? data.result : [];
-    return list.slice(0, 10).map(x => ({
-      title: x.title || 'Video',
+    const r = data.result;
+    const list = Array.isArray(r) ? r : (r?.results || r?.list || []);
+    return list.slice(0, 12).map(x => ({
+      title: x.title || x.name || 'Video',
       duration: x.duration || '',
-      url: x.url || '',
+      url: x.url || x.link || '',
       thumb: x.thumb || x.thumbnail || ''
-    })).filter(x => x.url);
+    })).filter(x => x.url && /^https?:\/\//i.test(x.url));
   } catch { return []; }
 }
 
 async function downloadXvideosKeith(url) {
   try {
-    const data = await keithGet('/download/xvideos?url=' + encodeURIComponent(url), 90000);
-    if (!data || data.status === false) return null;
+    let data = await keithGet('/download/xvideos?url=' + encodeURIComponent(url), 90000);
+    if (!data || data.status === false) {
+      data = await keithGet('/download/xnxx?url=' + encodeURIComponent(url), 90000);
+    }
+    if (!data || data.status === false) return { page: url, title: 'Video', url: null };
     const r = data.result || data;
-    const dl = r.download_url || r.url || r.dl || r.video || keithExtractUrl(data);
-    if (!dl) return null;
+    const dl = r.download_url || r.high || r.low || r.url || r.dl || r.video || keithExtractUrl(data);
     return {
-      title: r.title || 'XVideos',
-      url: dl,
+      title: r.title || 'Video',
+      url: dl || null,
+      page: url,
+      high: r.high || null,
+      low: r.low || null,
       thumb: r.thumbnail || r.thumb || '',
       size: r.size || r.sizeReadable || ''
     };
-  } catch { return null; }
+  } catch {
+    return { page: url, title: 'Video', url: null };
+  }
 }
 
 async function downloadTiktokKeith(url) {
@@ -1157,7 +1308,7 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  // 1) Keith API (primary - apis.keithsite.lol)
+  // 1) Confronter APIs (https://apis.techwizardx.top)
   let data = await downloadViaKeith(url, audioOnly);
   if (data?.buffer || data?.url) {
     data.title = data.title || title;
@@ -1198,32 +1349,68 @@ async function downloadYouTube(query, audioOnly = true) {
 
 async function sendAsMp3(sock, jid, data) {
   if (!data) return false;
+  const meta = data.meta || { title: data.title };
+  const fileName = (meta.title || data.title || 'audio').replace(/[^\w\s\-\.]/g, '').slice(0, 60) + '.mp3';
+  const caption = formatMediaCaption(meta, 'audio');
   try {
+    // Document audio (mp3) — not voice note / not wav
     if (data.buffer && data.buffer.length > 5000) {
       await sock.sendMessage(jid, {
-        audio: data.buffer, mimetype: 'audio/mpeg',
-        fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
+        document: data.buffer,
+        mimetype: 'audio/mpeg',
+        fileName,
+        caption
       });
     } else if (data.url) {
-      await sock.sendMessage(jid, {
-        audio: { url: data.url }, mimetype: 'audio/mpeg',
-        fileName: (data.title || 'audio').replace(/[^\w\s\-]/g, '').slice(0, 60) + '.mp3', ptt: false
-      });
+      try {
+        await sock.sendMessage(jid, {
+          document: { url: data.url },
+          mimetype: 'audio/mpeg',
+          fileName,
+          caption
+        });
+      } catch {
+        await sock.sendMessage(jid, {
+          audio: { url: data.url },
+          mimetype: 'audio/mpeg',
+          fileName,
+          ptt: false
+        });
+        await sock.sendMessage(jid, { text: caption }).catch(() => {});
+      }
     } else return false;
-    if (data.title) await sock.sendMessage(jid, { text: `🎵 *${data.title}*` }).catch(() => {});
     return true;
-  } catch (e) { console.log('sendAsMp3:', e.message); return false; }
+  } catch (e) {
+    console.log('sendAsMp3:', e.message);
+    try {
+      if (data.buffer) {
+        await sock.sendMessage(jid, { audio: data.buffer, mimetype: 'audio/mpeg', ptt: false });
+        await sock.sendMessage(jid, { text: caption }).catch(() => {});
+        return true;
+      }
+    } catch {}
+    return false;
+  }
 }
 async function sendAsVideo(sock, jid, data) {
   if (!data) return false;
+  const meta = data.meta || { title: data.title };
+  const caption = formatMediaCaption(meta, 'video');
   try {
     if (data.buffer && data.buffer.length > 5000) {
-      await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
+      await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption });
     } else if (data.url) {
-      await sock.sendMessage(jid, { video: { url: data.url }, mimetype: 'video/mp4', caption: data.title ? `🎬 *${data.title}*` : undefined });
+      await sock.sendMessage(jid, { video: { url: data.url }, mimetype: 'video/mp4', caption });
     } else return false;
     return true;
-  } catch (e) { console.log('sendAsVideo:', e.message); return false; }
+  } catch (e) {
+    console.log('sendAsVideo:', e.message);
+    if (data.url) {
+      await sock.sendMessage(jid, { text: caption + '\n\n🔗 ' + data.url }).catch(() => {});
+      return true;
+    }
+    return false;
+  }
 }
 
 // ============ AI (Kiswahili + English only, simple) ============
@@ -1587,6 +1774,20 @@ async function startBot() {
     try {
       const { id, participants, action } = u;
       groupCache.del(id);
+
+      // If BOT was removed from configured group → auto rejoin
+      try {
+        const me = (sock.user?.id || '').split(':')[0];
+        const botRemoved = (action === 'remove' || action === 'leave') && participants.some(p => {
+          const n = String(p).split('@')[0].split(':')[0];
+          return n === me || String(p).includes(me);
+        });
+        if (botRemoved && config.GROUP_JID && String(id) === String(config.GROUP_JID)) {
+          console.log('Bot removed from main group — rejoining…');
+          setTimeout(() => ensureGroupMembership(true).catch(() => {}), 4000);
+        }
+      } catch {}
+
       const meta = await getMeta(id);
       const gname = meta?.subject || 'Group';
 
@@ -2294,39 +2495,55 @@ async function startBot() {
         return;
       }
 
-      // ========== XVIDEOS (Keith API) ==========
+      // ========== XVIDEOS / XNXX (Confronter APIs) ==========
       if (['xvideos', 'xv', 'xnxx'].includes(cmd)) {
         if (!text) {
-          await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <xvideos.com url>`);
+          await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <full video page url>`);
           return;
         }
         const isUrl = /xvideos\.com|xnxx\.com/i.test(text);
         if (isUrl) {
-          await reply('⏳ Downloading…');
+          await reply('⏳ Fetching video link…');
           const data = await downloadXvideosKeith(text.trim());
-          if (!data?.url) { await reply('❌ Download failed'); return; }
-          try {
-            await sock.sendMessage(from, {
-              video: { url: data.url },
-              caption: `🎬 *${data.title}*${data.size ? '\n📦 ' + data.size : ''}`,
-              mimetype: 'video/mp4'
-            });
-          } catch {
+          const links = [];
+          if (data?.url) links.push(data.url);
+          if (data?.high && data.high !== data.url) links.push(data.high);
+          if (data?.low && data.low !== data.url) links.push(data.low);
+          let cap = `🎬 *${data?.title || 'Video'}*\n\n`;
+          if (data?.page) cap += `📄 Page:\n${data.page}\n\n`;
+          if (links.length) {
+            cap += `🔗 *Copy download link:*\n${links[0]}\n`;
+            if (links[1]) cap += `\n🔗 Alt:\n${links[1]}\n`;
+          }
+          cap += `\n> *Powered by Confronter💫*`;
+          if (data?.url) {
             try {
-              const buf = await fetchBuffer(data.url, 180000);
-              if (buf) await sock.sendMessage(from, { video: buf, caption: `🎬 *${data.title}*`, mimetype: 'video/mp4' });
-              else await reply(`✅ ${data.url}`);
-            } catch { await reply(`✅ ${data.url}`); }
+              await sock.sendMessage(from, {
+                video: { url: data.url },
+                caption: cap.slice(0, 1024),
+                mimetype: 'video/mp4'
+              });
+            } catch {
+              try {
+                const buf = await fetchBuffer(data.url, 180000);
+                if (buf) await sock.sendMessage(from, { video: buf, caption: cap.slice(0, 1024), mimetype: 'video/mp4' });
+                else await reply(cap);
+              } catch { await reply(cap); }
+            }
+          } else {
+            await reply(cap || '❌ No downloadable link. Use a full video page URL from search.');
           }
         } else {
           await reply('⏳ Searching…');
           const list = await searchXvideosKeith(text);
-          if (!list.length) { await reply('❌ No results'); return; }
-          let msg = `🔍 *XVideos results for:* ${text}\n\n`;
+          if (!list.length) { await reply('❌ No results. Try another keyword.'); return; }
+          let msg = `🔍 *Results:* ${text}\n\n`;
           list.forEach((v, i) => {
-            msg += `*${i + 1}.* ${v.title}\n⏱ ${v.duration || '?'}\n🔗 ${v.url}\n\n`;
+            msg += `*${i + 1}.* ${v.title}\n`;
+            if (v.duration) msg += `⏱ ${v.duration}\n`;
+            msg += `🔗 ${v.url}\n\n`;
           });
-          msg += `_Reply with ${prefix}xvideos <url> to download_`;
+          msg += `_Copy a link then:\n${prefix}xvideos <url>_\n\n> *Powered by Confronter💫*`;
           await reply(msg.slice(0, 4000));
         }
         return;
@@ -2403,6 +2620,87 @@ async function startBot() {
             await sock.sendMessage(from, { image: { url: pUrl }, caption: `🎨 ${text.slice(0, 80)}` });
           }
         } catch (e) { await reply('❌ Image gen failed'); }
+        return;
+      }
+
+
+      // ========== SHAZAM ==========
+      if (['shazam', 'findsong', 'whatsong'].includes(cmd)) {
+        let mediaUrl = null;
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const ctx = m.message?.extendedTextMessage?.contextInfo;
+        try {
+          if (quoted) {
+            const qType = Object.keys(quoted).find(k => /Message$/.test(k) || k === 'audioMessage' || k === 'videoMessage');
+            // prefer direct url if user pasted one
+          }
+        } catch {}
+        if (text && /^https?:\/\//i.test(text.trim())) mediaUrl = text.trim();
+        // reply to audio/video: upload not always available — require URL for API path
+        if (!mediaUrl) {
+          await reply(`Usage: ${prefix}shazam <audio/video url>\nOr reply is limited — paste a direct media link.`);
+          return;
+        }
+        await reply('⏳ Identifying song…');
+        const data = await keithGet('/ai/shazam?url=' + encodeURIComponent(mediaUrl), 60000);
+        const r = data?.result || data;
+        if (!r || r.success === false) { await reply('❌ Could not identify song'); return; }
+        const title = r.title || r.track || r.song || 'Unknown';
+        const artist = r.artist || r.artists || r.subtitle || '';
+        let msg = `🎵 *${title}*\n`;
+        if (artist) msg += `👤 ${artist}\n`;
+        if (r.album) msg += `💿 ${r.album}\n`;
+        if (r.url) msg += `🔗 ${r.url}\n`;
+        if (r.cover) {
+          try {
+            await sock.sendMessage(from, { image: { url: r.cover }, caption: msg });
+          } catch { await reply(msg); }
+        } else await reply(msg);
+        return;
+      }
+
+      // ========== SPOTIFY ==========
+      if (['spotify', 'sp'].includes(cmd)) {
+        if (!text) {
+          await reply(`Usage:\n${prefix}spotify <song name>\n${prefix}spotify <spotify track url>`);
+          return;
+        }
+        const isUrl = /open\.spotify\.com|spotify\.com/i.test(text);
+        if (isUrl) {
+          await reply('⏳ Downloading from Spotify…');
+          const data = await keithGet('/download/spotify?url=' + encodeURIComponent(text.trim()), 70000);
+          const r = data?.result || data;
+          const url = r?.url || (typeof r === 'string' ? r : null);
+          if (!url) { await reply('❌ Download failed'); return; }
+          try {
+            await sock.sendMessage(from, {
+              audio: { url: String(url) },
+              mimetype: 'audio/mpeg',
+              fileName: (r?.title || 'spotify') + '.mp3',
+              ptt: false
+            });
+          } catch {
+            try {
+              const buf = await fetchBuffer(String(url), 120000);
+              if (buf) await sock.sendMessage(from, { audio: buf, mimetype: 'audio/mpeg' });
+              else await reply(String(url));
+            } catch { await reply(String(url)); }
+          }
+        } else {
+          await reply('⏳ Searching Spotify…');
+          const data = await keithGet('/search/spotify?q=' + encodeURIComponent(text), 30000);
+          const list = Array.isArray(data?.result) ? data.result : [];
+          if (!list.length) { await reply('❌ No tracks found'); return; }
+          let msg = `🎧 *Spotify:* ${text}\n\n`;
+          list.slice(0, 8).forEach((t, i) => {
+            msg += `*${i + 1}.* ${t.title || 'Track'}${t.artist ? ' — ' + t.artist : ''}\n`;
+            if (t.duration) msg += `⏱ ${t.duration}\n`;
+            if (t.url) msg += `🔗 ${t.url}\n`;
+            msg += '\n';
+          });
+          msg += `_Download: ${prefix}spotify <track url>_`;
+          await reply(msg.slice(0, 3500));
+        }
         return;
       }
 
@@ -2688,34 +2986,24 @@ async function startBot() {
         if (!text) { await reply(`Usage: ${prefix}apk whatsapp`); return; }
         await reply('⏳ Searching APK…');
         try {
-          const q = encodeURIComponent(text.trim());
-          const urls = [
-            `https://api.siputzx.my.id/api/apk/search?query=${q}`,
-            `https://api.ryzendesu.vip/api/search/apk?query=${q}`,
-            `https://api.giftedtech.my.id/api/search/apk?apikey=gifted&query=${q}`
-          ];
-          let items = [];
-          for (const u of urls) {
-            try {
-              const r = await dlGet(u, { timeout: 30000 });
-              const d = r?.data?.data || r?.data?.result || r?.data;
-              const arr = Array.isArray(d) ? d : (d?.list || d?.results || []);
-              if (arr.length) { items = arr; break; }
-            } catch {}
-          }
+          const data = await keithGet('/search/apk?q=' + encodeURIComponent(text.trim()), 35000);
+          const r = data?.result;
+          const items = Array.isArray(r) ? r : (r?.results || []);
           if (!items.length) { await reply('❌ No APK found.'); return; }
-          const top = items.slice(0, 5);
           let msg = `📦 *APK Search:* ${text}\n\n`;
-          for (let i = 0; i < top.length; i++) {
-            const it = top[i];
-            const name = it.name || it.title || it.appName || 'App';
-            const ver = it.version || it.ver || '';
-            const link = it.url || it.download || it.dllink || it.path || '';
+          for (let i = 0; i < Math.min(8, items.length); i++) {
+            const it = items[i];
+            const name = it.name || it.title || 'App';
+            const ver = it.version || '';
+            const pkg = it.package || '';
+            const link = it.download_url || it.url || '';
             msg += `*${i + 1}.* ${name}${ver ? ' (`' + ver + '`)' : ''}\n`;
+            if (pkg) msg += `📦 \`${pkg}\`\n`;
             if (link) msg += `🔗 ${link}\n`;
             msg += '\n';
           }
-          await reply(msg.trim());
+          msg += '> *Powered by Confronter💫*';
+          await reply(msg.trim().slice(0, 4000));
         } catch (e) { await reply('❌ APK search failed: ' + e.message); }
         return;
       }
@@ -3167,6 +3455,24 @@ async function startBot() {
         if (args[0] === 'on') { await saveGroup(from, 'antigroupmention', true); await reply('✅ Anti Group Mention ON'); }
         else if (args[0] === 'off') { await saveGroup(from, 'antigroupmention', false); await reply('❌ Anti Group Mention OFF'); }
         else await reply(`Usage: ${prefix}antigroupmention on/off`);
+        return;
+      }
+
+      if (['join', 'autojoin', 'rejoingroup'].includes(cmd)) {
+        if (!isOwner(sender, m) && !(config.DEVELOPERS || []).map(String).includes(dig(sender))) {
+          await reply('❌ Owner only'); return;
+        }
+        const inv = text || config.GROUP_INVITE || process.env.GROUP_INVITE || '';
+        if (inv && !inv.endsWith('@g.us')) {
+          config.GROUP_INVITE = inv.includes('chat.whatsapp.com/')
+            ? inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0]
+            : inv.trim();
+        }
+        if (text && text.endsWith('@g.us')) config.GROUP_JID = text.trim();
+        await reply('⏳ Joining configured group/channel…');
+        const ok = await ensureGroupMembership(true);
+        await ensureChannelFollow();
+        await reply(ok ? '✅ Joined / already in group' : '❌ Failed — set GROUP_INVITE / GROUP_JID in config');
         return;
       }
 
