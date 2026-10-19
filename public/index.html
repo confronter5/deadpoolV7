@@ -688,24 +688,44 @@
       if (!q) return;
       nowLabel.textContent = 'Loading…';
       spinIcon.className = 'fa-solid fa-spinner fa-spin';
+      audioEl.pause();
+      videoEl.pause();
       try {
-        const res = await fetch('/api/music/play?type=' + encodeURIComponent(mediaType) + '&q=' + encodeURIComponent(q));
-        const d = await res.json();
-        if (!res.ok || !d.streamUrl) throw new Error(d.error || 'Not found');
+        const res = await fetch(
+          '/api/music/play?type=' + encodeURIComponent(mediaType) + '&q=' + encodeURIComponent(q)
+        );
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.streamUrl) {
+          throw new Error(d.error || ('Play failed (' + res.status + ')'));
+        }
         current = d;
         const label = [d.artist, d.title].filter(Boolean).join(' — ') || d.title || q;
         nowLabel.textContent = label;
         spinIcon.className = 'fa-solid fa-compact-disc fa-spin';
+        // streamUrl is same-origin proxy (/api/music/proxy?…) so browser can play
+        const src = d.streamUrl.startsWith('http') ? d.streamUrl : d.streamUrl;
         if (mediaType === 'video') {
-          videoEl.src = d.streamUrl;
+          audioEl.removeAttribute('src');
+          videoEl.style.display = 'block';
+          audioEl.style.display = 'none';
+          videoEl.src = src;
           videoEl.load();
-          await videoEl.play().catch(() => {});
-          audioEl.pause();
+          try {
+            await videoEl.play();
+          } catch (err) {
+            nowLabel.textContent = label + ' — tap play on player';
+          }
         } else {
-          audioEl.src = d.streamUrl;
+          videoEl.removeAttribute('src');
+          audioEl.style.display = 'block';
+          videoEl.style.display = 'none';
+          audioEl.src = src;
           audioEl.load();
-          await audioEl.play().catch(() => {});
-          videoEl.pause();
+          try {
+            await audioEl.play();
+          } catch (err) {
+            nowLabel.textContent = label + ' — tap play on player';
+          }
         }
       } catch (e) {
         nowLabel.textContent = e.message || 'Failed';
@@ -755,13 +775,9 @@
       playQuery(QUICK[quickIdx]);
     };
     document.getElementById('btnDownload').onclick = () => {
-      if (current?.streamUrl) {
-        window.open(current.streamUrl, '_blank');
-      } else if (current?.youtubeUrl) {
-        window.open(current.youtubeUrl, '_blank');
-      } else {
-        nowLabel.textContent = 'Play something first';
-      }
+      const link = current?.directUrl || current?.youtubeUrl || current?.streamUrl;
+      if (link) window.open(link, '_blank');
+      else nowLabel.textContent = 'Play something first';
     };
     document.getElementById('musicQ').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('btnPlayNow').click();
