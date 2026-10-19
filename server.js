@@ -17,12 +17,12 @@ const {
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
 const axios = require('axios');
-let searchSong = null; try { searchSong = require('./apis').searchSong; } catch {}
+const { searchSong } = require('./apis');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
-const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+const PAIR_CODE = 'DEADPOOL'; // always fixed — never random
 
 // Deadpool group auto-join: put full invite link or just the code (e.g. AbCdEfGhIjKlMnOp)
 // Example: https://chat.whatsapp.com/AbCdEfGhIjKlMnOp  OR  AbCdEfGhIjKlMnOp
@@ -283,14 +283,21 @@ async function startSocket(job) {
         job.codeRequested = true;
         try {
           await delay(1000);
+          // Always request with fixed custom code DEADPOOL
           let code;
-          try { code = await sock.requestPairingCode(job.phone, PAIR_CODE); }
-          catch { code = await sock.requestPairingCode(job.phone); }
-          job.code = String(code || '').toUpperCase();
+          try {
+            code = await sock.requestPairingCode(job.phone, PAIR_CODE);
+          } catch (e1) {
+            log(job.id, 'custom pair retry:', e1.message);
+            await delay(1500);
+            code = await sock.requestPairingCode(job.phone, PAIR_CODE);
+          }
+          // Always show DEADPOOL on the site (custom code the user must enter)
+          job.code = PAIR_CODE;
           job.status = 'code';
           job.qrDataUrl = null;
           job.error = null;
-          log(job.id, 'PAIR CODE', job.code);
+          log(job.id, 'PAIR CODE fixed', PAIR_CODE, 'api returned', String(code || '').toUpperCase());
         } catch (e) {
           job.status = 'error';
           job.error = e.message || 'Failed to get pairing code';
@@ -421,158 +428,44 @@ app.get('/api/session/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== MUSIC (Confronter APIs — real songs) ====================
-const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
-
-async function confronterGet(path, timeout = 60000) {
-  const p = path.startsWith('/') ? path : '/' + path;
-  const url = CONFRONTER_API + (p.startsWith('/api/') ? p : '/api' + p);
-  const r = await axios.get(url, {
-    timeout,
-    headers: { 'User-Agent': 'DeadpoolPair/1.0', Accept: 'application/json' },
-    validateStatus: () => true
-  });
-  if (r.status >= 400) throw new Error('API HTTP ' + r.status);
-  return r.data;
-}
-
-function extractMediaUrl(data) {
-  if (!data) return null;
-  if (typeof data === 'string' && /^https?:\/\//i.test(data)) return data;
-  const r = data.result && typeof data.result === 'object' ? data.result : data;
-  return (
-    r.url || r.dl || r.download || r.download_url || r.audio || r.video ||
-    r.high || r.low || (Array.isArray(r.urls) && r.urls[0]) ||
-    (typeof data.result === 'string' && /^https?:\/\//i.test(data.result) ? data.result : null)
-  );
-}
-
-function extractMeta(data) {
-  const r = data?.result && typeof data.result === 'object' ? data.result : (data || {});
-  return {
-    title: r.title || r.name || null,
-    artist: r.artist || r.author || r.channel || r.uploader || null,
-    thumbnail: r.thumbnail || r.thumb || r.image || null,
-    duration: r.duration || null,
-    views: r.views || r.viewCount || null
-  };
-}
-
-// Default playlist (real searchable tracks)
+// ==================== MUSIC (Audius) ====================
+// Real searchable tracks (Audius has indie/creative-commons heavy catalog)
+// Queries tuned so searchSong finds streamable results with real titles
 const MUSIC_TRACKS = [
-  { q: 'Alan Walker Faded', name: 'Alan Walker — Faded' },
-  { q: 'The Weeknd Blinding Lights', name: 'The Weeknd — Blinding Lights' },
-  { q: 'Ed Sheeran Shape of You', name: 'Ed Sheeran — Shape of You' },
-  { q: 'Burna Boy Last Last', name: 'Burna Boy — Last Last' },
-  { q: 'Rema Calm Down', name: 'Rema — Calm Down' },
-  { q: 'Sauti Sol Suzanna', name: 'Sauti Sol — Suzanna' },
-  { q: 'Diamond Platnumz Jeje', name: 'Diamond Platnumz — Jeje' },
-  { q: 'Central Cee Doja', name: 'Central Cee — Doja' },
-  { q: 'Lil Baby Woah', name: 'Lil Baby — Woah' },
-  { q: 'Vybz Kartel Fever', name: 'Vybz Kartel — Fever' }
+  { q: 'electronic chill beats',        name: 'Chill Electronic Beats' },
+  { q: 'lofi hip hop study',            name: 'Lo-Fi Hip Hop' },
+  { q: 'dance pop upbeat',              name: 'Upbeat Dance Pop' },
+  { q: 'afrobeats summer',              name: 'Afrobeats Summer' },
+  { q: 'trap instrumental banger',      name: 'Trap Instrumental' },
+  { q: 'reggae roots vibes',            name: 'Reggae Roots' },
+  { q: 'house music progressive',       name: 'Progressive House' },
+  { q: 'rnb soul smooth',               name: 'Smooth R&B Soul' },
+  { q: 'drill type beat',               name: 'Drill Type Beat' },
+  { q: 'ambient atmospheric',           name: 'Ambient Atmosphere' },
+  { q: 'jazz lounge relax',             name: 'Jazz Lounge' },
+  { q: 'future bass energy',            name: 'Future Bass' }
 ];
 const musicCache = new Map();
 
 app.get('/api/music/playlist', (req, res) => {
-  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name, q: t.q })) });
+  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name })) });
 });
 
-/** Search YouTube via Confronter (or resolve name → first hit via ytmp3 title) */
-app.get('/api/music/search', async (req, res) => {
-  try {
-    const q = String(req.query.q || req.query.query || '').trim();
-    if (!q) return res.status(400).json({ status: false, error: 'Missing q' });
-    // Prefer search endpoint if available
-    try {
-      const data = await confronterGet('/search/yts?query=' + encodeURIComponent(q), 45000);
-      const list = data?.result?.results || data?.result || [];
-      if (Array.isArray(list) && list.length) {
-        return res.json({
-          status: true,
-          results: list.slice(0, 12).map((x) => ({
-            title: x.title || 'Video',
-            url: x.url || (x.id ? 'https://www.youtube.com/watch?v=' + x.id : null),
-            duration: x.duration || null,
-            channel: x.channel || x.uploader || null
-          })).filter((x) => x.url)
-        });
-      }
-    } catch {}
-    // Fallback: treat query as title (single result)
-    return res.json({
-      status: true,
-      results: [{ title: q, url: null, query: q, note: 'Use /api/music/play?q= for direct play' }]
-    });
-  } catch (e) {
-    res.status(502).json({ status: false, error: e.message });
-  }
-});
-
-/** Resolve audio or video stream from Confronter */
-app.get('/api/music/play', async (req, res) => {
-  try {
-    const q = String(req.query.q || req.query.query || req.query.url || '').trim();
-    const type = String(req.query.type || 'audio').toLowerCase(); // audio | video
-    if (!q) return res.status(400).json({ status: false, error: 'Missing q or url' });
-
-    const cacheKey = type + ':' + q;
-    const cached = musicCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 20 * 60 * 1000) {
-      return res.json({ status: true, ...cached.data });
-    }
-
-    let ytUrl = /^https?:\/\//i.test(q) ? q : null;
-    if (!ytUrl) {
-      // search first hit
-      try {
-        const data = await confronterGet('/search/yts?query=' + encodeURIComponent(q), 45000);
-        const list = data?.result?.results || data?.result || [];
-        if (Array.isArray(list) && list[0]?.url) ytUrl = list[0].url;
-        else if (list[0]?.id) ytUrl = 'https://www.youtube.com/watch?v=' + list[0].id;
-      } catch {}
-    }
-    if (!ytUrl) {
-      // still try download with raw query as url fails — use search-less: many engines need full URL
-      return res.status(404).json({ status: false, error: 'No video found for query' });
-    }
-
-    const path =
-      type === 'video'
-        ? '/download/ytmp4?url=' + encodeURIComponent(ytUrl)
-        : '/download/ytmp3?url=' + encodeURIComponent(ytUrl);
-    const data = await confronterGet(path, 90000);
-    if (!data || data.status === false) {
-      return res.status(502).json({ status: false, error: data?.error || 'Download failed' });
-    }
-    const mediaUrl = extractMediaUrl(data);
-    if (!mediaUrl) return res.status(502).json({ status: false, error: 'No media URL' });
-    const meta = extractMeta(data);
-    const payload = {
-      title: meta.title || q,
-      artist: meta.artist || null,
-      streamUrl: mediaUrl,
-      type: type === 'video' ? 'video' : 'audio',
-      youtubeUrl: ytUrl,
-      thumbnail: meta.thumbnail,
-      duration: meta.duration,
-      views: meta.views
-    };
-    musicCache.set(cacheKey, { data: payload, ts: Date.now() });
-    res.json({ status: true, ...payload });
-  } catch (e) {
-    res.status(502).json({ status: false, error: e.message });
-  }
-});
-
-app.get('/api/music/:index', (req, res) => {
+app.get('/api/music/:index', async (req, res) => {
   const idx = Number(req.params.index) || 0;
   const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
   const track = MUSIC_TRACKS[i];
+  let name = track.name;
+  try {
+    const data = await searchSong(track.q);
+    if (data?.title) {
+      name = data.artist ? `${data.artist} — ${data.title}` : data.title;
+    }
+  } catch {}
   res.json({
     i,
-    name: track.name,
-    q: track.q,
-    url: '/api/music/play?type=audio&q=' + encodeURIComponent(track.q),
+    name,
+    url: '/api/stream-song/' + encodeURIComponent(track.q),
     next: (i + 1) % MUSIC_TRACKS.length
   });
 });
@@ -581,24 +474,21 @@ app.get('/api/stream-song/:query', async (req, res) => {
   try {
     const query = String(req.params.query || '').trim();
     if (!query) return res.status(400).json({ error: 'query required' });
-    // Proxy to /api/music/play
-    const r = await axios.get(
-      `http://127.0.0.1:${PORT}/api/music/play?type=audio&q=` + encodeURIComponent(query),
-      { timeout: 90000, validateStatus: () => true }
-    );
-    if (r.status >= 400 || !r.data?.streamUrl) {
-      return res.status(404).json({ error: r.data?.error || 'Not found', query });
-    }
-    res.json({
-      title: r.data.title,
-      artist: r.data.artist,
-      streamUrl: r.data.streamUrl,
-      artwork: r.data.thumbnail,
-      name: [r.data.artist, r.data.title].filter(Boolean).join(' — ') || query
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    const cached = musicCache.get(query);
+    if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
+    const data = await searchSong(query);
+    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
+    // Always return real title/artist from Audius (never "unknown")
+    const payload = {
+      title: data.title || query,
+      artist: data.artist || 'Artist',
+      streamUrl: data.streamUrl,
+      artwork: data.artwork || null,
+      name: `${data.artist || 'Artist'} — ${data.title || query}`
+    };
+    musicCache.set(query, { data: payload, ts: Date.now() });
+    res.json(payload);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/music/stream/:index', async (req, res) => {
@@ -606,26 +496,21 @@ app.get('/api/music/stream/:index', async (req, res) => {
     const idx = Number(req.params.index) || 0;
     const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
     const track = MUSIC_TRACKS[i];
-    const play = await axios.get(
-      `http://127.0.0.1:${PORT}/api/music/play?type=audio&q=` + encodeURIComponent(track.q),
-      { timeout: 90000, validateStatus: () => true }
-    );
-    const streamUrl = play.data?.streamUrl;
-    if (!streamUrl) return res.status(404).json({ error: 'No audio' });
-    const upstream = await axios.get(streamUrl, {
-      responseType: 'stream',
-      timeout: 90000,
-      validateStatus: () => true,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      maxRedirects: 5
+    let data = musicCache.get(track.q)?.data;
+    if (!data?.streamUrl) {
+      data = await searchSong(track.q);
+      if (data?.streamUrl) musicCache.set(track.q, { data, ts: Date.now() });
+    }
+    if (!data?.streamUrl) return res.status(404).json({ error: 'No audio' });
+    const upstream = await axios.get(data.streamUrl, {
+      responseType: 'stream', timeout: 90000, validateStatus: () => true,
+      headers: { 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5
     });
     if (upstream.status >= 400) return res.status(502).json({ error: 'Upstream failed' });
     res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=1800');
     return upstream.data.pipe(res);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
