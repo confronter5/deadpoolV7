@@ -17,12 +17,12 @@ const {
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
 const axios = require('axios');
-let searchSong = null; try { searchSong = require('./apis').searchSong; } catch {}
+let searchSong; try { searchSong = require('./apis').searchSong; } catch (e) { console.log('apis.js optional:', e.message); searchSong = null; }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
-const PAIR_CODE = String(process.env.PAIRING_CODE || (config && config.PAIRING_CODE) || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'DEADPOOL';
+const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
 
 // Deadpool group auto-join: put full invite link or just the code (e.g. AbCdEfGhIjKlMnOp)
 // Example: https://chat.whatsapp.com/AbCdEfGhIjKlMnOp  OR  AbCdEfGhIjKlMnOp
@@ -421,274 +421,46 @@ app.get('/api/session/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== MUSIC (Confronter APIs — real songs) ====================
-const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
-
-async function confronterGet(path, timeout = 60000) {
-  const p = path.startsWith('/') ? path : '/' + path;
-  const url = CONFRONTER_API + (p.startsWith('/api/') ? p : '/api' + p);
-  const r = await axios.get(url, {
-    timeout,
-    headers: { 'User-Agent': 'DeadpoolPair/1.0', Accept: 'application/json' },
-    validateStatus: () => true
-  });
-  if (r.status >= 400) throw new Error('API HTTP ' + r.status);
-  return r.data;
-}
-
-
-/** Resolve song name / query → first YouTube watch URL (local yt-search) */
-async function resolveYoutubeUrl(query) {
-  const q = String(query || '').trim();
-  if (!q) return null;
-  if (/^https?:\/\//i.test(q) && /(youtube\.com|youtu\.be)/i.test(q)) return q;
-  if (/^https?:\/\//i.test(q)) return q; // allow direct media URLs
-
-  // 1) yt-search (in package.json)
-  try {
-    const yts = require('yt-search');
-    const r = await yts(q);
-    const v = (r.videos || [])[0];
-    if (v?.url) return v.url;
-    if (v?.videoId) return 'https://www.youtube.com/watch?v=' + v.videoId;
-  } catch (e) {
-    console.log('yt-search:', e.message);
-  }
-
-  // 2) youtube-sr
-  try {
-    const YouTube = require('youtube-sr').default || require('youtube-sr');
-    const list = await YouTube.search(q, { limit: 3, type: 'video' });
-    if (list?.[0]?.url) return list[0].url;
-    if (list?.[0]?.id) return 'https://www.youtube.com/watch?v=' + list[0].id;
-  } catch (e) {
-    console.log('youtube-sr:', e.message);
-  }
-
-  // 3) Confronter search endpoints (if any)
-  for (const path of [
-    '/search/yts?query=',
-    '/search/youtube?q=',
-    '/api/search/yts?query='
-  ]) {
-    try {
-      const data = await confronterGet(path + encodeURIComponent(q), 25000);
-      const list = data?.result?.results || data?.result || data?.data || [];
-      const arr = Array.isArray(list) ? list : [];
-      const first = arr[0];
-      if (first?.url) return first.url;
-      if (first?.id) return 'https://www.youtube.com/watch?v=' + first.id;
-    } catch {}
-  }
-  return null;
-}
-
-async function searchYoutubeList(query, limit = 10) {
-  const q = String(query || '').trim();
-  if (!q) return [];
-  try {
-    const yts = require('yt-search');
-    const r = await yts(q);
-    return (r.videos || []).slice(0, limit).map((v) => ({
-      title: v.title,
-      url: v.url,
-      duration: v.timestamp || v.duration?.timestamp || null,
-      channel: v.author?.name || v.author?.url || null,
-      views: v.views || null,
-      thumbnail: v.thumbnail || null
-    }));
-  } catch (e) {
-    console.log('searchYoutubeList:', e.message);
-  }
-  try {
-    const YouTube = require('youtube-sr').default || require('youtube-sr');
-    const list = await YouTube.search(q, { limit, type: 'video' });
-    return (list || []).map((v) => ({
-      title: v.title,
-      url: v.url || (v.id ? 'https://www.youtube.com/watch?v=' + v.id : null),
-      duration: v.durationFormatted || null,
-      channel: v.channel?.name || null,
-      thumbnail: v.thumbnail?.url || null
-    })).filter((x) => x.url);
-  } catch {}
-  return [];
-}
-
-function extractMediaUrl(data) {
-  if (!data) return null;
-  if (typeof data === 'string' && /^https?:\/\//i.test(data)) return data;
-  const r = data.result && typeof data.result === 'object' ? data.result : data;
-  return (
-    r.url || r.dl || r.download || r.download_url || r.audio || r.video ||
-    r.high || r.low || (Array.isArray(r.urls) && r.urls[0]) ||
-    (typeof data.result === 'string' && /^https?:\/\//i.test(data.result) ? data.result : null)
-  );
-}
-
-function extractMeta(data) {
-  const r = data?.result && typeof data.result === 'object' ? data.result : (data || {});
-  return {
-    title: r.title || r.name || null,
-    artist: r.artist || r.author || r.channel || r.uploader || null,
-    thumbnail: r.thumbnail || r.thumb || r.image || null,
-    duration: r.duration || null,
-    views: r.views || r.viewCount || null
-  };
-}
-
-// Default playlist (real searchable tracks)
+// ==================== MUSIC (Audius) ====================
+// Real searchable tracks (Audius has indie/creative-commons heavy catalog)
+// Queries tuned so searchSong finds streamable results with real titles
 const MUSIC_TRACKS = [
-  { q: 'Alan Walker Faded', name: 'Alan Walker — Faded' },
-  { q: 'The Weeknd Blinding Lights', name: 'The Weeknd — Blinding Lights' },
-  { q: 'Ed Sheeran Shape of You', name: 'Ed Sheeran — Shape of You' },
-  { q: 'Burna Boy Last Last', name: 'Burna Boy — Last Last' },
-  { q: 'Rema Calm Down', name: 'Rema — Calm Down' },
-  { q: 'Sauti Sol Suzanna', name: 'Sauti Sol — Suzanna' },
-  { q: 'Diamond Platnumz Jeje', name: 'Diamond Platnumz — Jeje' },
-  { q: 'Central Cee Doja', name: 'Central Cee — Doja' },
-  { q: 'Lil Baby Woah', name: 'Lil Baby — Woah' },
-  { q: 'Vybz Kartel Fever', name: 'Vybz Kartel — Fever' }
+  { q: 'electronic chill beats',        name: 'Chill Electronic Beats' },
+  { q: 'lofi hip hop study',            name: 'Lo-Fi Hip Hop' },
+  { q: 'dance pop upbeat',              name: 'Upbeat Dance Pop' },
+  { q: 'afrobeats summer',              name: 'Afrobeats Summer' },
+  { q: 'trap instrumental banger',      name: 'Trap Instrumental' },
+  { q: 'reggae roots vibes',            name: 'Reggae Roots' },
+  { q: 'house music progressive',       name: 'Progressive House' },
+  { q: 'rnb soul smooth',               name: 'Smooth R&B Soul' },
+  { q: 'drill type beat',               name: 'Drill Type Beat' },
+  { q: 'ambient atmospheric',           name: 'Ambient Atmosphere' },
+  { q: 'jazz lounge relax',             name: 'Jazz Lounge' },
+  { q: 'future bass energy',            name: 'Future Bass' }
 ];
 const musicCache = new Map();
 
 app.get('/api/music/playlist', (req, res) => {
-  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name, q: t.q })) });
+  res.json({ tracks: MUSIC_TRACKS.map((t, i) => ({ i, name: t.name })) });
 });
 
-/** Search YouTube via Confronter (or resolve name → first hit via ytmp3 title) */
-app.get('/api/music/search', async (req, res) => {
-  try {
-    const q = String(req.query.q || req.query.query || '').trim();
-    if (!q) return res.status(400).json({ status: false, error: 'Missing q' });
-    const results = await searchYoutubeList(q, 12);
-    return res.json({ status: true, results });
-  } catch (e) {
-    res.status(502).json({ status: false, error: e.message });
-  }
-});
-
-/** Resolve audio or video stream from Confronter */
-app.get('/api/music/play', async (req, res) => {
-  try {
-    const q = String(req.query.q || req.query.query || req.query.url || '').trim();
-    const type = String(req.query.type || 'audio').toLowerCase(); // audio | video
-    if (!q) return res.status(400).json({ status: false, error: 'Missing q or url' });
-
-    const cacheKey = type + ':' + q;
-    const cached = musicCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 20 * 60 * 1000) {
-      return res.json({ status: true, ...cached.data });
-    }
-
-    // Name → YouTube URL (API needs full URL — search alone is not enough)
-    const ytUrl = await resolveYoutubeUrl(q);
-    if (!ytUrl) {
-      return res.status(404).json({
-        status: false,
-        error: 'No video found for query. Try a clearer name or paste a YouTube link.'
-      });
-    }
-
-    const path =
-      type === 'video'
-        ? '/download/ytmp4?url=' + encodeURIComponent(ytUrl)
-        : '/download/ytmp3?url=' + encodeURIComponent(ytUrl);
-
-    const data = await confronterGet(path, 90000);
-    if (!data || data.status === false) {
-      return res.status(502).json({ status: false, error: data?.error || 'Download failed', youtubeUrl: ytUrl });
-    }
-    const mediaUrl = extractMediaUrl(data);
-    if (!mediaUrl) {
-      return res.status(502).json({ status: false, error: 'No media URL from API', youtubeUrl: ytUrl });
-    }
-    const meta = extractMeta(data);
-    // Browser cannot play most googlevideo URLs (CORS). Serve via same-origin proxy.
-    const proxyPath =
-      '/api/music/proxy?type=' +
-      encodeURIComponent(type === 'video' ? 'video' : 'audio') +
-      '&u=' +
-      encodeURIComponent(mediaUrl);
-    const payload = {
-      title: meta.title || q,
-      artist: meta.artist || null,
-      streamUrl: proxyPath, // same-origin — plays in <audio>/<video>
-      directUrl: mediaUrl,   // raw CDN link (download / external)
-      type: type === 'video' ? 'video' : 'audio',
-      youtubeUrl: ytUrl,
-      thumbnail: meta.thumbnail,
-      duration: meta.duration,
-      views: meta.views
-    };
-    musicCache.set(cacheKey, { data: payload, ts: Date.now() });
-    res.json({ status: true, ...payload });
-  } catch (e) {
-    res.status(502).json({ status: false, error: e.message });
-  }
-});
-
-
-/** Stream proxy — Range support so HTML5 audio/video can play */
-app.get('/api/music/proxy', async (req, res) => {
-  try {
-    let mediaUrl = String(req.query.u || req.query.url || '').trim();
-    if (!mediaUrl) return res.status(400).json({ error: 'Missing u' });
-    try { mediaUrl = decodeURIComponent(mediaUrl); } catch {}
-    if (!/^https?:\/\//i.test(mediaUrl)) return res.status(400).json({ error: 'Invalid url' });
-
-    const type = String(req.query.type || 'audio').toLowerCase();
-    const headers = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      Referer: 'https://www.youtube.com/',
-      Origin: 'https://www.youtube.com'
-    };
-    // Forward Range so <audio>/<video> can seek and start playback
-    if (req.headers.range) headers.Range = req.headers.range;
-
-    const upstream = await axios.get(mediaUrl, {
-      responseType: 'stream',
-      timeout: 120000,
-      maxRedirects: 5,
-      validateStatus: () => true,
-      headers
-    });
-    if (upstream.status >= 400) {
-      return res.status(502).json({ error: 'Upstream HTTP ' + upstream.status });
-    }
-
-    const ct =
-      upstream.headers['content-type'] ||
-      (type === 'video' ? 'video/mp4' : 'audio/mp4');
-    res.status(upstream.status === 206 ? 206 : 200);
-    res.setHeader('Content-Type', ct);
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.setHeader('Accept-Ranges', 'bytes');
-    if (upstream.headers['content-length']) {
-      res.setHeader('Content-Length', upstream.headers['content-length']);
-    }
-    if (upstream.headers['content-range']) {
-      res.setHeader('Content-Range', upstream.headers['content-range']);
-    }
-    upstream.data.on('error', () => { try { res.end(); } catch {} });
-    upstream.data.pipe(res);
-  } catch (e) {
-    if (!res.headersSent) res.status(502).json({ error: e.message });
-  }
-});
-
-
-app.get('/api/music/:index', (req, res) => {
+app.get('/api/music/:index', async (req, res) => {
   const idx = Number(req.params.index) || 0;
   const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
   const track = MUSIC_TRACKS[i];
+  let name = track.name;
+  try {
+    if (searchSong) {
+      const data = await searchSong(track.q);
+      if (data?.title) {
+        name = data.artist ? `${data.artist} — ${data.title}` : data.title;
+      }
+    }
+  } catch {}
   res.json({
     i,
-    name: track.name,
-    q: track.q,
-    url: '/api/music/play?type=audio&q=' + encodeURIComponent(track.q),
+    name,
+    url: '/api/stream-song/' + encodeURIComponent(track.q),
     next: (i + 1) % MUSIC_TRACKS.length
   });
 });
@@ -697,24 +469,21 @@ app.get('/api/stream-song/:query', async (req, res) => {
   try {
     const query = String(req.params.query || '').trim();
     if (!query) return res.status(400).json({ error: 'query required' });
-    // Proxy to /api/music/play
-    const r = await axios.get(
-      `http://127.0.0.1:${PORT}/api/music/play?type=audio&q=` + encodeURIComponent(query),
-      { timeout: 90000, validateStatus: () => true }
-    );
-    if (r.status >= 400 || !r.data?.streamUrl) {
-      return res.status(404).json({ error: r.data?.error || 'Not found', query });
-    }
-    res.json({
-      title: r.data.title,
-      artist: r.data.artist,
-      streamUrl: r.data.streamUrl,
-      artwork: r.data.thumbnail,
-      name: [r.data.artist, r.data.title].filter(Boolean).join(' — ') || query
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    const cached = musicCache.get(query);
+    if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
+    if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
+    const data = await searchSong(query);
+    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
+    const payload = {
+      title: data.title || query,
+      artist: data.artist || 'Artist',
+      streamUrl: data.streamUrl,
+      artwork: data.artwork || null,
+      name: `${data.artist || 'Artist'} — ${data.title || query}`
+    };
+    musicCache.set(query, { data: payload, ts: Date.now() });
+    res.json(payload);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/music/stream/:index', async (req, res) => {
@@ -722,29 +491,25 @@ app.get('/api/music/stream/:index', async (req, res) => {
     const idx = Number(req.params.index) || 0;
     const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
     const track = MUSIC_TRACKS[i];
-    const play = await axios.get(
-      `http://127.0.0.1:${PORT}/api/music/play?type=audio&q=` + encodeURIComponent(track.q),
-      { timeout: 90000, validateStatus: () => true }
-    );
-    const streamUrl = play.data?.streamUrl;
-    if (!streamUrl) return res.status(404).json({ error: 'No audio' });
-    const upstream = await axios.get(streamUrl, {
-      responseType: 'stream',
-      timeout: 90000,
-      validateStatus: () => true,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      maxRedirects: 5
+    let data = musicCache.get(track.q)?.data;
+    if (!data?.streamUrl) {
+      if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
+      data = await searchSong(track.q);
+      if (data?.streamUrl) musicCache.set(track.q, { data, ts: Date.now() });
+    }
+    if (!data?.streamUrl) return res.status(404).json({ error: 'No audio' });
+    const upstream = await axios.get(data.streamUrl, {
+      responseType: 'stream', timeout: 90000, validateStatus: () => true,
+      headers: { 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5
     });
     if (upstream.status >= 400) return res.status(502).json({ error: 'Upstream failed' });
     res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=1800');
     return upstream.data.pipe(res);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
+;
 
 // ---------- Keep-alive (stop free dyno sleep) ----------
 const KEEP_URL = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
