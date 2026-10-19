@@ -422,7 +422,7 @@ app.get('/api/session/:id', async (req, res) => {
 });
 
 // ==================== MUSIC (Confronter APIs — real songs) ====================
-const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://confronter-apis.onrender.com').replace(/\/+$/, '');
+const CONFRONTER_API = String(process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
 
 async function confronterGet(path, timeout = 60000) {
   const p = path.startsWith('/') ? path : '/' + path;
@@ -603,10 +603,17 @@ app.get('/api/music/play', async (req, res) => {
       return res.status(502).json({ status: false, error: 'No media URL from API', youtubeUrl: ytUrl });
     }
     const meta = extractMeta(data);
+    // Browser cannot play most googlevideo URLs (CORS). Serve via same-origin proxy.
+    const proxyPath =
+      '/api/music/proxy?type=' +
+      encodeURIComponent(type === 'video' ? 'video' : 'audio') +
+      '&u=' +
+      encodeURIComponent(mediaUrl);
     const payload = {
       title: meta.title || q,
       artist: meta.artist || null,
-      streamUrl: mediaUrl,
+      streamUrl: proxyPath, // same-origin — plays in <audio>/<video>
+      directUrl: mediaUrl,   // raw CDN link (download / external)
       type: type === 'video' ? 'video' : 'audio',
       youtubeUrl: ytUrl,
       thumbnail: meta.thumbnail,
@@ -617,6 +624,49 @@ app.get('/api/music/play', async (req, res) => {
     res.json({ status: true, ...payload });
   } catch (e) {
     res.status(502).json({ status: false, error: e.message });
+  }
+});
+
+
+/** Stream proxy — allows browser <audio>/<video> to play YouTube CDN links */
+app.get('/api/music/proxy', async (req, res) => {
+  try {
+    let mediaUrl = String(req.query.u || req.query.url || '').trim();
+    if (!mediaUrl) return res.status(400).json({ error: 'Missing u' });
+    try { mediaUrl = decodeURIComponent(mediaUrl); } catch {}
+    if (!/^https?:\/\//i.test(mediaUrl)) return res.status(400).json({ error: 'Invalid url' });
+
+    const type = String(req.query.type || 'audio').toLowerCase();
+    const upstream = await axios.get(mediaUrl, {
+      responseType: 'stream',
+      timeout: 120000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        Referer: 'https://www.youtube.com/',
+        Origin: 'https://www.youtube.com'
+      }
+    });
+    if (upstream.status >= 400) {
+      return res.status(502).json({ error: 'Upstream HTTP ' + upstream.status });
+    }
+    const ct =
+      upstream.headers['content-type'] ||
+      (type === 'video' ? 'video/mp4' : 'audio/mpeg');
+    res.setHeader('Content-Type', ct);
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (upstream.headers['content-length']) {
+      res.setHeader('Content-Length', upstream.headers['content-length']);
+    }
+    upstream.data.on('error', () => { try { res.end(); } catch {} });
+    upstream.data.pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: e.message });
   }
 });
 
