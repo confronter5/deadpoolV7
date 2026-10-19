@@ -1,9 +1,10 @@
 {
   "name": "deadpoolv7",
-  "version": "7.6.2",
-  "main": "index.js",
+  "version": "7.6.3",
+  "description": "Deadpool V7 — pair site + bot",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node server.js",
     "start:bot": "node index.js",
     "start:pair": "node server.js",
     "pair": "node pair.js",
@@ -27,6 +28,7 @@
     "wa-sticker-formatter": "^4.4.4",
     "express": "^4.21.2",
     "qrcode": "^1.5.4",
+    "cors": "^2.8.5",
     "yt-dlp-exec": "^1.0.2"
   }
 }
