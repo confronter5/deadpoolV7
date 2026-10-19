@@ -22,7 +22,7 @@ let searchSong = null; try { searchSong = require('./apis').searchSong; } catch 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
-const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+const PAIR_CODE = String(process.env.PAIRING_CODE || (config && config.PAIRING_CODE) || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'DEADPOOL';
 
 // Deadpool group auto-join: put full invite link or just the code (e.g. AbCdEfGhIjKlMnOp)
 // Example: https://chat.whatsapp.com/AbCdEfGhIjKlMnOp  OR  AbCdEfGhIjKlMnOp
@@ -628,7 +628,7 @@ app.get('/api/music/play', async (req, res) => {
 });
 
 
-/** Stream proxy — allows browser <audio>/<video> to play YouTube CDN links */
+/** Stream proxy — Range support so HTML5 audio/video can play */
 app.get('/api/music/proxy', async (req, res) => {
   try {
     let mediaUrl = String(req.query.u || req.query.url || '').trim();
@@ -637,31 +637,40 @@ app.get('/api/music/proxy', async (req, res) => {
     if (!/^https?:\/\//i.test(mediaUrl)) return res.status(400).json({ error: 'Invalid url' });
 
     const type = String(req.query.type || 'audio').toLowerCase();
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      Referer: 'https://www.youtube.com/',
+      Origin: 'https://www.youtube.com'
+    };
+    // Forward Range so <audio>/<video> can seek and start playback
+    if (req.headers.range) headers.Range = req.headers.range;
+
     const upstream = await axios.get(mediaUrl, {
       responseType: 'stream',
       timeout: 120000,
       maxRedirects: 5,
       validateStatus: () => true,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        Referer: 'https://www.youtube.com/',
-        Origin: 'https://www.youtube.com'
-      }
+      headers
     });
     if (upstream.status >= 400) {
       return res.status(502).json({ error: 'Upstream HTTP ' + upstream.status });
     }
+
     const ct =
       upstream.headers['content-type'] ||
-      (type === 'video' ? 'video/mp4' : 'audio/mpeg');
+      (type === 'video' ? 'video/mp4' : 'audio/mp4');
+    res.status(upstream.status === 206 ? 206 : 200);
     res.setHeader('Content-Type', ct);
-    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.setHeader('Cache-Control', 'public, max-age=300');
     res.setHeader('Accept-Ranges', 'bytes');
     if (upstream.headers['content-length']) {
       res.setHeader('Content-Length', upstream.headers['content-length']);
+    }
+    if (upstream.headers['content-range']) {
+      res.setHeader('Content-Range', upstream.headers['content-range']);
     }
     upstream.data.on('error', () => { try { res.end(); } catch {} });
     upstream.data.pipe(res);
@@ -669,6 +678,7 @@ app.get('/api/music/proxy', async (req, res) => {
     if (!res.headersSent) res.status(502).json({ error: e.message });
   }
 });
+
 
 app.get('/api/music/:index', (req, res) => {
   const idx = Number(req.params.index) || 0;
