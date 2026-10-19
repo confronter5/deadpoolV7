@@ -2,8 +2,8 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Deadpool V7 — Pair & Music</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deadpool V7 — Pair</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,11 +20,11 @@
       --accent2: #fb7185;
       --input: #18181b;
       --ok: #22c55e;
-      --shadow: 0 16px 40px -12px rgba(0,0,0,.55);
+      --shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.5);
     }
     [data-theme="light"] {
       --bg: #f4f4f5;
-      --card: #fff;
+      --card: #ffffff;
       --text: #18181b;
       --muted: #71717a;
       --line: #e4e4e7;
@@ -33,94 +33,62 @@
       --accent2: #e11d48;
       --input: #f4f4f5;
       --ok: #16a34a;
-      --shadow: 0 16px 32px -10px rgba(0,0,0,.08);
+      --shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.1);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { color-scheme: dark light; }
     body {
       min-height: 100vh;
-      font-family: Inter, system-ui, -apple-system, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
-      padding: 16px 12px 32px;
+      padding: 12px 10px;
       -webkit-font-smoothing: antialiased;
     }
     .card {
       width: 100%;
-      max-width: 400px;
+      max-width: 360px;
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 18px 16px 14px;
+      border-radius: 14px;
+      padding: 16px 14px 12px;
       box-shadow: var(--shadow);
       position: relative;
     }
     .theme-btn {
       position: absolute;
-      top: 12px;
-      right: 12px;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: var(--input);
-      color: var(--text);
-      cursor: pointer;
-      display: grid;
-      place-items: center;
-      font-size: 0.95rem;
-      transition: background .12s, border-color .12s, color .12s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .theme-btn:hover { border-color: var(--muted); }
-    .theme-btn:active { transform: scale(0.94); }
-    .header { text-align: center; margin-bottom: 14px; padding-top: 4px; }
-    .tagline {
-      color: var(--text);
-      font-size: 0.78rem;
-      font-weight: 600;
-      line-height: 1.45;
-      margin-bottom: 10px;
-      opacity: 0.9;
-    }
-    .logo { font-size: 1.4rem; color: var(--accent); margin-bottom: 4px; }
-    h1 { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.03em; }
-    .sub { color: var(--muted); font-size: 0.72rem; font-weight: 500; margin-top: 2px; }
-
-    .main-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 12px;
-      background: var(--input);
-      padding: 3px;
-      border-radius: 11px;
-      border: 1px solid var(--line);
-    }
-    .main-tab {
-      flex: 1;
-      padding: 8px 6px;
-      border: none;
-      border-radius: 8px;
+      top: 10px;
+      right: 10px;
       background: transparent;
+      border: none;
       color: var(--muted);
-      font-weight: 600;
-      font-size: 0.74rem;
-      font-family: inherit;
+      width: 28px;
+      height: 28px;
       cursor: pointer;
-      transition: background .15s, color .15s;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s;
+      padding: 0;
     }
-    .main-tab:hover { color: var(--text); }
-    .main-tab.active {
-      background: var(--accent);
-      color: #fff;
-      box-shadow: 0 2px 8px rgba(225, 29, 72, 0.28);
+    .theme-btn:hover { color: var(--text); }
+    .header { text-align: center; margin-bottom: 12px; padding-top: 2px; }
+    .tagline {
+      color: #ffffff;
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: 0.01em;
+      margin-bottom: 10px;
+      opacity: 0.95;
     }
-    .view { display: none; }
-    .view.active { display: block; }
-
+    [data-theme="light"] .tagline { color: #18181b; }
+    .logo { font-size: 1.35rem; color: var(--accent); margin-bottom: 4px; line-height: 1; }
+    h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 2px; }
+    .sub { color: var(--muted); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.01em; }
     .tabs {
       display: flex;
       gap: 4px;
@@ -140,96 +108,70 @@
       background: transparent;
       color: var(--muted);
       font-weight: 600;
-      font-size: 0.74rem;
-      font-family: inherit;
-      transition: background .15s, color .15s;
+      font-size: 0.75rem;
+      transition: background 0.2s, color 0.2s;
     }
-    .tab.active { background: var(--accent); color: #fff; }
-
-    label {
-      display: block;
-      font-size: 0.7rem;
-      font-weight: 500;
-      color: var(--muted);
-      margin-bottom: 5px;
-    }
-    input, select {
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--accent); color: #fff; box-shadow: 0 1px 6px rgba(225, 29, 72, 0.3); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    label { display: block; font-size: 0.7rem; font-weight: 500; color: var(--muted); margin-bottom: 5px; letter-spacing: 0.01em; }
+    input {
       width: 100%;
-      padding: 10px 12px;
-      border-radius: 10px;
+      padding: 9px 12px;
+      border-radius: 9px;
       border: 1px solid var(--line);
       background: var(--input);
       color: var(--text);
       font-size: 0.88rem;
       font-family: inherit;
       outline: none;
-      transition: border-color .15s, box-shadow .15s;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    input:focus, select:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.12);
-    }
+    input::placeholder { color: var(--muted); opacity: 0.7; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.12); }
     button.action {
       width: 100%;
       margin-top: 10px;
-      padding: 11px;
+      padding: 10px;
       border: none;
-      border-radius: 10px;
+      border-radius: 9px;
       background: var(--accent);
       color: #fff;
       font-weight: 600;
       font-size: 0.82rem;
       font-family: inherit;
       cursor: pointer;
-      transition: background .15s, transform .1s;
-      box-shadow: 0 2px 10px rgba(225, 29, 72, 0.25);
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 2px 8px rgba(225, 29, 72, 0.25);
     }
-    button.action:hover:not(:disabled) { background: var(--accent-hover); }
+    button.action:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 3px 10px rgba(225, 29, 72, 0.35); }
     button.action:active:not(:disabled) { transform: scale(0.98); }
     button.action:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
     button.secondary {
       width: 100%;
       margin-top: 6px;
-      padding: 9px;
+      padding: 8px;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 9px;
       background: transparent;
       color: var(--text);
-      font-weight: 600;
+      font-weight: 560;
       font-size: 0.78rem;
       font-family: inherit;
       cursor: pointer;
-      transition: background .12s, border-color .12s;
+      transition: background 0.2s, border-color 0.2s;
     }
     button.secondary:hover { background: var(--input); border-color: var(--muted); }
-    .hint { color: var(--muted); font-size: 0.7rem; line-height: 1.45; margin-top: 8px; }
-    .box {
-      margin-top: 10px;
-      padding: 10px;
-      border-radius: 10px;
-      background: var(--input);
-      border: 1px solid var(--line);
-      display: none;
-    }
+    .hint { color: var(--muted); font-size: 0.7rem; line-height: 1.4; margin-top: 8px; }
+    .box { margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--input); border: 1px solid var(--line); display: none; }
     .box.show { display: block; }
     .code-row { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 6px 0 2px; }
-    .code {
-      font-size: 1.15rem;
-      letter-spacing: 0.14em;
-      font-weight: 700;
-      color: var(--accent2);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    }
+    .code { font-size: 1.15rem; letter-spacing: 0.15em; font-weight: 700; color: var(--accent2); font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
     .ok { color: var(--ok); }
     .err { color: var(--accent2); }
     .qr-wrap { text-align: center; margin: 8px 0 2px; }
-    .qr-wrap img {
-      width: 180px;
-      max-width: 100%;
-      border-radius: 10px;
-      background: #fff;
-      padding: 8px;
-    }
+    .qr-wrap img { width: 180px; max-width: 100%; border-radius: 10px; background: #fff; padding: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
     .session {
       word-break: break-all;
       font-size: 0.62rem;
@@ -243,281 +185,106 @@
       font-family: ui-monospace, monospace;
       line-height: 1.4;
     }
-
-    /* —— Music Hub —— */
-    .hub-head {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .hub-head h2 {
-      font-size: 0.95rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .hub-head i { color: var(--accent); }
-    .type-toggle {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 10px;
-      background: var(--input);
-      padding: 3px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-    }
-    .type-btn {
-      flex: 1;
-      padding: 7px;
-      border: none;
-      border-radius: 7px;
-      background: transparent;
-      color: var(--muted);
-      font-weight: 600;
-      font-size: 0.74rem;
-      font-family: inherit;
-      cursor: pointer;
-      transition: background .12s, color .12s;
-    }
-    .type-btn.active { background: var(--accent); color: #fff; }
-    .search-row { display: flex; gap: 6px; margin-bottom: 10px; }
-    .search-row input { flex: 1; }
-    .search-row button {
-      width: 44px;
-      border: none;
-      border-radius: 10px;
-      background: var(--accent);
-      color: #fff;
-      cursor: pointer;
-      font-size: 0.95rem;
-    }
-    .results {
-      max-height: 180px;
-      overflow: auto;
-      margin-bottom: 10px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--input);
-    }
-    .result-item {
-      padding: 9px 10px;
-      border-bottom: 1px solid var(--line);
-      cursor: pointer;
-      font-size: 0.75rem;
-      transition: background .1s;
-    }
-    .result-item:last-child { border-bottom: none; }
-    .result-item:hover { background: var(--card); }
-    .result-item strong { display: block; font-weight: 600; margin-bottom: 2px; }
-    .result-item span { color: var(--muted); font-size: 0.68rem; }
-    .player-box {
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: var(--input);
-    }
-    .now-playing {
-      font-size: 0.78rem;
-      font-weight: 600;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 1.2em;
-    }
-    .now-playing i { color: var(--accent); }
-    audio, video {
-      width: 100%;
-      border-radius: 8px;
-      margin-bottom: 8px;
-      background: #000;
-    }
-    video { max-height: 200px; }
-    .player-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .player-actions button {
-      flex: 1;
-      min-width: 90px;
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      background: transparent;
-      color: var(--text);
-      font-weight: 600;
-      font-size: 0.72rem;
-      font-family: inherit;
-      cursor: pointer;
-    }
-    .player-actions button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .quick {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-    .chip {
-      padding: 5px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: var(--card);
-      color: var(--muted);
-      font-size: 0.68rem;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .chip:hover { border-color: var(--accent); color: var(--text); }
-
-    .footer {
-      text-align: center;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
-      font-size: 0.68rem;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-    .footer a { color: var(--accent2); text-decoration: none; font-weight: 500; }
+    .music { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+    .music-title { font-size: 0.7rem; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    audio#bgAudio { width: 100%; margin-bottom: 6px; border-radius: 6px; height: 32px; }
+    .music-controls { display: flex; gap: 6px; align-items: center; }
+    .music-controls button { flex: 1; padding: 7px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.75rem; cursor: pointer; }
+    .music-controls button.secondary { background: transparent; border: 1px solid var(--line); color: var(--text); }
+    .music-now { font-size: 0.68rem; color: var(--ok); margin-top: 4px; min-height: 1.1em; display: flex; align-items: center; gap: 5px; }
+    .footer { text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 0.68rem; color: var(--muted); line-height: 1.5; }
+    .footer a { color: var(--accent2); text-decoration: none; font-weight: 500; transition: opacity 0.2s; }
+    .footer a:hover { opacity: 0.8; }
   </style>
 </head>
 <body>
   <div class="card">
-    <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle theme">
-      <i class="fa-solid fa-moon" id="themeIcon"></i>
-    </button>
+    <button class="theme-btn" id="themeBtn" type="button"><i class="fa-solid fa-moon"></i></button>
 
     <div class="header">
       <p class="tagline">We didn't die — we took a little break.<br/>Deadpool is still ruling them.</p>
       <div class="logo"><i class="fa-solid fa-skull"></i></div>
       <h1>Deadpool V7</h1>
-      <p class="sub">Link device · Music hub</p>
+      <p class="sub">Link device · Get session</p>
     </div>
 
-    <div class="main-tabs">
-      <button type="button" class="main-tab active" data-view="pair"><i class="fa-solid fa-link"></i> Pair</button>
-      <button type="button" class="main-tab" data-view="music"><i class="fa-solid fa-music"></i> Music</button>
+    <div class="tabs">
+      <div class="tab active" data-tab="code"><i class="fa-solid fa-hashtag"></i> Pair Code</div>
+      <div class="tab" data-tab="qr"><i class="fa-solid fa-qrcode"></i> QR Code</div>
     </div>
 
-    <!-- PAIR VIEW -->
-    <div id="view-pair" class="view active">
-      <div class="tabs">
-        <button type="button" class="tab active" data-tab="code"><i class="fa-solid fa-hashtag"></i> Pair Code</button>
-        <button type="button" class="tab" data-tab="qr"><i class="fa-solid fa-qrcode"></i> QR Code</button>
-      </div>
+    <div id="panel-code" class="panel active">
+      <label for="phone"><i class="fa-solid fa-phone"></i> Number (with country code)</label>
+      <input id="phone" type="tel" placeholder="254712345678" />
+      <button class="action" id="btnCode" type="button"><i class="fa-solid fa-key"></i> Get Pairing Code</button>
+      <p class="hint">
+        <i class="fa-solid fa-info-circle"></i>
+        <b>How to link:</b><br>
+        1. Open WhatsApp on your phone<br>
+        2. Go to <b>Linked Devices</b><br>
+        3. Tap <b>Link a Device</b><br>
+        4. Choose <b>Link with phone number instead</b><br>
+        5. Enter the 8-digit code that appears below
+      </p>
+    </div>
 
-      <div id="panel-code" class="panel-pair">
-        <label for="phone"><i class="fa-solid fa-phone"></i> Number (with country code)</label>
-        <input id="phone" type="tel" placeholder="254712345678" autocomplete="tel" />
-        <button class="action" id="btnCode" type="button"><i class="fa-solid fa-key"></i> Get Pairing Code</button>
-        <p class="hint">
-          <i class="fa-solid fa-circle-info"></i>
-          WhatsApp → Linked Devices → Link with phone number → enter the code below.
-        </p>
-      </div>
+    <div id="panel-qr" class="panel">
+      <p class="hint" style="margin-top:0"><i class="fa-solid fa-info-circle"></i> Generate QR → WhatsApp → Linked Devices → Scan.</p>
+      <button class="action" id="btnQr" type="button"><i class="fa-solid fa-qrcode"></i> Generate QR</button>
+    </div>
 
-      <div id="panel-qr" class="panel-pair" style="display:none">
-        <p class="hint" style="margin-top:0"><i class="fa-solid fa-circle-info"></i> Generate QR → WhatsApp → Linked Devices → Scan.</p>
-        <button class="action" id="btnQr" type="button"><i class="fa-solid fa-qrcode"></i> Generate QR</button>
+    <div id="statusBox" class="box">
+      <div id="statusText" class="hint"></div>
+      <div id="qrWrap" class="qr-wrap" style="display:none"><img id="qrImg" alt="QR" /></div>
+      <div id="codeRow" class="code-row" style="display:none">
+        <span id="codeEl" class="code"></span>
+        <button type="button" id="copyCodeBtn" class="secondary" style="width:auto;padding:8px 12px;margin:0"><i class="fa-regular fa-copy"></i> Copy</button>
       </div>
-
-      <div id="statusBox" class="box">
-        <div id="statusText" class="hint"></div>
-        <div id="qrWrap" class="qr-wrap" style="display:none"><img id="qrImg" alt="QR" /></div>
-        <div id="codeRow" class="code-row" style="display:none">
-          <span id="codeEl" class="code"></span>
-          <button type="button" id="copyCodeBtn" class="secondary" style="width:auto;padding:8px 12px;margin:0"><i class="fa-regular fa-copy"></i></button>
-        </div>
-        <div id="sessionWrap" style="display:none">
-          <p class="ok"><i class="fa-solid fa-circle-check"></i> Session ready</p>
-          <div id="sessionEl" class="session"></div>
-          <button type="button" id="copySessionBtn" class="secondary"><i class="fa-regular fa-copy"></i> Copy Session</button>
-        </div>
+      <div id="sessionWrap" style="display:none">
+        <p class="ok"><i class="fa-solid fa-circle-check"></i> Session ready</p>
+        <div id="sessionEl" class="session"></div>
+        <button type="button" id="copySessionBtn" class="secondary"><i class="fa-regular fa-copy"></i> Copy Session</button>
       </div>
     </div>
 
-    <!-- MUSIC VIEW -->
-    <div id="view-music" class="view">
-      <div class="hub-head">
-        <i class="fa-solid fa-headphones"></i>
-        <h2>Confronter Music Hub</h2>
+    <div class="music">
+      <div class="music-title"><i class="fa-solid fa-music"></i> Music while you wait</div>
+      <audio id="bgAudio" controls preload="auto"></audio>
+      <div class="music-controls">
+        <button type="button" id="playMusicBtn"><i class="fa-solid fa-play"></i> Play</button>
+        <button type="button" id="pauseMusicBtn" class="secondary"><i class="fa-solid fa-pause"></i> Pause</button>
+        <button type="button" id="nextMusicBtn" class="secondary"><i class="fa-solid fa-forward"></i> Next</button>
       </div>
-
-      <div class="type-toggle">
-        <button type="button" class="type-btn active" data-type="audio"><i class="fa-solid fa-music"></i> Audio</button>
-        <button type="button" class="type-btn" data-type="video"><i class="fa-solid fa-film"></i> Video</button>
-      </div>
-
-      <div class="search-row">
-        <input id="musicQ" type="search" placeholder="Search song or paste YouTube URL…" />
-        <button type="button" id="btnSearch" aria-label="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
-      </div>
-
-      <div id="results" class="results" style="display:none"></div>
-
-      <div class="player-box">
-        <div class="now-playing">
-          <i class="fa-solid fa-compact-disc" id="spinIcon"></i>
-          <span id="nowLabel">Search or pick a track</span>
-        </div>
-        <audio id="audioEl" controls preload="none"></audio>
-        <video id="videoEl" controls playsinline style="display:none"></video>
-        <div class="player-actions">
-          <button type="button" class="primary" id="btnPlayNow"><i class="fa-solid fa-play"></i> Play</button>
-          <button type="button" id="btnDownload"><i class="fa-solid fa-download"></i> Link</button>
-          <button type="button" id="btnNext"><i class="fa-solid fa-forward"></i> Next</button>
-        </div>
-      </div>
-
-      <div class="quick" id="quickList"></div>
+      <div class="music-now" id="musicNow"><i class="fa-solid fa-compact-disc"></i> <span id="trackName">Tap Play to start</span></div>
     </div>
 
-    <p class="footer">
-      Powered by Confronter<br />
-      <a href="https://wa.me/254796283064" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> Support</a>
+    <p class="footer">Powered by Confronter<br />
+      <a href="https://wa.me/254796283064" target="_blank"><i class="fa-brands fa-whatsapp"></i> Support</a>
     </p>
   </div>
 
   <script>
-    /* Theme — instant, no lag */
-    (function () {
-      const root = document.documentElement;
-      const btn = document.getElementById('themeBtn');
-      const icon = document.getElementById('themeIcon');
-      const saved = localStorage.getItem('dp-theme') || 'dark';
-      root.setAttribute('data-theme', saved);
-      icon.className = saved === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-      btn.addEventListener('click', () => {
-        const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        root.setAttribute('data-theme', next);
-        localStorage.setItem('dp-theme', next);
-        icon.className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-      }, { passive: true });
-    })();
+    const root = document.documentElement;
+    const themeBtn = document.getElementById('themeBtn');
+    const saved = localStorage.getItem('dp-theme') || 'dark';
+    root.setAttribute('data-theme', saved);
+    themeBtn.innerHTML = saved === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+    themeBtn.onclick = () => {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('dp-theme', next);
+      themeBtn.innerHTML = next === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+    };
 
-    /* Main views */
-    document.querySelectorAll('.main-tab').forEach((t) => {
-      t.addEventListener('click', () => {
-        document.querySelectorAll('.main-tab').forEach((x) => x.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {
+      t.onclick = () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
         t.classList.add('active');
-        document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
-        document.getElementById('view-' + t.dataset.view).classList.add('active');
-      });
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+      };
     });
 
-    /* Pair tabs */
-    document.querySelectorAll('.tab').forEach((t) => {
-      t.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
-        t.classList.add('active');
-        document.getElementById('panel-code').style.display = t.dataset.tab === 'code' ? 'block' : 'none';
-        document.getElementById('panel-qr').style.display = t.dataset.tab === 'qr' ? 'block' : 'none';
-      });
-    });
-
-    /* Pair logic */
     const statusBox = document.getElementById('statusBox');
     const statusText = document.getElementById('statusText');
     const qrWrap = document.getElementById('qrWrap');
@@ -557,9 +324,7 @@
             qrWrap.style.display = 'none';
             statusText.innerHTML = '<i class="fa-solid fa-mobile-screen"></i> Enter code on phone';
           }
-          if (data.status === 'connected') {
-            statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-spinner fa-spin"></i> Linked · building session…</span>';
-          }
+          if (data.status === 'connected') statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-spinner fa-spin"></i> Linked · building session…</span>';
           if (data.status === 'done' && data.session) {
             clearInterval(pollTimer);
             qrWrap.style.display = 'none';
@@ -567,30 +332,25 @@
             sessionWrap.style.display = 'block';
             sessionEl.textContent = data.session;
             statusText.innerHTML = '<span class="ok"><i class="fa-solid fa-circle-check"></i> Done · also sent to your PM</span>';
-            btnQr.disabled = false;
-            btnCode.disabled = false;
+            btnQr.disabled = false; btnCode.disabled = false;
           }
           if (data.status === 'error') {
             clearInterval(pollTimer);
             statusText.innerHTML = '<span class="err"><i class="fa-solid fa-circle-xmark"></i> ' + (data.error || 'Failed') + '</span>';
-            btnQr.disabled = false;
-            btnCode.disabled = false;
+            btnQr.disabled = false; btnCode.disabled = false;
           }
         } catch (e) {
           clearInterval(pollTimer);
           statusText.innerHTML = '<span class="err">' + e.message + '</span>';
-          btnQr.disabled = false;
-          btnCode.disabled = false;
+          btnQr.disabled = false; btnCode.disabled = false;
         }
       }, 1200);
     }
 
     btnQr.onclick = async () => {
-      btnQr.disabled = true;
-      btnCode.disabled = true;
+      btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      pairMode = 'qr';
-      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating QR…';
+      pairMode = 'qr'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating QR…';
       try {
         const res = await fetch('/api/pair/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const data = await res.json();
@@ -598,36 +358,24 @@
         poll(data.id);
       } catch (e) {
         statusText.innerHTML = '<span class="err">' + e.message + '</span>';
-        btnQr.disabled = false;
-        btnCode.disabled = false;
+        btnQr.disabled = false; btnCode.disabled = false;
       }
     };
 
     btnCode.onclick = async () => {
       const num = document.getElementById('phone').value.trim();
-      if (!num) {
-        statusBox.classList.add('show');
-        statusText.innerHTML = '<span class="err">Enter number with country code</span>';
-        return;
-      }
-      btnQr.disabled = true;
-      btnCode.disabled = true;
+      if (!num) { statusBox.classList.add('show'); statusText.innerHTML = '<span class="err">Enter number with country code</span>'; return; }
+      btnQr.disabled = true; btnCode.disabled = true;
       resetUI();
-      pairMode = 'code';
-      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
+      pairMode = 'code'; statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Requesting code…';
       try {
-        const res = await fetch('/api/pair', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: num })
-        });
+        const res = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: num }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed');
         poll(data.id);
       } catch (e) {
         statusText.innerHTML = '<span class="err">' + e.message + '</span>';
-        btnQr.disabled = false;
-        btnCode.disabled = false;
+        btnQr.disabled = false; btnCode.disabled = false;
       }
     };
 
@@ -642,164 +390,45 @@
       });
     };
 
-    /* Music Hub */
-    const QUICK = [
-      'Alan Walker Faded',
-      'The Weeknd Blinding Lights',
-      'Burna Boy Last Last',
-      'Rema Calm Down',
-      'Sauti Sol Suzanna',
-      'Ed Sheeran Shape of You'
+    // Music (Audius via /api/stream-song)
+    const QUERIES = [
+      'Alan Walker Faded','Vybz Kartel Fever','Central Cee Doja','Lil Baby Woah',
+      'Burna Boy Last Last','Sauti Sol Suzanna','Diamond Platnumz Jeje',
+      'Ed Sheeran Shape of You','The Weeknd Blinding Lights','Rema Calm Down'
     ];
-    let mediaType = 'audio';
-    let current = null;
-    let quickIdx = 0;
-
-    const audioEl = document.getElementById('audioEl');
-    const videoEl = document.getElementById('videoEl');
-    const nowLabel = document.getElementById('nowLabel');
-    const spinIcon = document.getElementById('spinIcon');
-    const resultsEl = document.getElementById('results');
-
-    document.querySelectorAll('.type-btn').forEach((b) => {
-      b.addEventListener('click', () => {
-        document.querySelectorAll('.type-btn').forEach((x) => x.classList.remove('active'));
-        b.classList.add('active');
-        mediaType = b.dataset.type;
-        audioEl.style.display = mediaType === 'audio' ? 'block' : 'none';
-        videoEl.style.display = mediaType === 'video' ? 'block' : 'none';
-      });
-    });
-
-    const quickList = document.getElementById('quickList');
-    QUICK.forEach((q) => {
-      const c = document.createElement('button');
-      c.type = 'button';
-      c.className = 'chip';
-      c.textContent = q;
-      c.onclick = () => {
-        document.getElementById('musicQ').value = q;
-        playQuery(q);
-      };
-      quickList.appendChild(c);
-    });
-
-    async function playQuery(q) {
-      if (!q) return;
-      nowLabel.textContent = 'Resolving…';
-      spinIcon.className = 'fa-solid fa-spinner fa-spin';
-      try { audioEl.pause(); } catch {}
-      try { videoEl.pause(); } catch {}
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 100000);
-      try {
-        nowLabel.textContent = 'Fetching stream (can take 20–40s)…';
-        const res = await fetch(
-          '/api/music/play?type=' + encodeURIComponent(mediaType) + '&q=' + encodeURIComponent(q),
-          { signal: ctrl.signal }
-        );
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok || !d.streamUrl) {
-          throw new Error(d.error || ('Play failed HTTP ' + res.status));
-        }
-        current = d;
-        const label = [d.artist, d.title].filter(Boolean).join(' — ') || d.title || q;
-        nowLabel.textContent = label;
-        spinIcon.className = 'fa-solid fa-compact-disc fa-spin';
-
-        const tryPlay = async (src, isVideo) => {
-          if (isVideo) {
-            audioEl.removeAttribute('src');
-            audioEl.style.display = 'none';
-            videoEl.style.display = 'block';
-            videoEl.src = src;
-            videoEl.load();
-            await videoEl.play();
-          } else {
-            videoEl.removeAttribute('src');
-            videoEl.style.display = 'none';
-            audioEl.style.display = 'block';
-            audioEl.src = src;
-            audioEl.load();
-            await audioEl.play();
-          }
-        };
-
-        const isVideo = mediaType === 'video';
-        try {
-          await tryPlay(d.streamUrl, isVideo);
-        } catch (playErr) {
-          // fallback: open direct CDN in new tab / try direct src
-          if (d.directUrl) {
-            try {
-              await tryPlay(d.directUrl, isVideo);
-            } catch {
-              nowLabel.textContent = label + ' — use Link button if play blocked';
-              spinIcon.className = 'fa-solid fa-circle-exclamation';
-            }
-          } else {
-            nowLabel.textContent = label + ' — tap play on player';
-          }
-        }
-      } catch (e) {
-        const msg = e.name === 'AbortError' ? 'Timed out — try again or use a shorter video' : (e.message || 'Failed');
-        nowLabel.textContent = msg;
-        spinIcon.className = 'fa-solid fa-circle-xmark';
-      } finally {
-        clearTimeout(timer);
-      }
+    let ti = 0;
+    const audio = document.getElementById('bgAudio');
+    const trackName = document.getElementById('trackName');
+    const musicNow = document.getElementById('musicNow');
+    function setNow(name, playing) {
+      musicNow.innerHTML = (playing ? '<i class="fa-solid fa-compact-disc fa-spin"></i> ' : '<i class="fa-solid fa-pause"></i> ') + '<span id="trackName">' + (name || 'Music') + '</span>';
     }
-
-    document.getElementById('btnSearch').onclick = async () => {
-      const q = document.getElementById('musicQ').value.trim();
-      if (!q) return;
-      resultsEl.style.display = 'block';
-      resultsEl.innerHTML = '<div class="result-item"><span>Searching…</span></div>';
+    async function loadSong(i, autoplay) {
+      ti = ((i % QUERIES.length) + QUERIES.length) % QUERIES.length;
+      trackName.textContent = 'Loading…';
+      setNow('Loading…', false);
       try {
-        const res = await fetch('/api/music/search?q=' + encodeURIComponent(q));
-        const d = await res.json();
-        const list = d.results || [];
-        if (!list.length) {
-          resultsEl.innerHTML = '<div class="result-item"><span>No results — try Play with this query</span></div>';
-          return;
-        }
-        resultsEl.innerHTML = '';
-        list.forEach((item) => {
-          const div = document.createElement('div');
-          div.className = 'result-item';
-          div.innerHTML =
-            '<strong>' + (item.title || 'Track') + '</strong>' +
-            '<span>' + [item.channel, item.duration].filter(Boolean).join(' · ') + '</span>';
-          div.onclick = () => {
-            const target = item.url || item.title || q;
-            document.getElementById('musicQ').value = target;
-            playQuery(target);
-          };
-          resultsEl.appendChild(div);
-        });
-      } catch (e) {
-        resultsEl.innerHTML = '<div class="result-item"><span>' + e.message + '</span></div>';
-      }
+        const r = await fetch('/api/stream-song/' + encodeURIComponent(QUERIES[ti]));
+        const d = await r.json();
+        if (d.streamUrl) {
+          audio.src = d.streamUrl;
+          audio.load();
+          const label = (d.title || QUERIES[ti]) + (d.artist ? ' — ' + d.artist : '');
+          setNow(label, false);
+          if (autoplay) audio.play().then(() => setNow(label, true)).catch(() => setNow(label + ' — tap Play', false));
+        } else setNow('Not found — tap Next', false);
+      } catch (e) { setNow('Tap Play to start', false); }
+    }
+    audio.addEventListener('ended', () => loadSong(ti + 1, true));
+    audio.addEventListener('error', () => { if (audio.dataset.retried !== '1') { audio.dataset.retried = '1'; loadSong(ti, true); } });
+    document.getElementById('playMusicBtn').onclick = () => {
+      audio.dataset.retried = '';
+      if (!audio.src) loadSong(ti, true);
+      else audio.play().then(() => setNow(trackName.textContent, true)).catch(() => loadSong(ti, true));
     };
-
-    document.getElementById('btnPlayNow').onclick = () => {
-      const q = document.getElementById('musicQ').value.trim() || QUICK[quickIdx];
-      playQuery(q);
-    };
-    document.getElementById('btnNext').onclick = () => {
-      quickIdx = (quickIdx + 1) % QUICK.length;
-      document.getElementById('musicQ').value = QUICK[quickIdx];
-      playQuery(QUICK[quickIdx]);
-    };
-    document.getElementById('btnDownload').onclick = () => {
-      const link = current?.directUrl || current?.youtubeUrl || current?.streamUrl;
-      if (link) window.open(link, '_blank');
-      else nowLabel.textContent = 'Play something first';
-    };
-    document.getElementById('musicQ').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('btnPlayNow').click();
-    });
-    audioEl.addEventListener('ended', () => document.getElementById('btnNext').click());
+    document.getElementById('pauseMusicBtn').onclick = () => { audio.pause(); setNow(trackName.textContent, false); };
+    document.getElementById('nextMusicBtn').onclick = () => { audio.dataset.retried = ''; loadSong(ti + 1, true); };
+    setNow('Tap Play to start', false);
   </script>
 </body>
 </html>
