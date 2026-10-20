@@ -267,7 +267,7 @@ async function startSocket(job) {
   const sock = makeWASocket({
     version, auth: state,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.macOS('Safari'),  // Safari identity — better pair success
+    browser: Browsers.ubuntu('Chrome'),  // Google Chrome on Ubuntu — no extra device noise
     printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
