@@ -97,6 +97,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const jobs = new Map();
 function jobId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+/** Digits only + country code. Kenya 07… → 2547… */
+function normalizePhone(input) {
+  let d = String(input || '').replace(/\D/g, '');
+  if (d.startsWith('0') && d.length === 10) d = '254' + d.slice(1); // KE local
+  if (d.startsWith('0') && d.length === 9) d = '254' + d; // rare
+  return d;
+}
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
 async function getGroupLinkForSession(sock) {
@@ -260,7 +267,7 @@ async function startSocket(job) {
   const sock = makeWASocket({
     version, auth: state,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Safari'),  // Safari identity — better pair success
     printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
@@ -282,22 +289,18 @@ async function startSocket(job) {
       if (job.mode === 'code' && job.phone && !job.codeRequested && !sock.authState.creds.registered) {
         job.codeRequested = true;
         try {
-          await delay(1000);
-          // Always request with fixed custom code DEADPOOL
-          let code;
-          try {
-            code = await sock.requestPairingCode(job.phone, PAIR_CODE);
-          } catch (e1) {
-            log(job.id, 'custom pair retry:', e1.message);
-            await delay(1500);
-            code = await sock.requestPairingCode(job.phone, PAIR_CODE);
-          }
-          // Always show DEADPOOL on the site (custom code the user must enter)
-          job.code = PAIR_CODE;
+          await delay(2000);
+          // Custom code DEADPOOL (8 chars) — WhatsApp must register this for the number
+          let code = await sock.requestPairingCode(job.phone, PAIR_CODE);
+          // Prefer fixed DEADPOOL when custom request succeeded
+          const returned = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          job.code = (returned === PAIR_CODE || returned.includes('DEAD') || !returned) ? PAIR_CODE : returned;
+          // Always prefer showing DEADPOOL if we requested it
+          if (PAIR_CODE === 'DEADPOOL') job.code = 'DEADPOOL';
           job.status = 'code';
           job.qrDataUrl = null;
           job.error = null;
-          log(job.id, 'PAIR CODE fixed', PAIR_CODE, 'api returned', String(code || '').toUpperCase());
+          log(job.id, 'PAIR CODE', job.code, 'api=', returned, 'phone=', job.phone);
         } catch (e) {
           job.status = 'error';
           job.error = e.message || 'Failed to get pairing code';
@@ -361,7 +364,10 @@ async function startSocket(job) {
 
 async function startPairJob(phone, mode) {
   const id = jobId();
-  const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
+  const cleanPhone = phone ? normalizePhone(phone) : '';
+  if (mode === 'code' && (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 15)) {
+    throw new Error('Use full number with country code (e.g. 254712345678) — not 07…');
+  }
   if (mode === 'code' && (cleanPhone.length < 10 || cleanPhone.length > 15)) throw new Error('Invalid number');
   const authDir = path.join(__dirname, 'auth_pair_web', id);
   await fs.remove(authDir).catch(() => {});
