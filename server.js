@@ -10,24 +10,17 @@ const {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   Browsers,
-  delay,
-  proto,
-  generateWAMessageFromContent
+  delay
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const config = require('./config');
 const axios = require('axios');
-let searchSong = null; try { searchSong = require('./apis').searchSong; } catch {}
+const { searchSong } = require('./apis');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEV_LINK = process.env.DEV_LINK || config.DEV_LINK || 'https://wa.me/254796283064';
-const PAIR_CODE = 'DEADPOOL'; // always fixed // always fixed — never random
-
-// Deadpool group auto-join: put full invite link or just the code (e.g. AbCdEfGhIjKlMnOp)
-// Example: https://chat.whatsapp.com/AbCdEfGhIjKlMnOp  OR  AbCdEfGhIjKlMnOp
-const GROUP_INVITE = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
-const GROUP_JID = process.env.GROUP_JID || config.GROUP_JID || '120363430854781207@g.us';
+const PAIR_CODE = (config.PAIRING_CODE || 'DEADPOOL').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
 
 const SESSIONS_DIR = path.join(__dirname, 'sessions');
 fs.ensureDirSync(SESSIONS_DIR);
@@ -46,210 +39,27 @@ async function saveShortSession(b64) {
   return id;
 }
 
-function extractInviteCode(linkOrCode) {
-  if (!linkOrCode) return null;
-  const s = String(linkOrCode).trim();
-  // full link with optional query params
-  const m = s.match(/(?:https?:\/\/)?chat\.whatsapp\.com\/([A-Za-z0-9_-]+)/i);
-  if (m) return m[1];
-  // raw invite code
-  const clean = s.replace(/[^A-Za-z0-9_-]/g, '');
-  if (clean.length >= 10) return clean;
-  return null;
-}
-
-async function autoJoinGroup(sock, jobId) {
-  // Prefer stable GROUP_JID; mint a fresh invite code when possible (links rotate)
-  const jid = String(GROUP_JID || '').trim();
-  const codeFromEnv = extractInviteCode(GROUP_INVITE);
-
-  if (codeFromEnv && !String(GROUP_INVITE).includes('@g.us')) {
-    log(jobId, 'auto-join: accepting invite code', codeFromEnv);
-    try {
-      await delay(2000);
-      const gid = await sock.groupAcceptInvite(codeFromEnv);
-      log(jobId, 'auto-joined group OK:', gid || codeFromEnv);
-      return true;
-    } catch (e) {
-      log(jobId, 'auto-join invite failed:', e.message);
-    }
-  }
-
-  if (jid.endsWith('@g.us')) {
-    try {
-      const code = await sock.groupInviteCode(jid);
-      if (code) {
-        log(jobId, 'fresh invite for', jid, '→', code);
-        return true;
-      }
-    } catch (e) {
-      log(jobId, 'GROUP_JID set but cannot mint invite (bot must be member):', jid, e.message);
-    }
-  } else {
-    log(jobId, 'auto-join skipped: set GROUP_JID=120363....@g.us');
-  }
-  return false;
-}
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const jobs = new Map();
 function jobId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-/** Digits only + country code. Kenya 07… → 2547… */
-function normalizePhone(input) {
-  let d = String(input || '').replace(/\D/g, '');
-  if (d.startsWith('0') && d.length === 10) d = '254' + d.slice(1); // KE local
-  if (d.startsWith('0') && d.length === 9) d = '254' + d; // rare
-  return d;
-}
 function log(...a) { console.log(new Date().toISOString(), ...a); }
-
-async function getGroupLinkForSession(sock) {
-  const jid = String(GROUP_JID || process.env.GROUP_JID || '120363430854781207@g.us').trim();
-  if (sock && jid.endsWith('@g.us')) {
-    try {
-      const code = await sock.groupInviteCode(jid);
-      if (code) return 'https://chat.whatsapp.com/' + code;
-    } catch (e) { log('group link', e.message); }
-  }
-  const inv = String(GROUP_INVITE || '').trim();
-  if (inv.endsWith('@g.us')) return null; // jid only, no public link yet
-  const code = extractInviteCode(inv);
-  if (code) return 'https://chat.whatsapp.com/' + code;
-  return null;
-}
 
 async function sendSessionToPM(sock, sessionId) {
   const me = sock.user?.id;
   if (!me || !sessionId) return false;
   const jid = me.includes(':') ? me.split(':')[0] + '@s.whatsapp.net' : jidNormalizedUser(me);
-  const site = process.env.SITE_URL || config.SITE_URL || 'https://deadpoolv7.onrender.com';
-  const channel = process.env.CHANNEL_URL || config.CHANNEL_URL || '';
-  let groupLink = await getGroupLinkForSession(sock);
-  if (!groupLink) {
-    const inv = process.env.GROUP_INVITE || config.GROUP_INVITE || '';
-    if (inv && !inv.includes('@g.us')) groupLink = inv.startsWith('http') ? inv : (extractInviteCode(inv) ? 'https://chat.whatsapp.com/' + extractInviteCode(inv) : '');
-  }
-  const dev = process.env.DEV_LINK || DEV_LINK;
-  const line = '━━━━━━━━━━━━━━━━━━━━';
-
+  const site = process.env.SITE_URL || 'https://deadpoolv7.onrender.com';
   try {
-    // 1) Header
-    await sock.sendMessage(jid, {
-      text:
-        '➤ *𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕 𝐒𝐄𝐒𝐒𝐈𝐎𝐍*\n' +
-        line + '\n' +
-        '➤ *𝐂𝐨𝐩𝐲 𝐬𝐞𝐬𝐬𝐢𝐨𝐧 𝐛𝐞𝐥𝐨𝐰 𝐝𝐨𝐧𝐭 𝐛𝐞 𝐦𝐨𝐭𝐡𝐞𝐫𝐟𝐮𝐜𝐤𝐞𝐫 😤*\n' +
-        '➤𝚃𝚊𝚕𝚔 𝚝𝚘 𝙳𝚎𝚟𝚎𝚕𝚘𝚙𝚎𝚛 𝚒𝚏 𝚢𝚘𝚞 𝚍𝚘𝚗𝚝 𝚑𝚊𝚟𝚎 𝚌𝚕𝚞𝚎 𝚠𝚑𝚊𝚝 𝚗𝚎𝚡𝚝 *➘𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫*\n' +
-        line
-    });
-    await delay(400);
-
-    // 2) Session string only (long-press copy)
+    await sock.sendMessage(jid, { text: '💀 *Deadpool V7 SESSION*\n\nCopy below:\n────────────────────' });
+    await new Promise(r => setTimeout(r, 400));
     await sock.sendMessage(jid, { text: sessionId });
-    await delay(400);
-
-    // 3) HELP / SUPPORT (always shown — like original)
-    let help =
-      line + '\n' +
-      '❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' +
-      line + '\n' +
-      '❋ *𝐃𝐄𝐕:*\n' + dev + '\n\n';
-    if (groupLink) help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐆𝐜:*\n' + groupLink + '\n\n';
-    if (channel) help += '➧ *𝐃𝐞𝐚𝐝𝐩𝐨𝐨𝐥 𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
-    help +=
-      '➧ *𝐎𝐮𝐫 𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' +
-      line + '\n' +
-      '> 𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐛𝐲 𝐂𝐨𝐧𝐟𝐫𝐨𝐧𝐭𝐞𝐫';
-    await sock.sendMessage(jid, { text: help });
-    await delay(400);
-
-    // 4) Buttons: Copy Session | Visit site | Join WaChannel
-    try {
-      const buttons = [
-        {
-          name: 'cta_copy',
-          buttonParamsJson: JSON.stringify({
-            display_text: '📋 Copy Session',
-            copy_code: sessionId
-          })
-        },
-        {
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({
-            display_text: '🔗 visit our site',
-            url: site,
-            merchant_url: site
-          })
-        }
-      ];
-      if (channel) {
-        buttons.push({
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({
-            display_text: '📢 Join WaChannel',
-            url: channel,
-            merchant_url: channel
-          })
-        });
-      } else if (groupLink) {
-        const gurl = groupLink.startsWith('http') ? groupLink : ('https://chat.whatsapp.com/' + groupLink);
-        buttons.push({
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({
-            display_text: '👥 Join Group',
-            url: gurl,
-            merchant_url: gurl
-          })
-        });
-      } else {
-        buttons.push({
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({
-            display_text: '👨‍💻 Developer',
-            url: dev,
-            merchant_url: dev
-          })
-        });
-      }
-
-      const buttonsMsg = {
-        viewOnce: true,
-        interactiveMessage: proto.Message.InteractiveMessage.create({
-          body: proto.Message.InteractiveMessage.Body.create({
-            text: '💀 *Deadpool V7 Session*\nChoose an action:'
-          }),
-          footer: proto.Message.InteractiveMessage.Footer.create({
-            text: (config.POWERED_BY || 'Powered by Confronter').replace(/[*_]/g, '').slice(0, 60)
-          }),
-          header: proto.Message.InteractiveMessage.Header.create({
-            title: 'Session Ready',
-            hasMediaAttachment: false
-          }),
-          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-            buttons
-          })
-        })
-      };
-      const msg = generateWAMessageFromContent(jid, buttonsMsg, { userJid: jid });
-      await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-    } catch (btnErr) {
-      log('buttons fail, text fallback', btnErr.message);
-      let help =
-        line + '\n❖ *𝐇𝐄𝐋𝐏 / 𝐒𝐔𝐏𝐏𝐎𝐑𝐓*\n' + line + '\n' +
-        '❋ *𝐃𝐄𝐕:*\n' + dev + '\n\n';
-      if (groupLink) help += '➧ *𝐆𝐫𝐨𝐮𝐩:*\n' + groupLink + '\n\n';
-      if (channel) help += '➧ *𝐂𝐡𝐚𝐧𝐧𝐞𝐥:*\n' + channel + '\n\n';
-      help += '➧ *𝐖𝐞𝐛𝐬𝐢𝐭𝐞:*\n' + site + '\n' + line;
-      await sock.sendMessage(jid, { text: help });
-    }
+    await new Promise(r => setTimeout(r, 400));
+    await sock.sendMessage(jid, { text: '────────────────────\nPaste into Heroku *SESSION* var.\n\n🔗 ' + site + '\n👨‍💻 ' + DEV_LINK });
     return true;
-  } catch (e) {
-    log('pm fail', e.message);
-    return false;
-  }
+  } catch (e) { log('pm fail', e.message); return false; }
 }
 
 async function exportSession(AUTH_DIR) {
@@ -267,7 +77,7 @@ async function startSocket(job) {
   const sock = makeWASocket({
     version, auth: state,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.ubuntu('Chrome'),  // Google Chrome on Ubuntu — no extra device noise
+    browser: Browsers.ubuntu('Chrome'),
     printQRInTerminal: false,
     markOnlineOnConnect: false,
     syncFullHistory: false,
@@ -289,18 +99,15 @@ async function startSocket(job) {
       if (job.mode === 'code' && job.phone && !job.codeRequested && !sock.authState.creds.registered) {
         job.codeRequested = true;
         try {
-          await delay(2000);
-          // Custom code DEADPOOL (8 chars) — WhatsApp must register this for the number
-          let code = await sock.requestPairingCode(job.phone, PAIR_CODE);
-          // Prefer fixed DEADPOOL when custom request succeeded
-          const returned = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-          job.code = (returned === PAIR_CODE || returned.includes('DEAD') || !returned) ? PAIR_CODE : returned;
-          // Always prefer showing DEADPOOL if we requested it
-          if (PAIR_CODE === 'DEADPOOL') job.code = 'DEADPOOL';
+          await delay(1000);
+          let code;
+          try { code = await sock.requestPairingCode(job.phone, PAIR_CODE); }
+          catch { code = await sock.requestPairingCode(job.phone); }
+          job.code = String(code || '').toUpperCase();
           job.status = 'code';
           job.qrDataUrl = null;
           job.error = null;
-          log(job.id, 'PAIR CODE', job.code, 'api=', returned, 'phone=', job.phone);
+          log(job.id, 'PAIR CODE', job.code);
         } catch (e) {
           job.status = 'error';
           job.error = e.message || 'Failed to get pairing code';
@@ -323,10 +130,6 @@ async function startSocket(job) {
         const shortId = await saveShortSession(fullSession.replace(/^deadpool~/, ''));
         log(job.id, 'short session id:', shortId);
       } catch (e) { log(job.id, 'short save fail', e.message); }
-
-      // Auto-join Deadpool group
-      await autoJoinGroup(sock, job.id).catch(e => log(job.id, 'auto-join err', e.message));
-
       await sendSessionToPM(sock, fullSession).catch(e => log('pm', e.message));
       setTimeout(() => {
         try { sock.end(undefined); } catch {}
@@ -364,10 +167,7 @@ async function startSocket(job) {
 
 async function startPairJob(phone, mode) {
   const id = jobId();
-  const cleanPhone = phone ? normalizePhone(phone) : '';
-  if (mode === 'code' && (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 15)) {
-    throw new Error('Use full number with country code (e.g. 254712345678) — not 07…');
-  }
+  const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
   if (mode === 'code' && (cleanPhone.length < 10 || cleanPhone.length > 15)) throw new Error('Invalid number');
   const authDir = path.join(__dirname, 'auth_pair_web', id);
   await fs.remove(authDir).catch(() => {});
@@ -434,11 +234,18 @@ app.get('/api/session/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== MUSIC (Audius — working streams) ====================
+// ==================== MUSIC (Audius) ====================
 const MUSIC_TRACKS = [
-  { q: 'Lil Baby Woah', name: 'Lil Baby — Woah' },
-  { q: 'Vybz Kartel Fever', name: 'Vybz Kartel — Fever' },
-  { q: 'Vybz Kartel Shenseea Panic', name: 'Vybz Kartel ft Shenseea — Panic' }
+  { q: 'Alan Walker Faded',          name: 'Alan Walker — Faded' },
+  { q: 'Vybz Kartel Fever',          name: 'Vybz Kartel — Fever' },
+  { q: 'Central Cee Doja',           name: 'Central Cee — Doja' },
+  { q: 'Lil Baby Woah',              name: 'Lil Baby — Woah' },
+  { q: 'Burna Boy Last Last',        name: 'Burna Boy — Last Last' },
+  { q: 'Sauti Sol Suzanna',          name: 'Sauti Sol — Suzanna' },
+  { q: 'Diamond Platnumz Jeje',      name: 'Diamond Platnumz — Jeje' },
+  { q: 'Ed Sheeran Shape of You',    name: 'Ed Sheeran — Shape of You' },
+  { q: 'The Weeknd Blinding Lights', name: 'The Weeknd — Blinding Lights' },
+  { q: 'Rema Calm Down',             name: 'Rema — Calm Down' }
 ];
 const musicCache = new Map();
 
@@ -450,21 +257,7 @@ app.get('/api/music/:index', async (req, res) => {
   const idx = Number(req.params.index) || 0;
   const i = ((idx % MUSIC_TRACKS.length) + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
   const track = MUSIC_TRACKS[i];
-  let name = track.name;
-  try {
-    if (searchSong) {
-      const data = await searchSong(track.q);
-      if (data?.title) {
-        name = data.artist ? `${data.artist} — ${data.title}` : data.title;
-      }
-    }
-  } catch {}
-  res.json({
-    i,
-    name,
-    url: '/api/stream-song/' + encodeURIComponent(track.q),
-    next: (i + 1) % MUSIC_TRACKS.length
-  });
+  res.json({ i, name: track.name, url: '/api/stream-song/' + encodeURIComponent(track.q), next: (i + 1) % MUSIC_TRACKS.length });
 });
 
 app.get('/api/stream-song/:query', async (req, res) => {
@@ -473,21 +266,11 @@ app.get('/api/stream-song/:query', async (req, res) => {
     if (!query) return res.status(400).json({ error: 'query required' });
     const cached = musicCache.get(query);
     if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return res.json(cached.data);
-    if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
     const data = await searchSong(query);
-    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found', query });
-    const payload = {
-      title: data.title || query,
-      artist: data.artist || 'Artist',
-      streamUrl: data.streamUrl,
-      artwork: data.artwork || null,
-      name: `${data.artist || 'Artist'} — ${data.title || query}`
-    };
-    musicCache.set(query, { data: payload, ts: Date.now() });
-    res.json(payload);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    if (!data?.streamUrl) return res.status(404).json({ error: 'Not found' });
+    musicCache.set(query, { data, ts: Date.now() });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/music/stream/:index', async (req, res) => {
@@ -497,7 +280,6 @@ app.get('/api/music/stream/:index', async (req, res) => {
     const track = MUSIC_TRACKS[i];
     let data = musicCache.get(track.q)?.data;
     if (!data?.streamUrl) {
-      if (!searchSong) return res.status(503).json({ error: 'apis.searchSong not available' });
       data = await searchSong(track.q);
       if (data?.streamUrl) musicCache.set(track.q, { data, ts: Date.now() });
     }
@@ -510,104 +292,9 @@ app.get('/api/music/stream/:index', async (req, res) => {
     res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=1800');
     return upstream.data.pipe(res);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size, uptime: process.uptime() }));
-
-// ---------- Keep-alive (stop free dyno sleep) ----------
-const KEEP_URL = process.env.KEEP_ALIVE_URL || process.env.APP_URL || '';
-setInterval(async () => {
-  try {
-    const url = KEEP_URL || `http://127.0.0.1:${PORT}/health`;
-    await axios.get(url, { timeout: 12000 }).catch(() => {});
-  } catch {}
-}, 10 * 60 * 1000);
-
-// ---------- Admin: users list + broadcast (password) ----------
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || process.env.DASHBOARD_PASSWORD || 'changeme123';
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const adminSessions = new Map();
-const crypto = require('crypto');
-
-async function loadBotUsers() {
-  try {
-    if (!(await fs.pathExists(USERS_FILE))) return [];
-    const list = await fs.readJson(USERS_FILE);
-    return Array.isArray(list) ? list : [];
-  } catch { return []; }
-}
-
-function adminAuth(req, res, next) {
-  const token = req.headers['x-admin-token'] || req.query.token || req.body?.token;
-  if (token && adminSessions.has(token)) return next();
-  return res.status(401).json({ ok: false, error: 'Unauthorized' });
-}
-
-app.post('/api/admin/login', (req, res) => {
-  if (String(req.body?.password || '') === String(ADMIN_PASSWORD)) {
-    const token = crypto.randomBytes(24).toString('hex');
-    adminSessions.set(token, Date.now());
-    return res.json({ ok: true, token });
-  }
-  res.status(401).json({ ok: false, error: 'Invalid password' });
-});
-
-app.get('/api/admin/users', adminAuth, async (req, res) => {
-  const users = await loadBotUsers();
-  res.json({
-    ok: true,
-    count: users.length,
-    users: users.map(j => ({ jid: j, number: String(j).split('@')[0] }))
-  });
-});
-
-app.post('/api/admin/broadcast', adminAuth, async (req, res) => {
-  const message = String(req.body?.message || '').trim();
-  if (!message) return res.status(400).json({ ok: false, error: 'Message required' });
-  const sock = global.__BOT_SOCK;
-  if (!sock) {
-    return res.status(503).json({
-      ok: false,
-      error: 'Bot not connected on this dyno. Broadcast works when worker (index.js) is online, or use .bc from WhatsApp as owner.'
-    });
-  }
-  const users = await loadBotUsers();
-  res.json({ ok: true, queued: users.length });
-  (async () => {
-    for (const jid of users) {
-      try { await sock.sendMessage(jid, { text: message }); await delay(700); } catch {}
-    }
-  })();
-});
-
-app.get('/admin', (req, res) => {
-  res.type('html').send(`<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin</title><style>
-body{font-family:system-ui;background:#0f0f12;color:#eee;margin:0;padding:1.5rem}
-.card{max-width:480px;margin:2rem auto;background:#1a1a22;padding:1.5rem;border-radius:14px;border:1px solid #2a2a35}
-input,textarea{width:100%;padding:.7rem;margin:.4rem 0;border-radius:8px;border:1px solid #333;background:#121218;color:#fff;box-sizing:border-box}
-button{padding:.7rem 1.2rem;border:0;border-radius:8px;background:#5b5bf0;color:#fff;font-weight:600;cursor:pointer;width:100%;margin-top:.5rem}
-.err{color:#f66}.ok{color:#6f6}
-</style></head><body>
-<div class="card" id="login"><h2>🔐 Admin</h2><input id="pw" type="password" placeholder="Admin password"/><button onclick="doLogin()">Login</button><p class="err" id="le"></p></div>
-<div class="card" id="dash" style="display:none"><h2>Users & Broadcast</h2><p id="cnt">Users: —</p>
-<textarea id="msg" rows="4" placeholder="Broadcast message to all bot users..."></textarea>
-<button onclick="doBc()">Send broadcast</button><p id="bm"></p>
-<button onclick="loadU()" style="background:#333;margin-top:1rem">Refresh users</button>
-<div id="list" style="margin-top:1rem;font-size:.85rem;max-height:300px;overflow:auto"></div>
-</div>
-<script>
-let tok=localStorage.getItem('adm');
-async function doLogin(){const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});const j=await r.json();if(j.ok){tok=j.token;localStorage.setItem('adm',tok);show()}else document.getElementById('le').textContent=j.error||'Fail'}
-function show(){document.getElementById('login').style.display='none';document.getElementById('dash').style.display='block';loadU()}
-async function loadU(){const r=await fetch('/api/admin/users',{headers:{'x-admin-token':tok}});if(r.status===401){localStorage.removeItem('adm');location.reload();return}const j=await r.json();document.getElementById('cnt').textContent='Users: '+j.count;document.getElementById('list').innerHTML=(j.users||[]).map(u=>'<div>'+u.number+'</div>').join('')||'<p style="color:#666">No users yet</p>'}
-async function doBc(){const r=await fetch('/api/admin/broadcast',{method:'POST',headers:{'Content-Type':'application/json','x-admin-token':tok},body:JSON.stringify({message:document.getElementById('msg').value})});const j=await r.json();const el=document.getElementById('bm');el.className=j.ok?'ok':'err';el.textContent=j.ok?('Queued to '+j.queued+' users'):(j.error||'Fail')}
-if(tok)show();
-</script></body></html>`);
-});
+app.get('/health', (req, res) => res.json({ ok: true, active: jobs.size }));
 
 app.listen(PORT, () => log(`Deadpool V7 Pair :${PORT} | code=${PAIR_CODE}`));
