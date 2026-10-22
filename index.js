@@ -22,6 +22,7 @@ const crypto = require('crypto');
 const { exec } = require('child_process');
 const util = require('util');
 const execP = util.promisify(exec);
+try { require('dotenv').config(); } catch {}
 
 // ============ KEEP-ALIVE WEB SERVER ============
 const http = require('http');
@@ -127,7 +128,17 @@ const config = {
 for (const k of ['ANTI_DELETE', 'ANTI_EDIT', 'ANTI_VIEW_ONCE']) {
   if (String(config[k]).toLowerCase() === 'pm' || String(config[k]).toLowerCase() === 'private') config[k] = 'dm';
 }
-if (!config.STATUS_LIKES) config.STATUS_LIKES = null;
+if (env.STATUS_LIKES) {
+  config.STATUS_LIKES = String(env.STATUS_LIKES).split(/[\s,]+/).filter(Boolean);
+} else if (!config.STATUS_LIKES) {
+  config.STATUS_LIKES = null;
+}
+config.START_MSG = env.START_MSG || fileConfig.START_MSG || '';
+config.SEND_START_MSG = env.SEND_START_MSG !== undefined
+  ? envBool(env.SEND_START_MSG, false)
+  : (fileConfig.SEND_START_MSG ?? false);
+config.CONFRONTER_API = (env.CONFRONTER_API || env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+
 if (!config.REACT_EMOJIS) config.REACT_EMOJIS = null;
 
 // ============ NOISE SUPPRESS ============
@@ -511,6 +522,9 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
 
 // ============ START MESSAGE ============
 function buildStartMessage() {
+  if (config.START_MSG && String(config.START_MSG).trim()) {
+    return String(config.START_MSG).replace(/\\n/g, '\n');
+  }
   const p = config.PREFIX || '.';
   const mode = config.MODE || 'public';
   return (
@@ -1008,7 +1022,7 @@ async function searchYoutube(query) {
 // ============ CONFRONTER APIs (your Vercel / GitHub API) ============
 // Set CONFRONTER_API in Heroku config to your Vercel URL, e.g. https://confronter-apis.vercel.app
 // Your Confronter APIs (https://apis.techwizardx.top)
-const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || config.CONFRONTER_API || 'https://apis.techwizardx.top').replace(/\/+$/, '');
 const KEITH_API = CONFRONTER_API; // primary host — your APIs only
 
 
@@ -1414,61 +1428,38 @@ async function sendAsVideo(sock, jid, data) {
 }
 
 // ============ AI (Kiswahili + English only, simple) ============
+// ============ AI — Confronter API only (no Pollinations) ============
 async function askAI(text, opts = {}) {
-  const q = String(text || '').trim().slice(0, 800);
+  const q = String(text || '').trim().slice(0, 1200);
   if (!q) return null;
 
-  const isSwahili = /[àáâãäåèéêëìíîïòóôõöùúûüç]|sema|habari|vipi|sasa|asante|karibu|ndio|hapana|tafadhali|naomba|nataka|nina|wewe|mimi|yeye|hao|huyu|hawa|watu|siku|leo|kesho|jana|mzuri|mbaya|pole|hongera|niaje|uko|poa|sawa|bana|bro|dada|kaka/i.test(q);
+  const isSwahili = /[àáâãäåèéêëìíîïòóôõöùúûüç]|sema|habari|vipi|sasa|asante|karibu|ndio|hapana|tafadhali|naomba|nataka|niaje|poa|sawa/i.test(q);
+  const prompt = isSwahili
+    ? ('Jibu kwa Kiswahili fupi kama rafiki wa WhatsApp (1-4 sentensi). Usiseme wewe ni AI. Swali: ' + q)
+    : ('Reply short like a WhatsApp friend (1-4 sentences). Never say you are AI. Question: ' + q);
 
-  // 1) Keith AI (human-like, supports Swahili)
-  try {
-    const endpoints = [
-      '/keithai?q=',
-      '/ai/gemini?q=',
-      '/ai/gpt?q=',
-      '/ai/deepseek?q=',
-      '/ai/mistral?q='
-    ];
-    const prompt = isSwahili
-      ? ('Jibu kwa Kiswahili fupi kama rafiki wa WhatsApp (1-3 sentensi). Usiseme wewe ni AI. Swali: ' + q)
-      : ('Reply short like a WhatsApp friend (1-3 sentences). Never say you are AI. Question: ' + q);
-    for (const ep of endpoints) {
-      const data = await keithGet(ep + encodeURIComponent(prompt), 25000);
+  const endpoints = [
+    '/api/ai/chat?q=',
+    '/api/gateway/ai/chat?q=',
+    '/ai/gpt?q=',
+    '/keithai?q='
+  ];
+  for (const ep of endpoints) {
+    try {
+      const data = await keithGet(ep + encodeURIComponent(prompt), 45000);
       if (!data || data.status === false) continue;
       let ans = data.result || data.response || data.message || data.answer || data.text;
-      if (typeof ans === 'object') ans = ans.text || ans.message || ans.response || null;
+      if (typeof ans === 'object' && ans) ans = ans.text || ans.message || ans.response || ans.reply || null;
       if (ans && typeof ans === 'string' && ans.length > 2 && !/<html|doctype/i.test(ans)) {
-        return ans.trim().slice(0, 1500);
+        return ans.trim().slice(0, 2000);
       }
+    } catch (e) {
+      console.log('askAI', ep, (e.message || '').slice(0, 60));
     }
-  } catch {}
-
-  // 2) pollinations fallback
-  const system = isSwahili
-    ? `Wewe ni mtu wa kawaida unaye-chat kwenye WhatsApp. Jibu kwa Kiswahili tu, fupi sana kama binadamu (1-3 sentensi). Usiseme wewe ni bot au AI. Jibu kama rafiki wa karibu. Tumia emoji kidogo kama kawaida.`
-    : `You are a real person chatting on WhatsApp. Reply in simple casual English only. Keep it very short like a human (1-3 sentences). Never say you are a bot or AI. Talk exactly like a close friend. Use light emojis naturally.`;
-
-  try {
-    const r = await axios.post('https://text.pollinations.ai/openai', {
-      model: 'openai',
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: q }
-      ]
-    }, { timeout: 25000 });
-    const ans = r?.data?.choices?.[0]?.message?.content || r?.data?.content || r?.data;
-    if (typeof ans === 'string' && ans.length > 2) return ans.trim().slice(0, 1500);
-  } catch {}
-
-  try {
-    const prompt = system + '\n\nUser: ' + q + '\nReply:';
-    const r = await axios.get('https://text.pollinations.ai/' + encodeURIComponent(prompt.slice(0, 1200)), {
-      timeout: 20000, responseType: 'text'
-    });
-    if (typeof r.data === 'string' && r.data.length > 2 && !/<html/i.test(r.data)) return r.data.trim().slice(0, 1500);
-  } catch {}
+  }
   return null;
 }
+
 
 async function getLyrics(text) {
   // 1) Keith lyrics
@@ -1533,14 +1524,36 @@ const TEXTMAKER_STYLES = {
   rainbow:   'colorful rainbow text "TEXT" vibrant multicolor 4k'
 };
 
+
+// ============ CATBOX UPLOAD (no Pollinations) ============
+async function uploadToCatbox(buffer, filename = 'image.jpg') {
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 100) return null;
+  try {
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', new Blob([buffer], { type: 'image/jpeg' }), filename);
+    const r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: form });
+    const text = (await r.text()).trim();
+    if (text.startsWith('https://') && /catbox\.moe/i.test(text)) return text;
+    console.log('catbox response:', text.slice(0, 120));
+    return null;
+  } catch (e) {
+    console.log('catbox:', e.message);
+    return null;
+  }
+}
+
 async function generateTextImage(effect, text) {
   const q = String(text || '').slice(0, 40).trim();
   if (!q) return null;
   const style = String(effect || 'neon').toLowerCase();
-  const template = TEXTMAKER_STYLES[style] || TEXTMAKER_STYLES.neon;
-  const prompt = template.replace(/TEXT/g, q) + ', masterpiece, centered text, no watermark, ultra detailed';
+  const template = (typeof TEXTMAKER_STYLES !== 'undefined' && TEXTMAKER_STYLES[style])
+    ? TEXTMAKER_STYLES[style]
+    : 'neon glowing text "TEXT" dark background 4k';
+  const prompt = String(template).replace(/TEXT/g, q) + ', masterpiece, centered text, no watermark, ultra detailed';
 
-  // 1) Keith Flux (matches your sample quality)
+  let buf = null;
+  // 1) Your API flux
   try {
     const data = await keithGet('/ai/flux?q=' + encodeURIComponent(prompt), 90000);
     let url = null;
@@ -1549,45 +1562,47 @@ async function generateTextImage(effect, text) {
         : (data.result?.url || data.url || data.image || keithExtractUrl(data));
     }
     if (url && String(url).startsWith('http')) {
-      const buf = await fetchBuffer(String(url), 90000);
-      if (buf && buf.length > 2000) return buf;
+      buf = await fetchBuffer(String(url), 90000);
     }
-  } catch (e) { console.log('flux:', (e.message||'').slice(0,60)); }
+  } catch (e) { console.log('flux:', (e.message || '').slice(0, 60)); }
 
-  // 2) Keith magicstudio
-  try {
-    const data = await keithGet('/ai/magicstudio?prompt=' + encodeURIComponent(prompt), 90000);
-    const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
-    if (url && String(url).startsWith('http')) {
-      const buf = await fetchBuffer(String(url), 90000);
-      if (buf && buf.length > 2000) return buf;
-    }
-  } catch {}
-
-  // 3) Pollinations
-  for (const url of [
-    'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1280&height=720&nologo=true&enhance=true',
-    'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1024&height=1024&nologo=true'
-  ]) {
+  // 2) Your API magicstudio / flux alt
+  if (!buf || buf.length < 2000) {
     try {
-      const r = await dlGet(url, { responseType: 'arraybuffer', timeout: 60000 });
-      if (r.status >= 400 || !r.data) continue;
-      const buf = Buffer.from(r.data);
-      if (buf.length < 2000) continue;
-      const head = buf.slice(0, 15).toString('utf8').toLowerCase();
-      if (head.includes('<!doctype') || head.includes('<html') || head.includes('{')) continue;
-      if ((buf[0]===0xFF&&buf[1]===0xD8)||(buf[0]===0x89&&buf[1]===0x50)) return buf;
+      const data = await keithGet('/ai/flux?prompt=' + encodeURIComponent(prompt), 90000);
+      const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
+      if (url && String(url).startsWith('http')) buf = await fetchBuffer(String(url), 90000);
     } catch {}
   }
 
-  // 4) ephoto fallback
+  if (!buf || buf.length < 2000) return null;
+  // Prefer returning buffer for WhatsApp send; also try Catbox for a permanent link
   try {
-    const { generateTextImage: real } = require('./apis');
-    const buf = await real(effect, text);
-    if (buf && Buffer.isBuffer(buf) && buf.length > 500) return buf;
+    const cat = await uploadToCatbox(buf, (style || 'fx') + '.jpg');
+    if (cat) buf.catboxUrl = cat;
   } catch {}
-  return null;
+  return buf;
 }
+
+async function generateAiImage(prompt) {
+  const q = String(prompt || '').trim().slice(0, 500);
+  if (!q) return null;
+  let buf = null;
+  let srcUrl = null;
+  try {
+    const data = await keithGet('/ai/flux?q=' + encodeURIComponent(q), 90000);
+    srcUrl = (typeof data?.result === 'string' && data.result.startsWith('http'))
+      ? data.result
+      : (data?.result?.url || data?.url || keithExtractUrl(data));
+    if (srcUrl) buf = await fetchBuffer(String(srcUrl), 90000);
+  } catch (e) {
+    console.log('generateAiImage:', (e.message || '').slice(0, 80));
+  }
+  if (!buf || buf.length < 2000) return null;
+  const cat = await uploadToCatbox(buf, 'ai.jpg');
+  return { buffer: buf, url: cat || srcUrl };
+}
+
 
 async function startBot() {
   await ensureData();
@@ -1875,18 +1890,23 @@ async function startBot() {
   const BOT_STARTED_AT = Math.floor(Date.now() / 1000) - 5; // ignore almost all old msgs on restart
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
     for (const m of messages) {
       try {
         if (!m?.key?.id) continue;
+        const isStatus =
+          m.key.remoteJid === 'status@broadcast' ||
+          m.key.remoteJidAlt === 'status@broadcast';
+        // Status can arrive as append/notify — never skip status for auto-view
+        if (!isStatus && type !== 'notify') continue;
         if (processedMsgIds.has(m.key.id)) continue;
         processedMsgIds.add(m.key.id);
-        if (processedMsgIds.size > 2000) {
+        if (processedMsgIds.size > 3000) {
           const first = processedMsgIds.values().next().value;
           processedMsgIds.delete(first);
         }
         const ts = Number(m.messageTimestamp || 0);
-        if (ts && ts < BOT_STARTED_AT) continue;
+        // Only skip OLD chat messages on restart — still process live status
+        if (!isStatus && ts && ts < BOT_STARTED_AT) continue;
         handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
       } catch (e) {
         console.log('upsert err:', e?.message);
@@ -1965,6 +1985,63 @@ async function startBot() {
     }
     return false;
   }
+
+
+async function downloadAndSendApk(jid, m, it, replyFn) {
+  try {
+    const name = it.name || it.title || 'App';
+    const ver = it.version || it.file?.vername || '';
+    const pkg = it.package || '';
+    let link = it.download_url || it.url || it.file?.path || it.file?.path_alt || '';
+    if (!link && pkg) {
+      try {
+        const data = await keithGet('/download/apk?package=' + encodeURIComponent(pkg), 45000);
+        const r = data?.result || data;
+        link = r?.download_url || r?.url || link;
+      } catch {}
+    }
+    if (!link && name) {
+      try {
+        const data = await keithGet('/download/apk?q=' + encodeURIComponent(name), 45000);
+        const r = data?.result || data;
+        link = r?.download_url || r?.url || link;
+      } catch {}
+    }
+    if (!link) {
+      await replyFn('❌ No download URL for ' + name);
+      return;
+    }
+    const sizeHint = it.size_mb || it.size || '';
+    await replyFn(
+      `📥 *Downloading APK…*\n📱 ${name}${ver ? ' v' + ver : ''}\n` +
+      (sizeHint ? `💾 ${sizeHint}\n` : '') +
+      (pkg ? `📦 ${pkg}\n` : '') +
+      `_File will appear as a document — you can pause/resume in WhatsApp._`
+    );
+    const buf = await fetchBuffer(String(link), 300000);
+    if (!buf || buf.length < 1000) {
+      await replyFn('❌ APK download failed (empty file).\n🔗 ' + link);
+      return;
+    }
+    const mb = (buf.length / (1024 * 1024)).toFixed(2);
+    const fileName = (String(name).replace(/[^\w.\- ]+/g, '').trim().slice(0, 40) || 'app') + '.apk';
+    await sock.sendMessage(
+      jid,
+      {
+        document: buf,
+        mimetype: 'application/vnd.android.package-archive',
+        fileName,
+        caption:
+          `✅ *${name}*${ver ? ' v' + ver : ''}\n` +
+          `💾 ${mb} MB` + (pkg ? `\n📦 ${pkg}` : '') +
+          buildFooter()
+      },
+      { quoted: m }
+    );
+  } catch (e) {
+    await replyFn('❌ APK send failed: ' + (e.message || e));
+  }
+}
 
   async function handleMessage(m) {
     try {
@@ -2090,15 +2167,21 @@ async function startBot() {
           }
         }
 
-        if (config.AUTO_VIEW_STATUS) {
+        // Always mark viewed (no skip) — works for every new status
+        if (config.AUTO_VIEW_STATUS !== false) {
           try { await sock.readMessages([m.key]); } catch {}
           try { await sock.readMessages([statusKey]); } catch {}
+          try {
+            if (typeof sock.sendReceipt === 'function') {
+              await sock.sendReceipt(statusKey.remoteJid, statusKey.participant, [statusKey.id], 'read');
+            }
+          } catch {}
         }
 
         if (config.AUTO_LIKE_STATUS) {
+          await delay(400 + Math.floor(Math.random() * 600));
           const emoji = statusLikeEmoji();
           const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-
           const statusJidList = [
             ...new Set(
               [posterJid, rawP, m.key.participant, m.key.participantAlt, botJid]
@@ -2110,7 +2193,6 @@ async function startBot() {
                 })
             )
           ];
-
           try {
             await sock.sendMessage(
               'status@broadcast',
@@ -2414,27 +2496,102 @@ async function startBot() {
         return;
       }
 
-      // ========== PLAY ==========
-      if (['play', 'song', 'ytmp3', 'music'].includes(cmd)) {
-        if (!text) { await reply(`Usage: ${prefix}play <song name>`); return; }
-        await reply('⏳ Searching & downloading…');
-        const q = text.replace(/\s+/g, ' ').trim();
-        let data = await downloadYouTube(q, true);
-        if (!data?.buffer && !data?.url && q.split(' ').length > 2) {
-          const simple = q.split(' ').filter(w => w.length > 2).join(' ');
-          if (simple && simple !== q) data = await downloadYouTube(simple, true);
+
+      // Play buttons
+      const btnId =
+        m.message?.buttonsResponseMessage?.selectedButtonId ||
+        m.message?.templateButtonReplyMessage?.selectedId ||
+        m.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+        '';
+      if (btnId && (btnId.startsWith('play_audio:') || btnId.startsWith('play_video:'))) {
+        const isAud = btnId.startsWith('play_audio:');
+        const u = btnId.replace(/^play_(audio|video):/, '');
+        await reply(isAud ? '⏳ Downloading audio…' : '⏳ Downloading video…');
+        const data = await downloadYouTube(u, isAud);
+        if (!data?.buffer && !data?.url) { await reply('❌ Download failed'); return; }
+        if (isAud) {
+          const ok = await sendAsMp3(sock, from, data);
+          if (!ok) await reply('❌ Failed to send audio.');
+        } else {
+          const ok = await sendAsVideo(sock, from, data);
+          if (!ok) await reply('❌ Failed to send video.');
         }
-        if (!data?.buffer && !data?.url) { await reply('❌ Could not find that track.\nTry a clearer name or paste a YouTube link.'); return; }
+        return;
+      }
+
+      // ========== PLAY (search → meta + buttons → audio/video) ==========
+      if (['play', 'song', 'music'].includes(cmd)) {
+        if (!text) { await reply(`Usage: ${prefix}play <song name>`); return; }
+        await reply('⏳ Searching…');
+        const q = text.replace(/\s+/g, ' ').trim();
+        let hit = null;
+        try { hit = await searchYoutube(q); } catch {}
+        if (!hit?.url) {
+          // fallback: download audio directly by query
+          await reply('⏳ No search hit — trying direct download…');
+          let data = await downloadYouTube(q, true);
+          if (!data?.buffer && !data?.url) { await reply('❌ Not found. Try another name or a YouTube link.'); return; }
+          const ok = await sendAsMp3(sock, from, data);
+          if (!ok) await reply('❌ Failed to send audio.');
+          return;
+        }
+        // cache for follow-up .audio / .video
+        if (!global.__pendingPlay) global.__pendingPlay = new Map();
+        global.__pendingPlay.set(from, hit);
+        setTimeout(() => { try { global.__pendingPlay.delete(from); } catch {} }, 10 * 60 * 1000);
+
+        const views = hit.views != null ? (Number(hit.views) >= 1e6 ? (Number(hit.views)/1e6).toFixed(1)+'M' : Number(hit.views) >= 1e3 ? (Number(hit.views)/1e3).toFixed(1)+'K' : String(hit.views)) : '';
+        const caption =
+          `🎵 *${hit.title || q}*\n` +
+          (hit.author ? `👤 ${hit.author}\n` : '') +
+          (views ? `👁️ ${views} views\n` : '') +
+          `\nChoose format:\n• Tap *Audio* / *Video*\n• Or: ${prefix}audio\n• Or: ${prefix}video`;
+        const buttons = [
+          { buttonId: 'play_audio:' + hit.url, buttonText: { displayText: '🎧 Audio MP3' }, type: 1 },
+          { buttonId: 'play_video:' + hit.url, buttonText: { displayText: '🎬 Video MP4' }, type: 1 }
+        ];
+        try {
+          if (hit.thumbnail) {
+            await sock.sendMessage(from, {
+              image: { url: hit.thumbnail },
+              caption: caption + buildFooter(),
+              footer: config.BOT_NAME,
+              buttons,
+              headerType: 4
+            }, { quoted: m });
+          } else {
+            await sock.sendMessage(from, {
+              text: caption + buildFooter(),
+              footer: config.BOT_NAME,
+              buttons,
+              headerType: 1
+            }, { quoted: m });
+          }
+        } catch {
+          await reply(caption + `\n\n${prefix}audio ${hit.url}\n${prefix}video ${hit.url}`);
+        }
+        return;
+      }
+
+      // ========== AUDIO (explicit or after .play) ==========
+      if (['audio', 'ytmp3', 'yta', 'mp3'].includes(cmd)) {
+        let q = text.replace(/\s+/g, ' ').trim();
+        if (!q && global.__pendingPlay?.get(from)?.url) q = global.__pendingPlay.get(from).url;
+        if (!q) { await reply(`Usage: ${prefix}audio <name|url>\nOr ${prefix}play first`); return; }
+        await reply('⏳ Downloading audio…');
+        let data = await downloadYouTube(q, true);
+        if (!data?.buffer && !data?.url) { await reply('❌ Audio failed.'); return; }
         const ok = await sendAsMp3(sock, from, data);
-        if (!ok) await reply('❌ Downloaded but failed to send audio.');
+        if (!ok) await reply('❌ Failed to send audio.');
         return;
       }
 
       // ========== VIDEO ==========
-      if (['yt', 'youtube', 'ytmp4', 'video', 'ytv'].includes(cmd)) {
-        if (!text) { await reply(`Usage: ${prefix}video <url or search>`); return; }
+      if (['yt', 'youtube', 'ytmp4', 'video', 'ytv', 'mp4'].includes(cmd)) {
+        let q = text.replace(/\s+/g, ' ').trim();
+        if (!q && global.__pendingPlay?.get(from)?.url) q = global.__pendingPlay.get(from).url;
+        if (!q) { await reply(`Usage: ${prefix}video <url or search>`); return; }
         await reply('⏳ Downloading video…');
-        const q = text.replace(/\s+/g, ' ').trim();
         let data = await downloadYouTube(q, false);
         if (!data?.buffer && !data?.url && q.split(' ').length > 2) {
           const simple = q.split(' ').filter(w => w.length > 2).join(' ');
@@ -2606,25 +2763,23 @@ async function startBot() {
       }
 
       // ========== AI IMAGE / IMAGINE (Keith Flux) ==========
-      if (['imagine', 'flux', 'draw', 'aiimage'].includes(cmd)) {
+            if (['imagine', 'flux', 'draw', 'aiimage'].includes(cmd)) {
         if (!text) { await reply(`Usage: ${prefix}imagine <prompt>`); return; }
         await reply('🎨 Generating image…');
         try {
-          const data = await keithGet('/ai/flux?q=' + encodeURIComponent(text), 90000);
-          const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
-          if (url && String(url).startsWith('http')) {
-            await sock.sendMessage(from, { image: { url: String(url) }, caption: `🎨 ${text.slice(0, 80)}` });
-          } else {
-            // pollinations fallback
-            const pUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(text) + '?width=1024&height=1024&nologo=true';
-            await sock.sendMessage(from, { image: { url: pUrl }, caption: `🎨 ${text.slice(0, 80)}` });
-          }
-        } catch (e) { await reply('❌ Image gen failed'); }
+          const out = await generateAiImage(text);
+          if (!out?.buffer) { await reply('❌ Image generation failed. Try again.'); return; }
+          const cap = out.url
+            ? (`🖼️ *AI Image*\n🔗 ${out.url}` + buildFooter())
+            : (`🖼️ *AI Image*` + buildFooter());
+          await sock.sendMessage(from, { image: out.buffer, caption: cap }, { quoted: m });
+        } catch (e) {
+          await reply('❌ ' + (e.message || 'imagine failed'));
+        }
         return;
       }
 
 
-      // ========== SHAZAM ==========
       if (['shazam', 'findsong', 'whatsong'].includes(cmd)) {
         let mediaUrl = null;
         const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -2726,7 +2881,8 @@ async function startBot() {
           return;
         }
         try {
-          await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` });
+          const link = buf.catboxUrl ? ('\n🔗 ' + buf.catboxUrl) : '';
+          await sock.sendMessage(from, { image: buf, caption: `✨ *${cmd.toUpperCase()}* — ${q}` + link + buildFooter() });
         } catch { await reply('❌ Send failed.'); }
         return;
       }
@@ -2930,18 +3086,40 @@ async function startBot() {
         return;
       }
 
-      // ========== CLEAR ==========
-      if (cmd === 'clear') {
+      // ========== CLEAR (wipe this chat) ==========
+      if (cmd === 'clear' || cmd === 'clearchat' || cmd === 'wipe') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        await reply('🧹 Clearing chat…');
+        let ok = false;
+        // 1) Baileys chatModify delete (best effort wipe for this chat)
         try {
-          if (typeof sock.chatModify !== 'function') throw new Error('chatModify not supported — update @whiskeysockets/baileys');
-          await sock.chatModify({
-            delete: true,
-            lastMessages: [{ key: m.key, messageTimestamp: m.messageTimestamp || Math.floor(Date.now() / 1000) }]
-          }, from);
-          await reply('🧹 Chat history cleared for everyone in this chat.');
+          if (typeof sock.chatModify === 'function') {
+            await sock.chatModify({
+              delete: true,
+              lastMessages: [{
+                key: m.key,
+                messageTimestamp: m.messageTimestamp || Math.floor(Date.now() / 1000)
+              }]
+            }, from);
+            ok = true;
+          }
         } catch (e) {
-          await reply('❌ Clear failed: ' + (e.message || e) + '\n\nNote: WhatsApp only allows clearing *recent* messages, and in groups the bot must be admin.');
+          console.log('clear chatModify:', e.message);
+        }
+        // 2) Optional API hook on your backend
+        try {
+          await keithGet('/tools/clear?chat=' + encodeURIComponent(from), 15000);
+        } catch {}
+        try {
+          // clear unread / mute flags
+          if (typeof sock.chatModify === 'function') {
+            await sock.chatModify({ clear: { messages: [{ id: m.key.id, fromMe: m.key.fromMe, timestamp: m.messageTimestamp }] } }, from).catch(() => {});
+          }
+        } catch {}
+        if (ok) {
+          await sock.sendMessage(from, { text: '✅ *Chat cleared*\nHistory wiped for this chat (WhatsApp limits may apply).' + buildFooter() });
+        } else {
+          await reply('❌ Clear failed. Update Baileys, or in groups the bot may need admin. WhatsApp only allows clearing recent messages.');
         }
         return;
       }
@@ -2982,29 +3160,72 @@ async function startBot() {
       }
 
       // ========== APK ==========
-      if (cmd === 'apk') {
-        if (!text) { await reply(`Usage: ${prefix}apk whatsapp`); return; }
+      if (cmd === 'apk' || cmd === 'getapk' || cmd === 'app') {
+        if (!text) {
+          await reply(`Usage:\n${prefix}apk whatsapp\n${prefix}apk 1   _(after search, download #1)_\n${prefix}apk whatsapp --dl`);
+          return;
+        }
+        const raw = text.replace(/\s+/g, ' ').trim();
+        const forceDl = /\s--dl\b/i.test(raw) || /^(\d+)$/.test(raw);
+        const q = raw.replace(/\s--dl\b/i, '').trim();
+
+        // If user sent only a number, use last search cache
+        if (/^\d+$/.test(q) && global.__apkCache?.get(from)?.length) {
+          const idx = parseInt(q, 10) - 1;
+          const list = global.__apkCache.get(from);
+          const it = list[idx];
+          if (!it) { await reply('❌ Invalid number. Search again: ' + prefix + 'apk <name>'); return; }
+          await downloadAndSendApk(from, m, it, reply);
+          return;
+        }
+
         await reply('⏳ Searching APK…');
         try {
-          const data = await keithGet('/search/apk?q=' + encodeURIComponent(text.trim()), 35000);
+          let data = await keithGet('/search/apk?q=' + encodeURIComponent(q), 40000);
+          let items = [];
           const r = data?.result;
-          const items = Array.isArray(r) ? r : (r?.results || []);
-          if (!items.length) { await reply('❌ No APK found.'); return; }
-          let msg = `📦 *APK Search:* ${text}\n\n`;
+          if (Array.isArray(r)) items = r;
+          else if (Array.isArray(r?.results)) items = r.results;
+          else if (r && (r.download_url || r.url || r.package)) items = [r];
+
+          // direct package download endpoint
+          if (!items.length) {
+            try {
+              data = await keithGet('/download/apk?q=' + encodeURIComponent(q), 40000);
+              const one = data?.result || data;
+              if (one && (one.download_url || one.url)) items = [one];
+            } catch {}
+          }
+
+          if (!items.length) { await reply('❌ No APK found for: ' + q); return; }
+
+          if (!global.__apkCache) global.__apkCache = new Map();
+          global.__apkCache.set(from, items.slice(0, 10));
+          setTimeout(() => { try { global.__apkCache.delete(from); } catch {} }, 15 * 60 * 1000);
+
+          // Auto-download top result if --dl or single clear match
+          if (forceDl || items.length === 1) {
+            await downloadAndSendApk(from, m, items[0], reply);
+            return;
+          }
+
+          let msg = `📦 *APK Search:* ${q}\n\n`;
           for (let i = 0; i < Math.min(8, items.length); i++) {
             const it = items[i];
             const name = it.name || it.title || 'App';
-            const ver = it.version || '';
+            const ver = it.version || it.file?.vername || '';
             const pkg = it.package || '';
-            const link = it.download_url || it.url || '';
+            const size = it.size_mb || it.size || (it.file?.filesize ? (Number(it.file.filesize) / (1024 * 1024)).toFixed(1) + ' MB' : '');
             msg += `*${i + 1}.* ${name}${ver ? ' (`' + ver + '`)' : ''}\n`;
             if (pkg) msg += `📦 \`${pkg}\`\n`;
-            if (link) msg += `🔗 ${link}\n`;
-            msg += '\n';
+            if (size) msg += `💾 ${size}\n`;
+            msg += `\n`;
           }
-          msg += '> *Powered by Confronter💫*';
+          msg += `Download:\n• ${prefix}apk 1\n• ${prefix}apk ${q} --dl\n\n_WhatsApp shows size & allows pause/resume while downloading the document._`;
           await reply(msg.trim().slice(0, 4000));
-        } catch (e) { await reply('❌ APK search failed: ' + e.message); }
+        } catch (e) {
+          await reply('❌ APK failed: ' + e.message);
+        }
         return;
       }
 
