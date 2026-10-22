@@ -2143,7 +2143,11 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      if (!isMe && from && !from.includes('status')) saveUser(sender).catch(() => {});
+      if (!isMe && from && !from.includes('status')) {
+        saveUser(sender).catch(() => {});
+        // Store DM chat so broadcast reaches them
+        if (!isGroup(from)) saveUser(from).catch(() => {});
+      }
 
       // STATUS auto view + like
       if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
@@ -3817,18 +3821,116 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      if (cmd === 'broadcast' || cmd === 'bc') {
-        if (!isOwner(sender, m) && !isDeveloper(sender, m)) return;
-        const users = await loadUsers();
-        if (!users.length) { await reply('No users stored yet.'); return; }
-        if (!text) { await reply(`Usage: ${prefix}bc <text>`); return; }
-        await reply(`📢 Broadcasting to ${users.length} users…`);
+      // ========== BROADCAST (owner → all users' DM) ==========
+      if (['broadcast', 'bc', 'push', 'announce'].includes(cmd)) {
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) {
+          await reply(roast('owner'));
+          return;
+        }
+        const users = (await loadUsers()).filter((j) => {
+          const id = String(j || '');
+          return id && !id.endsWith('@g.us') && id !== 'status@broadcast';
+        });
+        if (!users.length) {
+          await reply('No users stored yet.\nUsers are saved when they message the bot in DM.');
+          return;
+        }
+
+        // Build payload: reply to media OR caption text
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+          || m.message?.imageMessage
+          || m.message?.videoMessage
+          || m.message?.audioMessage
+          || m.message?.documentMessage
+          || null;
+        const ownMedia = m.message?.imageMessage || m.message?.videoMessage || m.message?.audioMessage || m.message?.documentMessage;
+        const mediaMsg = ownMedia || quoted;
+        const caption = (text || '').trim() || mediaMsg?.imageMessage?.caption || mediaMsg?.videoMessage?.caption || '';
+
+        let payload = null;
+        let kind = 'text';
+
+        if (mediaMsg) {
+          // unwrap if quoted is nested
+          const src = mediaMsg.imageMessage || mediaMsg.videoMessage || mediaMsg.audioMessage || mediaMsg.documentMessage
+            ? mediaMsg
+            : mediaMsg;
+          try {
+            const dl = await downloadMediaMsg({ message: src.imageMessage ? src : (quoted || m.message) });
+            const buf = dl?.buffer || (Buffer.isBuffer(dl) ? dl : null);
+            if (buf && buf.length > 100) {
+              if (src.imageMessage || quoted?.imageMessage || m.message?.imageMessage) {
+                payload = { image: buf, caption: (caption || '📢 Update') + buildFooter() };
+                kind = 'image';
+              } else if (src.videoMessage || quoted?.videoMessage || m.message?.videoMessage) {
+                payload = { video: buf, caption: (caption || '📢 Update') + buildFooter(), mimetype: 'video/mp4' };
+                kind = 'video';
+              } else if (src.audioMessage || quoted?.audioMessage || m.message?.audioMessage) {
+                payload = {
+                  audio: buf,
+                  mimetype: src.audioMessage?.mimetype || quoted?.audioMessage?.mimetype || 'audio/mpeg',
+                  ptt: !!(src.audioMessage?.ptt || quoted?.audioMessage?.ptt)
+                };
+                kind = 'audio';
+              } else if (src.documentMessage || quoted?.documentMessage || m.message?.documentMessage) {
+                const doc = src.documentMessage || quoted?.documentMessage || m.message.documentMessage;
+                payload = {
+                  document: buf,
+                  mimetype: doc?.mimetype || 'application/octet-stream',
+                  fileName: doc?.fileName || 'file',
+                  caption: (caption || '📢 Update') + buildFooter()
+                };
+                kind = 'document';
+              }
+            }
+          } catch (e) {
+            console.log('bc media:', e.message);
+          }
+        }
+
+        if (!payload) {
+          if (!caption) {
+            await reply(
+              `📢 *Broadcast to all bot users (DM)*\n\n` +
+              `• Text: ${prefix}bc Hello everyone\n` +
+              `• Image: send photo with caption ${prefix}bc Update\n` +
+              `• Or *reply* to a photo/video/audio with ${prefix}bc\n` +
+              `• Users saved: *${users.length}*`
+            );
+            return;
+          }
+          payload = { text: caption + buildFooter() };
+          kind = 'text';
+        }
+
+        await reply(`📢 Sending *${kind}* to *${users.length}* users…\nThis may take a while.`);
         let ok = 0, fail = 0;
         for (const jid of users) {
-          try { await sock.sendMessage(jid, { text }); ok++; await delay(800); }
-          catch { fail++; }
+          try {
+            const target = jidNormalizedUser(String(jid));
+            if (!target || target.endsWith('@g.us')) { fail++; continue; }
+            await sock.sendMessage(target, payload);
+            ok++;
+            await delay(600 + Math.floor(Math.random() * 400));
+          } catch {
+            fail++;
+          }
         }
-        await reply(`✅ Done — Success: ${ok}, Failed: ${fail}`);
+        await reply(`✅ *Broadcast done*\n• Type: ${kind}\n• Success: ${ok}\n• Failed: ${fail}\n• Total: ${users.length}`);
+        return;
+      }
+
+      if (cmd === 'users' || cmd === 'userlist' || cmd === 'bcusers') {
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) {
+          await reply(roast('owner'));
+          return;
+        }
+        const users = await loadUsers();
+        const dms = users.filter((j) => String(j).endsWith('@s.whatsapp.net') || /^\d+@/.test(String(j)));
+        await reply(
+          `👥 *Bot users*\n• Total stored: *${users.length}*\n• DM targets: *${dms.length}*\n\n` +
+          `Broadcast: ${prefix}bc <message>\nReply to media + ${prefix}bc`
+        );
         return;
       }
 
