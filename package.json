@@ -1,13 +1,10 @@
 {
   "name": "deadpoolv7",
   "version": "7.6.3",
-  "description": "Deadpool V7 — pair site + bot",
-  "main": "server.js",
+  "description": "Deadpool V7 Motherfuckers Bot",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "start:bot": "node index.js",
-    "start:pair": "node server.js",
-    "pair": "node pair.js",
+    "start": "node index.js",
     "postinstall": "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod a+rx ./yt-dlp || true"
   },
   "engines": {
