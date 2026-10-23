@@ -11,14 +11,14 @@
   "stack": "heroku-24",
   "env": {
     "SESSION": {
-      "description": "Full session deadpool~BASE64 from pair site",
+      "description": "Full session must start deadpool~eyj.. from pair site",
       "required": true,
-      "value": "deadpool~"
+      "value": ""
     },
     "OWNER_NUMBER": {
       "description": "Owner number with country code (no +)",
       "required": true,
-      "value": "254796283064"
+      "value": ""
     },
     "BOT_EXPIRY_DAYS": {
       "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
@@ -31,7 +31,7 @@
     },
     "BOT_IMAGE": {
       "description": "Bot/menu image URL",
-      "value": "https://i.imgur.com/akXoQZH.jpeg"
+      "value": "https://i.imgur.com/LMtrs33.jpeg"
     },
     "PREFIX": {
       "description": "Command prefix",
