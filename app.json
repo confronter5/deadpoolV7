@@ -1,12 +1,13 @@
 {
   "name": "Deadpool V7",
-  "description": "Deadpool V7 WhatsApp Bot",
+  "description": "Deadpool V7 WhatsApp Bot — Node only",
   "repository": "https://github.com/confronter5/deadpoolv7",
   "logo": "https://i.imgur.com/akXoQZH.jpeg",
   "keywords": [
     "whatsapp",
     "bot",
-    "baileys"
+    "baileys",
+    "nodejs"
   ],
   "stack": "heroku-24",
   "env": {
@@ -19,6 +20,11 @@
       "description": "Owner number with country code (no +)",
       "required": true,
       "value": ""
+    },
+    "CONFRONTER_API": {
+      "description": "Your APIs base URL",
+      "required": false,
+      "value": "https://apis.techwizardx.top"
     },
     "BOT_EXPIRY_DAYS": {
       "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
@@ -51,9 +57,6 @@
   "buildpacks": [
     {
       "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
-    },
-    {
-      "url": "heroku/python"
     },
     {
       "url": "heroku/nodejs"
