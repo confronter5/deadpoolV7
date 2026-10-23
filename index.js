@@ -162,9 +162,27 @@ async function dlGet(url, e = {}) {
   });
 }
 async function fetchBuffer(url, t = 120000) {
-  const r = await dlGet(url, { responseType: 'arraybuffer', timeout: t, maxContentLength: 250 * 1024 * 1024 });
+  const isTokyo = /tokyo\.xyz/i.test(String(url));
+  const isGvideo = /googlevideo\.com/i.test(String(url));
+  const headers = {
+    'User-Agent': UA,
+    Accept: '*/*',
+    'Accept-Encoding': 'identity',
+    Referer: isTokyo ? 'https://123tokyo.xyz/' : 'https://www.youtube.com/',
+    Origin: isTokyo ? 'https://123tokyo.xyz' : 'https://www.youtube.com'
+  };
+  const r = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout: t,
+    maxContentLength: 250 * 1024 * 1024,
+    maxRedirects: 5,
+    validateStatus: () => true,
+    headers
+  });
   if (r.status >= 400) throw new Error('HTTP ' + r.status);
-  return Buffer.from(r.data);
+  const buf = Buffer.from(r.data);
+  if (buf.length < 500) throw new Error('Empty media');
+  return buf;
 }
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const dig = v => String(v || '').replace(/\D/g, '');
@@ -1003,17 +1021,52 @@ async function autoJoinConfigured() {
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
 
 async function searchYoutube(query) {
+  // 1) yt-search (local)
   try {
     const yts = require('yt-search');
     const r = await yts(query);
     const v = r?.videos?.[0];
-    if (v?.url) return { url: v.url, title: v.title, thumbnail: v.thumbnail, duration: v.timestamp };
+    if (v?.url) {
+      return {
+        url: v.url,
+        title: v.title,
+        thumbnail: v.thumbnail,
+        duration: v.timestamp || v.duration?.timestamp || null,
+        author: v.author?.name || v.author || '',
+        views: v.views || null
+      };
+    }
+  } catch {}
+  // 2) Your API gateway
+  try {
+    const data = await keithGet('/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5', 40000);
+    const list = data?.result?.results || data?.result || data?.results || [];
+    const v = Array.isArray(list) ? list[0] : null;
+    if (v) {
+      const id = v.id || '';
+      return {
+        url: v.url || (id ? 'https://www.youtube.com/watch?v=' + id : ''),
+        title: v.title || query,
+        thumbnail: v.thumbnail || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
+        duration: v.duration || null,
+        author: v.author || v.uploader || v.channel || '',
+        views: v.views || v.view_count || null
+      };
+    }
   } catch {}
   try {
     const r = await dlGet('https://api.siputzx.my.id/api/s/youtube?query=' + encodeURIComponent(query), { timeout: 20000 });
     const arr = r?.data?.data || r?.data?.result || [];
     const v = Array.isArray(arr) ? arr[0] : null;
-    if (v) return { url: v.url || v.link || ('https://www.youtube.com/watch?v=' + (v.videoId || v.id)), title: v.title || v.name || query, thumbnail: v.thumbnail || v.thumb };
+    if (v) {
+      return {
+        url: v.url || v.link || ('https://www.youtube.com/watch?v=' + (v.videoId || v.id)),
+        title: v.title || v.name || query,
+        thumbnail: v.thumbnail || v.thumb,
+        author: v.author || v.channel || '',
+        views: v.views || v.viewCount || null
+      };
+    }
   } catch {}
   return null;
 }
@@ -1363,49 +1416,58 @@ async function downloadYouTube(query, audioOnly = true) {
 
 async function sendAsMp3(sock, jid, data) {
   if (!data) return false;
-  const meta = data.meta || { title: data.title };
-  const fileName = (meta.title || data.title || 'audio').replace(/[^\w\s\-\.]/g, '').slice(0, 60) + '.mp3';
-  const caption = formatMediaCaption(meta, 'audio');
-  try {
-    // Document audio (mp3) — not voice note / not wav
-    if (data.buffer && data.buffer.length > 5000) {
-      await sock.sendMessage(jid, {
-        document: data.buffer,
-        mimetype: 'audio/mpeg',
-        fileName,
-        caption
-      });
-    } else if (data.url) {
-      try {
-        await sock.sendMessage(jid, {
-          document: { url: data.url },
-          mimetype: 'audio/mpeg',
-          fileName,
-          caption
-        });
-      } catch {
-        await sock.sendMessage(jid, {
-          audio: { url: data.url },
-          mimetype: 'audio/mpeg',
-          fileName,
-          ptt: false
-        });
-        await sock.sendMessage(jid, { text: caption }).catch(() => {});
-      }
-    } else return false;
-    return true;
-  } catch (e) {
-    console.log('sendAsMp3:', e.message);
+  const meta = data.meta || { title: data.title, author: data.author };
+  const title = meta.title || data.title || 'audio';
+  const fileName = String(title).replace(/[^\w\s\-\.]/g, '').trim().slice(0, 50) || 'audio';
+  const caption = (typeof formatMediaCaption === 'function'
+    ? formatMediaCaption(meta, 'audio')
+    : ('🎧 *' + title + '*' + (meta.author ? '\n👤 ' + meta.author : ''))) + (typeof buildFooter === 'function' ? buildFooter() : '');
+
+  let buf = data.buffer;
+  if ((!buf || buf.length < 5000) && data.url) {
     try {
-      if (data.buffer) {
-        await sock.sendMessage(jid, { audio: data.buffer, mimetype: 'audio/mpeg', ptt: false });
-        await sock.sendMessage(jid, { text: caption }).catch(() => {});
-        return true;
-      }
-    } catch {}
+      buf = await fetchBuffer(data.url, 180000);
+    } catch (e) {
+      console.log('sendAsMp3 fetch:', e.message);
+    }
+  }
+  if (!buf || buf.length < 3000) {
+    // last resort: send URL as text
+    if (data.url) {
+      await sock.sendMessage(jid, { text: caption + '\n\n🔗 ' + data.url }).catch(() => {});
+      return false;
+    }
     return false;
   }
+
+  // Prefer playable audio, then document for save
+  try {
+    await sock.sendMessage(jid, {
+      audio: buf,
+      mimetype: 'audio/mpeg',
+      fileName: fileName + '.mp3',
+      ptt: false
+    });
+  } catch (e1) {
+    console.log('sendAsMp3 audio:', e1.message);
+    try {
+      await sock.sendMessage(jid, {
+        document: buf,
+        mimetype: 'audio/mpeg',
+        fileName: fileName + '.mp3',
+        caption
+      });
+    } catch (e2) {
+      console.log('sendAsMp3 doc:', e2.message);
+      return false;
+    }
+  }
+  try {
+    await sock.sendMessage(jid, { text: caption });
+  } catch {}
+  return true;
 }
+
 async function sendAsVideo(sock, jid, data) {
   if (!data) return false;
   const meta = data.meta || { title: data.title };
@@ -1992,7 +2054,32 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
     const name = it.name || it.title || 'App';
     const ver = it.version || it.file?.vername || '';
     const pkg = it.package || '';
-    let link = it.download_url || it.url || it.file?.path || it.file?.path_alt || '';
+    let link = it.download_url || it.url || it.file?.path || it.file?.path_alt || it.file?.path || '';
+    async function tryApkApis() {
+      const paths = [];
+      if (pkg) {
+        paths.push('/api/download/apk?package=' + encodeURIComponent(pkg));
+        paths.push('/api/gateway/download/apk?package=' + encodeURIComponent(pkg));
+      }
+      paths.push('/api/download/apk?q=' + encodeURIComponent(name));
+      paths.push('/api/search/apk?q=' + encodeURIComponent(name));
+      paths.push('/api/gateway/search/apk?q=' + encodeURIComponent(name));
+      for (const p of paths) {
+        try {
+          const data = await keithGet(p, 45000);
+          const r = data?.result || data;
+          const items = Array.isArray(r) ? r : (Array.isArray(r?.results) ? r.results : [r]);
+          for (const x of items) {
+            if (!x) continue;
+            const u = x.download_url || x.url || x.file?.path || x.file?.path_alt;
+            if (u && /^https?:\/\//i.test(String(u))) return String(u);
+          }
+          if (typeof r === 'string' && /^https?:\/\//i.test(r)) return r;
+        } catch {}
+      }
+      return null;
+    }
+    if (!link) link = await tryApkApis();
     if (!link && pkg) {
       try {
         const data = await keithGet('/download/apk?package=' + encodeURIComponent(pkg), 45000);
@@ -2346,6 +2433,45 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         }
       }
 
+
+      // Pending .play → reply 1 (audio) or 2 (video) — must run BEFORE prefix gate
+      if (global.__pendingPlay && !isMe) {
+        const pending = global.__pendingPlay.get(from);
+        if (pending?.url && /^(1|2|audio|video)$/i.test(cleanBody.trim())) {
+          const choice = cleanBody.trim().toLowerCase();
+          const wantAudio = choice === '1' || choice === 'audio';
+          await sock.sendMessage(from, {
+            text: (wantAudio ? '⏳ Downloading audio…' : '⏳ Downloading video…') + buildFooter()
+          }, { quoted: m }).catch(() => {});
+          try {
+            const data = await downloadYouTube(pending.url, wantAudio);
+            if (!data?.buffer && !data?.url) {
+              await sock.sendMessage(from, { text: '❌ Download failed. Try again.' + buildFooter() }, { quoted: m });
+              return;
+            }
+            data.title = data.title || pending.title;
+            data.author = data.author || pending.author;
+            data.meta = {
+              title: data.title || pending.title,
+              author: pending.author || data.author || '',
+              views: pending.views,
+              thumbnail: pending.thumbnail
+            };
+            const ok = wantAudio
+              ? await sendAsMp3(sock, from, data)
+              : await sendAsVideo(sock, from, data);
+            if (!ok) {
+              await sock.sendMessage(from, {
+                text: (wantAudio ? '❌ Failed to send audio.' : '❌ Failed to send video.') + buildFooter()
+              }, { quoted: m });
+            }
+          } catch (e) {
+            await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
+          }
+          return;
+        }
+      }
+
       if (!cleanBody.startsWith(prefix)) return;
       if (config.MODE === 'private' && !isOwner(sender, m) && !isMe) return;
       if (isBotExpired() && !isOwner(sender, m) && !isMe) {
@@ -2544,15 +2670,22 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         global.__pendingPlay.set(from, hit);
         setTimeout(() => { try { global.__pendingPlay.delete(from); } catch {} }, 10 * 60 * 1000);
 
-        const views = hit.views != null ? (Number(hit.views) >= 1e6 ? (Number(hit.views)/1e6).toFixed(1)+'M' : Number(hit.views) >= 1e3 ? (Number(hit.views)/1e3).toFixed(1)+'K' : String(hit.views)) : '';
+        const viewsNum = hit.views != null ? Number(hit.views) : null;
+        const views = viewsNum
+          ? (viewsNum >= 1e9 ? (viewsNum / 1e9).toFixed(1) + 'B'
+            : viewsNum >= 1e6 ? (viewsNum / 1e6).toFixed(1) + 'M'
+            : viewsNum >= 1e3 ? (viewsNum / 1e3).toFixed(1) + 'K'
+            : String(viewsNum))
+          : '';
         const caption =
           `🎵 *${hit.title || q}*\n` +
           (hit.author ? `👤 ${hit.author}\n` : '') +
           (views ? `👁️ ${views} views\n` : '') +
-          `\nChoose format:\n• Tap *Audio* / *Video*\n• Or: ${prefix}audio\n• Or: ${prefix}video`;
+          (hit.duration ? `⏱ ${hit.duration}\n` : '') +
+          `\n*Reply with:*\n*1* — 🎧 Audio (MP3)\n*2* — 🎬 Video (MP4)`;
         const buttons = [
-          { buttonId: 'play_audio:' + hit.url, buttonText: { displayText: '🎧 Audio MP3' }, type: 1 },
-          { buttonId: 'play_video:' + hit.url, buttonText: { displayText: '🎬 Video MP4' }, type: 1 }
+          { buttonId: 'play_audio:' + hit.url, buttonText: { displayText: '1 🎧 Audio' }, type: 1 },
+          { buttonId: 'play_video:' + hit.url, buttonText: { displayText: '2 🎬 Video' }, type: 1 }
         ];
         try {
           if (hit.thumbnail) {
@@ -3185,7 +3318,39 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
         await reply('⏳ Searching APK…');
         try {
-          let data = await keithGet('/search/apk?q=' + encodeURIComponent(q), 40000);
+          let data = null;
+          for (const ep of [
+            '/api/search/apk?q=' + encodeURIComponent(q),
+            '/api/gateway/search/apk?q=' + encodeURIComponent(q),
+            '/search/apk?q=' + encodeURIComponent(q)
+          ]) {
+            try {
+              data = await keithGet(ep, 40000);
+              const rr = data?.result;
+              const test = Array.isArray(rr) ? rr : (rr?.results || (rr ? [rr] : []));
+              if (test.length) break;
+            } catch {}
+          }
+          if (!data) {
+            try {
+              const ar = await axios.get('https://ws75.aptoide.com/api/7/apps/search', {
+                params: { query: q, limit: 10, aab_is_feature_on: false },
+                timeout: 25000
+              });
+              const list = ar.data?.datalist?.list || [];
+              data = {
+                status: true,
+                result: list.map((x) => ({
+                  name: x.name,
+                  package: x.package,
+                  version: x.file?.vername,
+                  size_mb: x.size ? (x.size / (1024 * 1024)).toFixed(1) + ' MB' : null,
+                  download_url: x.file?.path || x.file?.path_alt || null,
+                  icon: x.icon
+                }))
+              };
+            } catch {}
+          }
           let items = [];
           const r = data?.result;
           if (Array.isArray(r)) items = r;
