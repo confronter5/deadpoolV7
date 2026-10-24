@@ -48,14 +48,14 @@ try {
 
 // ============ CONFIG ============
 const defaults = {
-  BOT_NAME: '𝐃𝐄𝐀𝐃𝐏𝐎𝐎𝐋 𝐕𝟕',
+  BOT_NAME: 'DEADPOOL V7',
   PREFIX: '.',
   OWNER_NUMBER: '',
   DEVELOPERS: [],
   MODE: 'public',
   SESSION: '',
-  POWERED_BY: '> *Powered by Confronter💫*',
-  FONT: 'random',
+  POWERED_BY: '> *Powered by Confronter*',
+  FONT: 'off',
   AUTO_VIEW_STATUS: true,
   AUTO_LIKE_STATUS: true,
   AUTO_REACT: false,
@@ -392,12 +392,16 @@ function applyFont(text, style) {
 function styleReplyText(text) {
   try {
     if (!text || typeof text !== 'string') return text;
+    // Fancy fonts OFF by default — no double/random unicode styling
     let style = String(config.FONT || 'off').toLowerCase();
-    if (style === 'random' || style === 'auto' || style === '' || !FONT_MAPS[style]) {
+    if (style === 'off' || style === 'normal' || style === 'mono' || style === 'none' || style === 'false') {
+      return text;
+    }
+    if (style === 'random' || style === 'auto') {
       _lastFontIdx = (_lastFontIdx + 1) % FONT_NAMES.length;
       style = FONT_NAMES[_lastFontIdx];
     }
-    if (style === 'off' || style === 'normal' || style === 'mono') return text;
+    if (!FONT_MAPS[style]) return text;
     return applyFont(text, style);
   } catch { return text; }
 }
@@ -1252,9 +1256,51 @@ function formatMediaCaption(meta, kind) {
 }
 
 async function downloadViaConfronter(url, audioOnly = true) {
+  // 0) BINARY STREAM from engine (deploy engine-ytmp3-patch.js first)
+  if (audioOnly) {
+    const filePaths = [
+      '/api/download/ytmp3/file?url=',
+      '/api/gateway/download/ytmp3/file?url=',
+      '/download/ytmp3/file?url=',
+      '/download/audio/file?url='
+    ];
+    for (const ep of filePaths) {
+      try {
+        const full = CONFRONTER_API + ep + encodeURIComponent(url);
+        const r = await axios.get(full, {
+          responseType: 'arraybuffer',
+          timeout: 150000,
+          maxContentLength: 250 * 1024 * 1024,
+          validateStatus: () => true,
+          headers: { 'User-Agent': UA, Accept: 'audio/mpeg,audio/*,*/*' }
+        });
+        if (r.status < 400 && r.data) {
+          const b = Buffer.from(r.data);
+          if (b.length > 5000 && b[0] !== 0x7b) {
+            console.log('got audio bytes from', ep, b.length);
+            return { buffer: b, title: 'audio', url: null, meta: { title: 'audio' } };
+          }
+        }
+      } catch (e) {
+        console.log('file stream', ep, (e.message || '').slice(0, 50));
+      }
+    }
+  }
+
+  // 1) JSON endpoints
   const endpoints = audioOnly
-    ? ['/api/download/ytmp3?url=', '/api/download/audio?url=', '/download/ytmp3?url=']
-    : ['/api/download/ytmp4?url=', '/api/download/video?url=', '/download/ytmp4?url='];
+    ? [
+        '/api/download/ytmp3?url=',
+        '/api/gateway/download/ytmp3?url=',
+        '/api/download/audio?url=',
+        '/download/ytmp3?url='
+      ]
+    : [
+        '/api/download/ytmp4?url=',
+        '/api/gateway/download/ytmp4?url=',
+        '/api/download/video?url=',
+        '/download/ytmp4?url='
+      ];
   for (const ep of endpoints) {
     try {
       const data = await confronterGet(ep + encodeURIComponent(url), 90000);
@@ -1263,13 +1309,37 @@ async function downloadViaConfronter(url, audioOnly = true) {
       if (!mediaUrl) continue;
       const meta = keithExtractMeta(data);
       const title = String(meta.title || 'Media').slice(0, 120);
+
       let buf = null;
       try {
-        buf = await fetchBuffer(String(mediaUrl), 180000);
+        buf = await fetchBuffer(String(mediaUrl), 90000);
       } catch {}
+
+      if ((!buf || buf.length < 5000) && mediaUrl) {
+        try {
+          const name = encodeURIComponent((title || 'audio') + (audioOnly ? '.mp3' : '.mp4'));
+          const proxy = DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(mediaUrl) + '&name=' + name;
+          const r = await axios.get(proxy, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: 250 * 1024 * 1024,
+            validateStatus: () => true,
+            headers: { 'User-Agent': UA, Accept: 'audio/mpeg,video/mp4,*/*' }
+          });
+          if (r.status < 400 && r.data) {
+            const b = Buffer.from(r.data);
+            if (b.length > 5000 && b[0] !== 0x7b) buf = b;
+          }
+        } catch (e) {
+          console.log('dl-site proxy:', (e.message || '').slice(0, 80));
+        }
+      }
+
       if (buf && buf.length > 5000) return { buffer: buf, title, url: mediaUrl, meta };
       return { buffer: null, title, url: mediaUrl, meta };
-    } catch {}
+    } catch (e) {
+      console.log('confronter ep', ep, (e.message || '').slice(0, 60));
+    }
   }
   return null;
 }
@@ -1630,37 +1700,74 @@ async function sendAsVideo(sock, jid, data) {
   if (!data) return false;
   const meta = data.meta || { title: data.title };
   const caption = formatMediaCaption(meta, 'video');
-  try {
-    if (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) {
-      await sock.sendMessage(jid, { video: data.buffer, mimetype: 'video/mp4', caption });
-      return true;
-    }
-    const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
-    if (u) {
-      // Prefer downloading bytes first (URL stream often fails / causes path errors)
-      try {
-        const buf = await fetchBuffer(u, 180000);
-        if (buf && buf.length > 5000) {
-          await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4', caption });
-          return true;
-        }
-      } catch (e) {
-        console.log('video bytes:', (e.message || '').slice(0, 80));
+  const title = meta.title || data.title || 'video';
+  let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) ? data.buffer : null;
+  const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
+
+  // Try download-site proxy for bytes
+  if (!buf && u) {
+    try {
+      const proxy = DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(u) +
+        '&name=' + encodeURIComponent(String(title).slice(0, 40) + '.mp4');
+      const r = await axios.get(proxy, {
+        responseType: 'arraybuffer',
+        timeout: 150000,
+        maxContentLength: 250 * 1024 * 1024,
+        validateStatus: () => true,
+        headers: { 'User-Agent': UA, Accept: 'video/mp4,*/*' }
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        if (b.length > 5000 && b[0] !== 0x7b) buf = b;
       }
+    } catch (e) {
+      console.log('video proxy:', (e.message || '').slice(0, 80));
+    }
+  }
+
+  if (!buf && u) {
+    try {
+      buf = await fetchBuffer(u, 120000);
+    } catch (e) {
+      console.log('video bytes:', (e.message || '').slice(0, 80));
+    }
+  }
+
+  if (buf && buf.length > 5000) {
+    try {
+      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4', caption });
+      return true;
+    } catch (e) {
+      console.log('sendAsVideo buffer:', e.message);
       try {
-        await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4', caption });
+        await sock.sendMessage(jid, {
+          document: buf,
+          mimetype: 'video/mp4',
+          fileName: (String(title).replace(/[^\w\s\-]/g, '').slice(0, 40) || 'video') + '.mp4',
+          caption
+        });
         return true;
       } catch (e2) {
-        console.log('sendAsVideo url:', e2.message);
-        await sock.sendMessage(jid, { text: caption + '\n\n🔗 ' + u }).catch(() => {});
-        return true;
+        console.log('sendAsVideo doc:', e2.message);
       }
     }
-    return false;
-  } catch (e) {
-    console.log('sendAsVideo:', e.message);
-    return false;
   }
+
+  if (u) {
+    try {
+      await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4', caption });
+      return true;
+    } catch (e) {
+      console.log('sendAsVideo url:', e.message);
+    }
+    try {
+      await sock.sendMessage(jid, {
+        text: caption + '\n\n⬇️ *Tap to download video:*\n' + u
+      });
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 // ============ AI ============
