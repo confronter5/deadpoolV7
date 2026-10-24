@@ -343,7 +343,8 @@ function applyFont(text, style) {
 function styleReplyText(text) {
   try {
     if (!text || typeof text !== 'string') return text;
-    let style = String(config.FONT || 'random').toLowerCase();
+    // Default: normal font (no unicode stylish maps)
+    let style = String(config.FONT || 'off').toLowerCase();
     if (style === 'random' || style === 'auto' || style === '' || !FONT_MAPS[style]) {
       _lastFontIdx = (_lastFontIdx + 1) % FONT_NAMES.length;
       style = FONT_NAMES[_lastFontIdx];
@@ -1077,6 +1078,7 @@ async function searchYoutube(query) {
 // Your Confronter APIs (https://apis.techwizardx.top)
 const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || config.CONFRONTER_API || 'https://apis.techwizardx.top').replace(/\/+$/, '');
 const KEITH_API = CONFRONTER_API; // primary host — your APIs only
+const DOWNLOAD_SITE = (process.env.DOWNLOAD_SITE || 'https://confronter-downloads.onrender.com').replace(/\/+$/, '');
 
 
 async function keithGet(path, timeout = 60000) {
@@ -1367,6 +1369,23 @@ async function downloadViaYtdl(url, audioOnly) {
 }
 
 async function downloadYouTube(query, audioOnly = true) {
+  // Prefer your download engine site
+  try {
+    if (isYoutubeUrl(query) || /youtube|youtu\.be/i.test(String(query))) {
+      const path = audioOnly ? '/api/yt/mp3?url=' : '/api/yt/mp4?url=';
+      const r = await axios.get(DOWNLOAD_SITE + path + encodeURIComponent(query), { timeout: 90000, validateStatus: () => true });
+      const d = r?.data?.result || r?.data;
+      const mediaUrl = d?.url || d?.download || d?.link;
+      if (mediaUrl) {
+        try {
+          const buf = await fetchBuffer(String(mediaUrl), 180000);
+          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || 'media', url: mediaUrl };
+        } catch {}
+        return { url: mediaUrl, title: d?.title || 'media' };
+      }
+    }
+  } catch (e) { console.log('DOWNLOAD_SITE:', (e.message || '').slice(0, 60)); }
+
   let url = isYoutubeUrl(query) ? query.trim() : null;
   let title = query;
   if (!url) {
@@ -1418,54 +1437,71 @@ async function sendAsMp3(sock, jid, data) {
   if (!data) return false;
   const meta = data.meta || { title: data.title, author: data.author };
   const title = meta.title || data.title || 'audio';
-  const fileName = String(title).replace(/[^\w\s\-\.]/g, '').trim().slice(0, 50) || 'audio';
-  const caption = (typeof formatMediaCaption === 'function'
-    ? formatMediaCaption(meta, 'audio')
-    : ('🎧 *' + title + '*' + (meta.author ? '\n👤 ' + meta.author : ''))) + (typeof buildFooter === 'function' ? buildFooter() : '');
+  const fileName = (String(title).replace(/[^\w\s\-\.]/g, '').trim().slice(0, 50) || 'audio') + '.mp3';
+  const caption = '🎧 *' + title + '*' + (meta.author ? '\n👤 ' + meta.author : '') +
+    (meta.views ? '\n👁️ ' + meta.views : '') + buildFooter();
 
-  let buf = data.buffer;
-  if ((!buf || buf.length < 5000) && data.url) {
+  let buf = data.buffer && data.buffer.length > 3000 ? data.buffer : null;
+
+  // Download media bytes (never send raw tokyo links to chat)
+  async function grab(url) {
+    if (!url) return null;
+    // a) direct with headers
     try {
-      buf = await fetchBuffer(data.url, 180000);
-    } catch (e) {
-      console.log('sendAsMp3 fetch:', e.message);
-    }
+      const b = await fetchBuffer(url, 180000);
+      if (b && b.length > 3000) return b;
+    } catch (e) { console.log('mp3 direct:', (e.message || '').slice(0, 80)); }
+    // b) via your download site proxy
+    try {
+      const proxy = DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent(fileName);
+      const b = await fetchBuffer(proxy, 180000);
+      if (b && b.length > 3000) return b;
+    } catch (e) { console.log('mp3 proxy:', (e.message || '').slice(0, 80)); }
+    return null;
   }
+
+  if (!buf && data.url) buf = await grab(data.url);
+
+  // c) re-resolve via your APIs + yt-dlp
+  if (!buf) {
+    try {
+      const again = await downloadYouTube(data.url || data.query || title, true);
+      if (again?.buffer && again.buffer.length > 3000) buf = again.buffer;
+      else if (again?.url) buf = await grab(again.url);
+    } catch {}
+  }
+
   if (!buf || buf.length < 3000) {
-    // last resort: send URL as text
-    if (data.url) {
-      await sock.sendMessage(jid, { text: caption + '\n\n🔗 ' + data.url }).catch(() => {});
-      return false;
-    }
+    await sock.sendMessage(jid, { text: '❌ Could not download audio bytes. Try again in a moment.' + buildFooter() }).catch(() => {});
     return false;
   }
 
-  // Prefer playable audio, then document for save
+  // Send as playable audio (not document, not URL text)
   try {
     await sock.sendMessage(jid, {
       audio: buf,
       mimetype: 'audio/mpeg',
-      fileName: fileName + '.mp3',
+      fileName,
       ptt: false
     });
+    await sock.sendMessage(jid, { text: caption }).catch(() => {});
+    return true;
   } catch (e1) {
-    console.log('sendAsMp3 audio:', e1.message);
+    console.log('audio msg fail:', e1.message);
     try {
+      // secondary: document only if audio message rejected
       await sock.sendMessage(jid, {
         document: buf,
         mimetype: 'audio/mpeg',
-        fileName: fileName + '.mp3',
+        fileName,
         caption
       });
+      return true;
     } catch (e2) {
-      console.log('sendAsMp3 doc:', e2.message);
+      console.log('doc fail:', e2.message);
       return false;
     }
   }
-  try {
-    await sock.sendMessage(jid, { text: caption });
-  } catch {}
-  return true;
 }
 
 async function sendAsVideo(sock, jid, data) {
@@ -1524,10 +1560,15 @@ async function askAI(text, opts = {}) {
 
 
 async function getLyrics(text) {
-  // 1) Keith lyrics
+  // 1) Your Confronter APIs (q= param)
   try {
-    for (const ep of ['/search/lyrics?query=', '/search/lyrics2?query=', '/search/lyrics3?query=']) {
-      const data = await keithGet(ep + encodeURIComponent(text), 25000);
+    for (const ep of [
+      '/api/search/lyrics?q=',
+      '/search/lyrics?q=',
+      '/search/lyrics?query=',
+      '/api/gateway/search/lyrics?q='
+    ]) {
+      const data = await keithGet(ep + encodeURIComponent(text), 30000);
       if (!data || data.status === false) continue;
       const r = data.result;
       if (Array.isArray(r) && r[0]?.lyrics) {
@@ -1791,7 +1832,7 @@ async function startBot() {
           const link = await getFreshGroupInviteLink();
           if (link && config.OWNER_NUMBER) {
             const oj = getOwnerJid();
-            if (oj) await sock.sendMessage(oj, { text: '👥 Bot group (invite rotates; JID stable):\n' + link }).catch(() => {});
+            // (no group invite spam to owner)
           }
         } catch {}
       }, 9000);
@@ -2434,37 +2475,122 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       }
 
 
-      // Pending .play → reply 1 (audio) or 2 (video) — must run BEFORE prefix gate
+      // Numeric replies for .play / .apk / .xvideos (BEFORE prefix gate)
+      if (!isMe && /^\d{1,2}$/.test(cleanBody.trim())) {
+        const n = parseInt(cleanBody.trim(), 10);
+
+        // APK pick
+        if (global.__apkCache?.get(from)?.length) {
+          const list = global.__apkCache.get(from);
+          const it = list[n - 1];
+          if (it) {
+            const replyFn = async (txt) => {
+              await sock.sendMessage(from, { text: String(txt) + buildFooter() }, { quoted: m }).catch(() => {});
+            };
+            await downloadAndSendApk(from, m, it, replyFn);
+            return;
+          }
+        }
+
+        // XVideos pick
+        if (global.__xvCache?.get(from)?.length) {
+          const list = global.__xvCache.get(from);
+          const it = list[n - 1];
+          if (it?.url) {
+            await sock.sendMessage(from, { text: '⏳ Downloading video…' + buildFooter() }, { quoted: m }).catch(() => {});
+            try {
+              let data = null;
+              for (const ep of ['/api/download/xvideos?url=', '/api/gateway/download/xvideos?url=', '/download/xvideos?url=']) {
+                try {
+                  data = await keithGet(ep + encodeURIComponent(it.url), 90000);
+                  if (data && data.status !== false) break;
+                } catch {}
+              }
+              const r = data?.result || data;
+              const vurl = r?.url || r?.download_url || r?.video || keithExtractUrl(data);
+              if (!vurl) {
+                await sock.sendMessage(from, { text: '❌ Download failed' + buildFooter() }, { quoted: m });
+                return;
+              }
+              try {
+                const buf = await fetchBuffer(String(vurl), 180000);
+                if (buf && buf.length > 5000) {
+                  await sock.sendMessage(from, {
+                    video: buf,
+                    caption: (it.title || r?.title || 'Video') + buildFooter(),
+                    mimetype: 'video/mp4'
+                  }, { quoted: m });
+                } else {
+                  await sock.sendMessage(from, {
+                    video: { url: String(vurl) },
+                    caption: (it.title || 'Video') + buildFooter()
+                  }, { quoted: m });
+                }
+              } catch {
+                await sock.sendMessage(from, { text: '❌ Could not send video.' + buildFooter() }, { quoted: m });
+              }
+            } catch (e) {
+              await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
+            }
+            return;
+          }
+        }
+
+        // Play 1=audio 2=video
+        if (global.__pendingPlay) {
+          const pending = global.__pendingPlay.get(from);
+          if (pending?.url && (n === 1 || n === 2)) {
+            const wantAudio = n === 1;
+            await sock.sendMessage(from, {
+              text: (wantAudio ? '⏳ Downloading audio…' : '⏳ Downloading video…') + buildFooter()
+            }, { quoted: m }).catch(() => {});
+            try {
+              const data = await downloadYouTube(pending.url, wantAudio);
+              if (!data?.buffer && !data?.url) {
+                await sock.sendMessage(from, { text: '❌ Download failed. Try again.' + buildFooter() }, { quoted: m });
+                return;
+              }
+              data.title = data.title || pending.title;
+              data.author = data.author || pending.author;
+              data.meta = {
+                title: data.title || pending.title,
+                author: pending.author || data.author || '',
+                views: pending.views,
+                thumbnail: pending.thumbnail
+              };
+              const ok = wantAudio
+                ? await sendAsMp3(sock, from, data)
+                : await sendAsVideo(sock, from, data);
+              if (!ok) {
+                await sock.sendMessage(from, {
+                  text: (wantAudio ? '❌ Failed to send audio.' : '❌ Failed to send video.') + buildFooter()
+                }, { quoted: m });
+              }
+            } catch (e) {
+              await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
+            }
+            return;
+          }
+        }
+      }
+
+      // Pending .play text replies: audio / video
       if (global.__pendingPlay && !isMe) {
         const pending = global.__pendingPlay.get(from);
-        if (pending?.url && /^(1|2|audio|video)$/i.test(cleanBody.trim())) {
-          const choice = cleanBody.trim().toLowerCase();
-          const wantAudio = choice === '1' || choice === 'audio';
+        if (pending?.url && /^(audio|video)$/i.test(cleanBody.trim())) {
+          const wantAudio = cleanBody.trim().toLowerCase() === 'audio';
           await sock.sendMessage(from, {
             text: (wantAudio ? '⏳ Downloading audio…' : '⏳ Downloading video…') + buildFooter()
           }, { quoted: m }).catch(() => {});
           try {
             const data = await downloadYouTube(pending.url, wantAudio);
             if (!data?.buffer && !data?.url) {
-              await sock.sendMessage(from, { text: '❌ Download failed. Try again.' + buildFooter() }, { quoted: m });
+              await sock.sendMessage(from, { text: '❌ Download failed.' + buildFooter() }, { quoted: m });
               return;
             }
-            data.title = data.title || pending.title;
-            data.author = data.author || pending.author;
-            data.meta = {
-              title: data.title || pending.title,
-              author: pending.author || data.author || '',
-              views: pending.views,
-              thumbnail: pending.thumbnail
-            };
-            const ok = wantAudio
-              ? await sendAsMp3(sock, from, data)
-              : await sendAsVideo(sock, from, data);
-            if (!ok) {
-              await sock.sendMessage(from, {
-                text: (wantAudio ? '❌ Failed to send audio.' : '❌ Failed to send video.') + buildFooter()
-              }, { quoted: m });
-            }
+            data.meta = { title: data.title || pending.title, author: pending.author, views: pending.views };
+            const ok = wantAudio ? await sendAsMp3(sock, from, data) : await sendAsVideo(sock, from, data);
+            if (!ok) await sock.sendMessage(from, { text: '❌ Send failed.' + buildFooter() }, { quoted: m });
           } catch (e) {
             await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
           }
@@ -2792,53 +2918,81 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       // ========== XVIDEOS / XNXX (Confronter APIs) ==========
       if (['xvideos', 'xv', 'xnxx'].includes(cmd)) {
         if (!text) {
-          await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <full video page url>`);
+          await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <video url>`);
           return;
         }
         const isUrl = /xvideos\.com|xnxx\.com/i.test(text);
         if (isUrl) {
-          await reply('⏳ Fetching video link…');
-          const data = await downloadXvideosKeith(text.trim());
-          const links = [];
-          if (data?.url) links.push(data.url);
-          if (data?.high && data.high !== data.url) links.push(data.high);
-          if (data?.low && data.low !== data.url) links.push(data.low);
-          let cap = `🎬 *${data?.title || 'Video'}*\n\n`;
-          if (data?.page) cap += `📄 Page:\n${data.page}\n\n`;
-          if (links.length) {
-            cap += `🔗 *Copy download link:*\n${links[0]}\n`;
-            if (links[1]) cap += `\n🔗 Alt:\n${links[1]}\n`;
-          }
-          cap += `\n> *Powered by Confronter💫*`;
-          if (data?.url) {
-            try {
-              await sock.sendMessage(from, {
-                video: { url: data.url },
-                caption: cap.slice(0, 1024),
-                mimetype: 'video/mp4'
-              });
-            } catch {
+          await reply('⏳ Downloading video…');
+          try {
+            let data = null;
+            for (const ep of [
+              '/api/download/xvideos?url=',
+              '/api/gateway/download/xvideos?url=',
+              '/download/xvideos?url='
+            ]) {
               try {
-                const buf = await fetchBuffer(data.url, 180000);
-                if (buf) await sock.sendMessage(from, { video: buf, caption: cap.slice(0, 1024), mimetype: 'video/mp4' });
-                else await reply(cap);
-              } catch { await reply(cap); }
+                data = await keithGet(ep + encodeURIComponent(text.trim()), 90000);
+                if (data && data.status !== false) break;
+              } catch {}
             }
-          } else {
-            await reply(cap || '❌ No downloadable link. Use a full video page URL from search.');
+            const r = data?.result || data;
+            const vurl = r?.url || r?.download_url || r?.video || r?.dl || keithExtractUrl(data);
+            if (!vurl) { await reply('❌ Download failed'); return; }
+            try {
+              const buf = await fetchBuffer(String(vurl), 180000);
+              if (buf && buf.length > 5000) {
+                await sock.sendMessage(from, {
+                  video: buf,
+                  caption: (r?.title || 'Video') + buildFooter(),
+                  mimetype: 'video/mp4'
+                }, { quoted: m });
+              } else {
+                await sock.sendMessage(from, { video: { url: String(vurl) }, caption: (r?.title || 'Video') + buildFooter() }, { quoted: m });
+              }
+            } catch {
+              await reply('❌ Could not send video.');
+            }
+          } catch (e) {
+            await reply('❌ ' + (e.message || 'failed'));
           }
-        } else {
-          await reply('⏳ Searching…');
-          const list = await searchXvideosKeith(text);
-          if (!list.length) { await reply('❌ No results. Try another keyword.'); return; }
-          let msg = `🔍 *Results:* ${text}\n\n`;
-          list.forEach((v, i) => {
-            msg += `*${i + 1}.* ${v.title}\n`;
-            if (v.duration) msg += `⏱ ${v.duration}\n`;
-            msg += `🔗 ${v.url}\n\n`;
+          return;
+        }
+
+        await reply('⏳ Searching…');
+        try {
+          let items = [];
+          for (const ep of [
+            '/api/gateway/search/xvideos?q=',
+            '/api/search/xvideos?q=',
+            '/search/xvideos?q='
+          ]) {
+            try {
+              const data = await keithGet(ep + encodeURIComponent(text.trim()), 45000);
+              const r = data?.result;
+              if (Array.isArray(r)) items = r;
+              else if (Array.isArray(r?.results)) items = r.results;
+              else if (Array.isArray(data?.results)) items = data.results;
+              if (items.length) break;
+            } catch {}
+          }
+          if (!items.length) { await reply('❌ No results. Try another keyword.'); return; }
+          if (!global.__xvCache) global.__xvCache = new Map();
+          global.__xvCache.set(from, items.slice(0, 10));
+          setTimeout(() => { try { global.__xvCache.delete(from); } catch {} }, 15 * 60 * 1000);
+
+          let msg = `🔞 *Results:* ${text}\n\n`;
+          items.slice(0, 8).forEach((it, i) => {
+            const title = it.title || it.name || 'Video';
+            const link = it.url || it.link || '';
+            msg += `*${i + 1}.* ${title}\n`;
+            if (link) msg += `${link}\n`;
+            msg += '\n';
           });
-          msg += `_Copy a link then:\n${prefix}xvideos <url>_\n\n> *Powered by Confronter💫*`;
-          await reply(msg.slice(0, 4000));
+          msg += `_Reply with a number to download, or:\n${prefix}xvideos <url>_`;
+          await reply(msg.trim().slice(0, 4000));
+        } catch (e) {
+          await reply('❌ Search failed: ' + e.message);
         }
         return;
       }
@@ -3226,40 +3380,40 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       // ========== CLEAR (wipe this chat) ==========
       if (cmd === 'clear' || cmd === 'clearchat' || cmd === 'wipe') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('🧹 Clearing chat…');
+        await reply('🧹 Clearing…');
         let ok = false;
-        // 1) Baileys chatModify delete (best effort wipe for this chat)
         try {
           if (typeof sock.chatModify === 'function') {
+            const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
             await sock.chatModify({
               delete: true,
-              lastMessages: [{
-                key: m.key,
-                messageTimestamp: m.messageTimestamp || Math.floor(Date.now() / 1000)
-              }]
+              lastMessages: [{ key: m.key, messageTimestamp: ts }]
             }, from);
             ok = true;
           }
         } catch (e) {
-          console.log('clear chatModify:', e.message);
+          console.log('clear:', e.message);
         }
-        // 2) Optional API hook on your backend
+        // Best-effort: delete last bot messages from cache
         try {
-          await keithGet('/tools/clear?chat=' + encodeURIComponent(from), 15000);
-        } catch {}
-        try {
-          // clear unread / mute flags
-          if (typeof sock.chatModify === 'function') {
-            await sock.chatModify({ clear: { messages: [{ id: m.key.id, fromMe: m.key.fromMe, timestamp: m.messageTimestamp }] } }, from).catch(() => {});
+          let deleted = 0;
+          for (const [id, cached] of [...msgCache.entries()].reverse()) {
+            if (deleted >= 30) break;
+            if (cached?.remoteJid === from && cached?.fromMe && cached?.key) {
+              try {
+                await sock.sendMessage(from, { delete: cached.key });
+                deleted++;
+              } catch {}
+            }
           }
+          if (deleted) ok = true;
         } catch {}
-        if (ok) {
-          await sock.sendMessage(from, { text: '✅ *Chat cleared*\nHistory wiped for this chat (WhatsApp limits may apply).' + buildFooter() });
-        } else {
-          await reply('❌ Clear failed. Update Baileys, or in groups the bot may need admin. WhatsApp only allows clearing recent messages.');
-        }
+        try { await keithGet('/tools/clear?chat=' + encodeURIComponent(from), 10000); } catch {}
+        if (ok) await reply('✅ Clear requested. WhatsApp may only remove recent messages.');
+        else await reply('❌ Clear not supported fully on this Baileys/WhatsApp version. Delete chat manually on the phone if needed.');
         return;
       }
+
 
       // ========== FUN ==========
       if (cmd === 'joke') {
@@ -4130,20 +4284,27 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             let phone = await jidToPhoneAsync(jid, m, from);
             if (!phone) phone = dig(String(jid).split('@')[0].split(':')[0]);
             if (!/^\d{6,15}$/.test(phone || '')) {
-              const wa = await sock.onWhatsApp(dig(String(jid).split('@')[0]) + '@s.whatsapp.net').catch(() => null);
-              if (wa?.[0]?.jid) phone = dig(wa[0].jid);
+              try {
+                const wa = await sock.onWhatsApp(jidNormalizedUser(String(jid)));
+                if (wa?.[0]?.jid) phone = dig(String(wa[0].jid).split('@')[0]);
+              } catch {}
             }
-            if (!/^\d{6,15}$/.test(phone || '')) { fail++; continue; }
-            await sock.updateBlockStatus(phone + '@s.whatsapp.net', cmd === 'block' ? 'block' : 'unblock');
-            labels.push('+' + phone);
+            // Prefer resolved phone; else try raw jid
+            const targetJid = /^\d{6,15}$/.test(phone || '')
+              ? (phone + '@s.whatsapp.net')
+              : jidNormalizedUser(String(jid));
+            if (!targetJid || targetJid.endsWith('@g.us')) { fail++; continue; }
+            await sock.updateBlockStatus(targetJid, cmd === 'block' ? 'block' : 'unblock');
+            labels.push(phone ? ('+' + phone) : targetJid.split('@')[0]);
             ok++;
+            await delay(400);
           } catch (e) {
             console.log(cmd + ' err:', e.message);
             fail++;
           }
         }
         if (ok) await reply(`✅ *${cmd.toUpperCase()}*\n${labels.join(', ')}`);
-        else await reply(`❌ ${cmd} failed. Reply to their message or use a number.`);
+        else await reply(`❌ ${cmd} failed.\nReply to their message or: ${prefix}${cmd} 2547xxxxxxxx`);
         return;
       }
     } catch (err) {
