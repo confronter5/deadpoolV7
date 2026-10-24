@@ -1,3 +1,15 @@
+/**
+ * DEADPOOL V7 - Fixed index.js
+ * - Confronter APIs only (apis.techwizardx.top)
+ * - Download site: https://confronter-downloads.onrender.com
+ * - .play / .song → auto audio (no 1/2)
+ * - .video → auto video (no 1/2)
+ * - Menu works on iOS (delete+resend fallback)
+ * - Stronger anti-delete / anti-edit
+ * - .clear and .block fixed
+ * - Status auto-like improved
+ */
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -163,7 +175,6 @@ async function dlGet(url, e = {}) {
 }
 async function fetchBuffer(url, t = 120000) {
   const isTokyo = /tokyo\.xyz/i.test(String(url));
-  const isGvideo = /googlevideo\.com/i.test(String(url));
   const headers = {
     'User-Agent': UA,
     Accept: '*/*',
@@ -195,7 +206,7 @@ const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
 const BLACKLIST_FILE = path.join(DATA_DIR, 'blacklist.json');
 const TMP_DIR = path.join(__dirname, 'tmp');
 fs.ensureDirSync(TMP_DIR);
-const msgCache = new NodeCache({ stdTTL: 60 * 60 * 24, checkperiod: 300, useClones: false }); // 24h — reduce Waiting for this message
+const msgCache = new NodeCache({ stdTTL: 60 * 60 * 48, checkperiod: 300, useClones: false }); // 48h
 const groupCache = new NodeCache({ stdTTL: 5 * 60, checkperiod: 120 });
 const floodMap = new Map();
 let sock = null;
@@ -314,7 +325,6 @@ const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 
 // ============ FOOTER ============
 function buildFooter() {
-  // Keep exact format the user requested
   const p = config.POWERED_BY || '> *Powered by Confronter💫*';
   return '\n\n' + p;
 }
@@ -327,9 +337,20 @@ const FONT_MAPS = {
   italic: {a:'𝑎',b:'𝑏',c:'𝑐',d:'𝑑',e:'𝑒',f:'𝑓',g:'𝑔',h:'ℎ',i:'𝑖',j:'𝑗',k:'𝑘',l:'𝑙',m:'𝑚',n:'𝑛',o:'𝑜',p:'𝑝',q:'𝑞',r:'𝑟',s:'𝑠',t:'𝑡',u:'𝑢',v:'𝑣',w:'𝑤',x:'𝑥',y:'𝑦',z:'𝑧'},
   double: {a:'𝕒',b:'𝕓',c:'𝕔',d:'𝕕',e:'𝕖',f:'𝕗',g:'𝕘',h:'𝕙',i:'𝕚',j:'𝕛',k:'𝕜',l:'𝕝',m:'𝕞',n:'𝕟',o:'𝕠',p:'𝕡',q:'𝕢',r:'𝕣',s:'𝕤',t:'𝕥',u:'𝕦',v:'𝕧',w:'𝕨',x:'𝕩',y:'𝕪',z:'𝕫',A:'𝔸',B:'𝔹',C:'ℂ',D:'𝔻',E:'𝔼',F:'𝔽',G:'𝔾',H:'ℍ',I:'𝕀',J:'𝕁',K:'𝕂',L:'𝕃',M:'𝕄',N:'ℕ',O:'𝕆',P:'ℙ',Q:'ℚ',R:'ℝ',S:'𝕊',T:'𝕋',U:'𝕌',V:'𝕍',W:'𝕎',X:'𝕏',Y:'𝕐',Z:'ℤ','0':'𝟘','1':'𝟙','2':'𝟚','3':'𝟛','4':'𝟜','5':'𝟝','6':'𝟞','7':'𝟟','8':'𝟠','9':'𝟡'},
   script: {a:'𝓪',b:'𝓫',c:'𝓬',d:'𝓭',e:'𝓮',f:'𝓯',g:'𝓰',h:'𝓱',i:'𝓲',j:'𝓳',k:'𝓴',l:'𝓵',m:'𝓶',n:'𝓷',o:'𝓸',p:'𝓹',q:'𝓺',r:'𝓻',s:'𝓼',t:'𝓽',u:'𝓾',v:'𝓿',w:'𝔀',x:'𝔁',y:'𝔂',z:'𝔃'},
-  tiny: {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'}
+  tiny: {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'},
+  // extra styles requested
+  'sans-bold': null, // filled below
+  'sans-italic': null,
+  'serif-bold': {a:'𝐚',b:'𝐛',c:'𝐜',d:'𝐝',e:'𝐞',f:'𝐟',g:'𝐠',h:'𝐡',i:'𝐢',j:'𝐣',k:'𝐤',l:'𝐥',m:'𝐦',n:'𝐧',o:'𝐨',p:'𝐩',q:'𝐪',r:'𝐫',s:'𝐬',t:'𝐭',u:'𝐮',v:'𝐯',w:'𝐰',x:'𝐱',y:'𝐲',z:'𝐳',A:'𝐀',B:'𝐁',C:'𝐂',D:'𝐃',E:'𝐄',F:'𝐅',G:'𝐆',H:'𝐇',I:'𝐈',J:'𝐉',K:'𝐊',L:'𝐋',M:'𝐌',N:'𝐍',O:'𝐎',P:'𝐏',Q:'𝐐',R:'𝐑',S:'𝐒',T:'𝐓',U:'𝐔',V:'𝐕',W:'𝐖',X:'𝐗',Y:'𝐘',Z:'𝐙'},
+  'serif-italic': {a:'𝑎',b:'𝑏',c:'𝑐',d:'𝑑',e:'𝑒',f:'𝑓',g:'𝑔',h:'ℎ',i:'𝑖',j:'𝑗',k:'𝑘',l:'𝑙',m:'𝑚',n:'𝑛',o:'𝑜',p:'𝑝',q:'𝑞',r:'𝑟',s:'𝑠',t:'𝑡',u:'𝑢',v:'𝑣',w:'𝑤',x:'𝑥',y:'𝑦',z:'𝑧',A:'𝐴',B:'𝐵',C:'𝐶',D:'𝐷',E:'𝐸',F:'𝐹',G:'𝐺',H:'𝐻',I:'𝐼',J:'𝐽',K:'𝐾',L:'𝐿',M:'𝑀',N:'𝑁',O:'𝑂',P:'𝑃',Q:'𝑄',R:'𝑅',S:'𝑆',T:'𝑇',U:'𝑈',V:'𝑉',W:'𝑊',X:'𝑋',Y:'𝑌',Z:'𝑍'},
+  serif: {a:'𝑎',b:'𝑏',c:'𝑐',d:'𝑑',e:'𝑒',f:'𝑓',g:'𝑔',h:'ℎ',i:'𝑖',j:'𝑗',k:'𝑘',l:'𝑙',m:'𝑚',n:'𝑛',o:'𝑜',p:'𝑝',q:'𝑞',r:'𝑟',s:'𝑠',t:'𝑡',u:'𝑢',v:'𝑣',w:'𝑤',x:'𝑥',y:'𝑦',z:'𝑧'},
+  typewriter: {a:'𝚊',b:'𝚋',c:'𝚌',d:'𝚍',e:'𝚎',f:'𝚏',g:'𝚐',h:'𝚑',i:'𝚒',j:'𝚓',k:'𝚔',l:'𝚕',m:'𝚖',n:'𝚗',o:'𝚘',p:'𝚙',q:'𝚚',r:'𝚛',s:'𝚜',t:'𝚝',u:'𝚞',v:'𝚟',w:'𝚠',x:'𝚡',y:'𝚢',z:'𝚣',A:'𝙰',B:'𝙱',C:'𝙲',D:'𝙳',E:'𝙴',F:'𝙵',G:'𝙶',H:'𝙷',I:'𝙸',J:'𝙹',K:'𝙺',L:'𝙻',M:'𝙼',N:'𝙽',O:'𝙾',P:'𝙿',Q:'𝚀',R:'𝚁',S:'𝚂',T:'𝚃',U:'𝚄',V:'𝚅',W:'𝚆',X:'𝚇',Y:'𝚈',Z:'𝚉','0':'𝟶','1':'𝟷','2':'𝟸','3':'𝟹','4':'𝟺','5':'𝟻','6':'𝟼','7':'𝟽','8':'𝟾','9':'𝟿'},
+  'small-caps': {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'}
 };
-const FONT_NAMES = Object.keys(FONT_MAPS).filter(n => n !== 'normal');
+FONT_MAPS['sans-bold'] = FONT_MAPS.bold;
+FONT_MAPS['sans-italic'] = FONT_MAPS.italic;
+
+const FONT_NAMES = Object.keys(FONT_MAPS).filter(n => n !== 'normal' && FONT_MAPS[n]);
 let _lastFontIdx = 0;
 
 function applyFont(text, style) {
@@ -343,7 +364,6 @@ function applyFont(text, style) {
 function styleReplyText(text) {
   try {
     if (!text || typeof text !== 'string') return text;
-    // Default: normal font (no unicode stylish maps)
     let style = String(config.FONT || 'off').toLowerCase();
     if (style === 'random' || style === 'auto' || style === '' || !FONT_MAPS[style]) {
       _lastFontIdx = (_lastFontIdx + 1) % FONT_NAMES.length;
@@ -481,34 +501,13 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 
-async function editImageCaption(jid, key, buffer, caption) {
-  if (key) {
-    try {
-      await sock.relayMessage(jid, {
-        protocolMessage: { key, type: 14, editedMessage: { imageMessage: { caption } } }
-      }, {});
-      return true;
-    } catch {}
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption, edit: key });
-      return true;
-    } catch {}
-  }
-  try { if (key) await sock.sendMessage(jid, { delete: key }); } catch {}
-  try {
-    await sock.sendMessage(jid, { image: buffer, caption });
-    return true;
-  } catch {}
-  await sock.sendMessage(jid, { text: caption });
-  return true;
-}
-
+// iOS-friendly menu: try edit, fallback delete + resend
 async function sendMenuWithMedia(jid, pushName, userCount) {
   const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   if (foot) full = full + foot;
-  // Same fancy font as menu (bold) + taglines while loading
+
   const loading =
     '💀 ' + applyFont("We didn't die", 'bold') + '\n' +
     '👑 ' + applyFont('We rule them', 'bold') + '\n' +
@@ -524,19 +523,59 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
 
   if (buffer && Buffer.isBuffer(buffer) && buffer.length > 500) {
     let base = null;
-    try { base = await sock.sendMessage(jid, { image: buffer, caption: loading }); }
-    catch (e) { console.log('menu base send:', e.message); }
-    await delay(900);
-    await editImageCaption(jid, base?.key || null, buffer, full);
+    try {
+      base = await sock.sendMessage(jid, { image: buffer, caption: loading });
+    } catch (e) { console.log('menu base send:', e.message); }
+
+    await delay(800);
+
+    let edited = false;
+    if (base?.key) {
+      try {
+        await sock.relayMessage(jid, {
+          protocolMessage: {
+            key: base.key,
+            type: 14,
+            editedMessage: { imageMessage: { caption: full } }
+          }
+        }, {});
+        edited = true;
+      } catch {}
+      if (!edited) {
+        try {
+          await sock.sendMessage(jid, { image: buffer, caption: full, edit: base.key });
+          edited = true;
+        } catch {}
+      }
+    }
+
+    // iOS fallback: delete loading then send final
+    if (!edited) {
+      try { if (base?.key) await sock.sendMessage(jid, { delete: base.key }); } catch {}
+      try {
+        await sock.sendMessage(jid, { image: buffer, caption: full });
+      } catch {
+        await sock.sendMessage(jid, { text: full });
+      }
+    }
     return;
   }
+
+  // Text-only
   let base = null;
   try { base = await sock.sendMessage(jid, { text: loading }); } catch {}
-  await delay(700);
-  try {
-    if (base?.key) await sock.sendMessage(jid, { text: full, edit: base.key });
-    else await sock.sendMessage(jid, { text: full });
-  } catch { await sock.sendMessage(jid, { text: full }); }
+  await delay(600);
+  let edited = false;
+  if (base?.key) {
+    try {
+      await sock.sendMessage(jid, { text: full, edit: base.key });
+      edited = true;
+    } catch {}
+  }
+  if (!edited) {
+    try { if (base?.key) await sock.sendMessage(jid, { delete: base.key }); } catch {}
+    await sock.sendMessage(jid, { text: full });
+  }
 }
 
 // ============ START MESSAGE ============
@@ -935,7 +974,6 @@ async function ensureGroupMembership(force = false) {
   let groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
   if (invRaw.endsWith('@g.us')) { groupJid = invRaw; config.GROUP_JID = invRaw; }
 
-  // Join via invite code
   if (invRaw && !invRaw.endsWith('@g.us')) {
     try {
       let code = invRaw;
@@ -1007,7 +1045,6 @@ async function ensureChannelFollow() {
 async function autoJoinConfigured() {
   await ensureGroupMembership(true);
   await ensureChannelFollow();
-  // Periodic check: if bot was removed, auto rejoin (every 3 min)
   if (global.__rejoinTimer) clearInterval(global.__rejoinTimer);
   global.__rejoinTimer = setInterval(async () => {
     try {
@@ -1018,11 +1055,10 @@ async function autoJoinConfigured() {
   }, 3 * 60 * 1000);
 }
 
-// ============ DOWNLOADERS (simplified - keep original logic) ============
+// ============ DOWNLOADERS ============
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
 
 async function searchYoutube(query) {
-  // 1) yt-search (local)
   try {
     const yts = require('yt-search');
     const r = await yts(query);
@@ -1038,9 +1074,8 @@ async function searchYoutube(query) {
       };
     }
   } catch {}
-  // 2) Your API gateway
   try {
-    const data = await keithGet('/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5', 40000);
+    const data = await confronterGet('/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5', 40000);
     const list = data?.result?.results || data?.result || data?.results || [];
     const v = Array.isArray(list) ? list[0] : null;
     if (v) {
@@ -1072,21 +1107,14 @@ async function searchYoutube(query) {
   return null;
 }
 
-
-// ============ CONFRONTER APIs (your Vercel / GitHub API) ============
-// Set CONFRONTER_API in Heroku config to your Vercel URL, e.g. https://confronter-apis.vercel.app
-// Your Confronter APIs (https://apis.techwizardx.top)
+// ============ CONFRONTER APIs ONLY ============
 const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || config.CONFRONTER_API || 'https://apis.techwizardx.top').replace(/\/+$/, '');
-const KEITH_API = CONFRONTER_API; // primary host — your APIs only
 const DOWNLOAD_SITE = (process.env.DOWNLOAD_SITE || 'https://confronter-downloads.onrender.com').replace(/\/+$/, '');
 
-
-async function keithGet(path, timeout = 60000) {
+async function confronterGet(path, timeout = 60000) {
   try {
-    // Confronter APIs use /api/... prefix; legacy hosts use /download/...
     let p = path.startsWith('/') ? path : '/' + path;
-    if (CONFRONTER_API && !p.startsWith('/api/')) {
-      // map common legacy paths to Confronter routes
+    if (!p.startsWith('/api/')) {
       const map = {
         '/download/ytmp3': '/api/download/ytmp3',
         '/download/ytmp4': '/api/download/ytmp4',
@@ -1135,13 +1163,16 @@ async function keithGet(path, timeout = 60000) {
       if (map[basePath]) p = map[basePath] + qs;
       else if (!p.startsWith('/api/')) p = '/api' + p;
     }
-    const r = await dlGet(KEITH_API + p, { timeout });
+    const r = await dlGet(CONFRONTER_API + p, { timeout });
     return r?.data || null;
   } catch (e) {
-    console.log('api:', (e.message || '').slice(0, 80));
+    console.log('confronterGet:', (e.message || '').slice(0, 80));
     return null;
   }
 }
+
+// alias for any leftover references
+const keithGet = confronterGet;
 
 function keithExtractUrl(data) {
   if (!data) return null;
@@ -1192,13 +1223,13 @@ function formatMediaCaption(meta, kind) {
   return lines.join('\n');
 }
 
-async function downloadViaKeith(url, audioOnly = true) {
+async function downloadViaConfronter(url, audioOnly = true) {
   const endpoints = audioOnly
-    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/mp3?url=', '/download/yta?url=']
-    : ['/download/ytmp4?url=', '/download/video?url=', '/download/mp4?url=', '/download/ytv?url='];
+    ? ['/api/download/ytmp3?url=', '/api/download/audio?url=', '/download/ytmp3?url=']
+    : ['/api/download/ytmp4?url=', '/api/download/video?url=', '/download/ytmp4?url='];
   for (const ep of endpoints) {
     try {
-      const data = await keithGet(ep + encodeURIComponent(url), 90000);
+      const data = await confronterGet(ep + encodeURIComponent(url), 90000);
       if (!data || data.status === false) continue;
       const mediaUrl = keithExtractUrl(data);
       if (!mediaUrl) continue;
@@ -1215,12 +1246,11 @@ async function downloadViaKeith(url, audioOnly = true) {
   return null;
 }
 
-async function downloadInstagramKeith(url) {
-  for (const ep of ['/download/instadl?url=', '/download/instagramdl?url=']) {
+async function downloadInstagramConfronter(url) {
+  for (const ep of ['/api/download/instagram?url=', '/download/instadl?url=', '/download/instagramdl?url=']) {
     try {
-      const data = await keithGet(ep + encodeURIComponent(url), 60000);
+      const data = await confronterGet(ep + encodeURIComponent(url), 60000);
       if (!data || data.status === false) continue;
-      // result may be array or object
       const r = data.result || data;
       if (Array.isArray(r)) {
         const urls = r.map(x => x.url || x.dl || x).filter(u => typeof u === 'string' && u.startsWith('http'));
@@ -1233,51 +1263,9 @@ async function downloadInstagramKeith(url) {
   return null;
 }
 
-
-async function searchXvideosKeith(query) {
+async function downloadTiktokConfronter(url) {
   try {
-    let data = await keithGet('/search/xvideos?q=' + encodeURIComponent(query), 45000);
-    if (!data || data.status === false) {
-      data = await keithGet('/search/xnxx?q=' + encodeURIComponent(query), 45000);
-    }
-    if (!data || data.status === false) return [];
-    const r = data.result;
-    const list = Array.isArray(r) ? r : (r?.results || r?.list || []);
-    return list.slice(0, 12).map(x => ({
-      title: x.title || x.name || 'Video',
-      duration: x.duration || '',
-      url: x.url || x.link || '',
-      thumb: x.thumb || x.thumbnail || ''
-    })).filter(x => x.url && /^https?:\/\//i.test(x.url));
-  } catch { return []; }
-}
-
-async function downloadXvideosKeith(url) {
-  try {
-    let data = await keithGet('/download/xvideos?url=' + encodeURIComponent(url), 90000);
-    if (!data || data.status === false) {
-      data = await keithGet('/download/xnxx?url=' + encodeURIComponent(url), 90000);
-    }
-    if (!data || data.status === false) return { page: url, title: 'Video', url: null };
-    const r = data.result || data;
-    const dl = r.download_url || r.high || r.low || r.url || r.dl || r.video || keithExtractUrl(data);
-    return {
-      title: r.title || 'Video',
-      url: dl || null,
-      page: url,
-      high: r.high || null,
-      low: r.low || null,
-      thumb: r.thumbnail || r.thumb || '',
-      size: r.size || r.sizeReadable || ''
-    };
-  } catch {
-    return { page: url, title: 'Video', url: null };
-  }
-}
-
-async function downloadTiktokKeith(url) {
-  try {
-    const data = await keithGet('/download/tiktokdl3?url=' + encodeURIComponent(url), 60000);
+    const data = await confronterGet('/api/download/tiktok?url=' + encodeURIComponent(url), 60000);
     if (!data || data.status === false) return null;
     const mediaUrl = keithExtractUrl(data) || data.result?.play || data.result?.video;
     if (!mediaUrl) return null;
@@ -1285,12 +1273,8 @@ async function downloadTiktokKeith(url) {
   } catch { return null; }
 }
 
-
 async function downloadViaYtdl(url, audioOnly) {
-  // 1) Prefer yt-dlp binary (downloaded in postinstall on Heroku)
   try {
-    const path = require('path');
-    const fs = require('fs');
     const ytdlp = fs.existsSync('./yt-dlp') ? './yt-dlp' : (fs.existsSync('/usr/bin/yt-dlp') ? 'yt-dlp' : null);
     if (ytdlp) {
       const outTpl = '/tmp/dp_' + Date.now() + (audioOnly ? '.mp3' : '.mp4');
@@ -1299,7 +1283,6 @@ async function downloadViaYtdl(url, audioOnly) {
         : '-f "best[height<=720]/best" -o "' + outTpl + '"';
       const cmd = ytdlp + ' --no-playlist --no-warnings ' + fmt + ' "' + url + '"';
       await execP(cmd, { timeout: 120000, maxBuffer: 30 * 1024 * 1024 });
-      // yt-dlp may change extension
       let file = outTpl;
       if (!fs.existsSync(file)) {
         const base = outTpl.replace(/\.(mp3|mp4)$/, '');
@@ -1324,7 +1307,6 @@ async function downloadViaYtdl(url, audioOnly) {
     console.log('yt-dlp error:', (e.message || '').slice(0, 120));
   }
 
-  // 2) Fallback: ytdl-core / @distube/ytdl-core
   try {
     let ytdl;
     try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = require('ytdl-core'); }
@@ -1369,22 +1351,27 @@ async function downloadViaYtdl(url, audioOnly) {
 }
 
 async function downloadYouTube(query, audioOnly = true) {
-  // Prefer your download engine site
+  // 1) Your download engine site first
   try {
     if (isYoutubeUrl(query) || /youtube|youtu\.be/i.test(String(query))) {
       const path = audioOnly ? '/api/yt/mp3?url=' : '/api/yt/mp4?url=';
-      const r = await axios.get(DOWNLOAD_SITE + path + encodeURIComponent(query), { timeout: 90000, validateStatus: () => true });
+      const r = await axios.get(DOWNLOAD_SITE + path + encodeURIComponent(query), {
+        timeout: 90000,
+        validateStatus: () => true
+      });
       const d = r?.data?.result || r?.data;
       const mediaUrl = d?.url || d?.download || d?.link;
       if (mediaUrl) {
         try {
           const buf = await fetchBuffer(String(mediaUrl), 180000);
-          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || 'media', url: mediaUrl };
+          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || 'media', url: mediaUrl, meta: d };
         } catch {}
-        return { url: mediaUrl, title: d?.title || 'media' };
+        return { url: mediaUrl, title: d?.title || 'media', meta: d };
       }
     }
-  } catch (e) { console.log('DOWNLOAD_SITE:', (e.message || '').slice(0, 60)); }
+  } catch (e) {
+    console.log('DOWNLOAD_SITE:', (e.message || '').slice(0, 60));
+  }
 
   let url = isYoutubeUrl(query) ? query.trim() : null;
   let title = query;
@@ -1394,19 +1381,22 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  // 1) Confronter APIs (https://apis.techwizardx.top)
-  let data = await downloadViaKeith(url, audioOnly);
+
+  // 2) Confronter APIs
+  let data = await downloadViaConfronter(url, audioOnly);
   if (data?.buffer || data?.url) {
     data.title = data.title || title;
     return data;
   }
-  // 2) yt-dlp / ytdl-core
+
+  // 3) yt-dlp / ytdl-core
   data = await downloadViaYtdl(url, audioOnly);
   if (data?.buffer) {
     data.title = data.title || title;
     return data;
   }
-  // 3) siputzx
+
+  // 4) siputzx fallback
   try {
     const path = audioOnly ? 'ytmp3' : 'ytmp4';
     const r = await dlGet('https://api.siputzx.my.id/api/d/' + path + '?url=' + encodeURIComponent(url), { timeout: 60000 });
@@ -1417,19 +1407,7 @@ async function downloadYouTube(query, audioOnly = true) {
       if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: mediaUrl };
     }
   } catch {}
-  // 4) gifted
-  try {
-    const endpoint = audioOnly
-      ? 'https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url='
-      : 'https://api.giftedtech.web.id/api/download/ytmp4?apikey=gifted&url=';
-    const r = await dlGet(endpoint + encodeURIComponent(url), { timeout: 60000 });
-    const d = r?.data?.result || r?.data?.data || r?.data;
-    const mediaUrl = d?.url || d?.download_url || d?.dl || d?.link;
-    if (mediaUrl) {
-      const buf = await fetchBuffer(String(mediaUrl), 180000);
-      if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: mediaUrl };
-    }
-  } catch {}
+
   return null;
 }
 
@@ -1443,15 +1421,12 @@ async function sendAsMp3(sock, jid, data) {
 
   let buf = data.buffer && data.buffer.length > 3000 ? data.buffer : null;
 
-  // Download media bytes (never send raw tokyo links to chat)
   async function grab(url) {
     if (!url) return null;
-    // a) direct with headers
     try {
       const b = await fetchBuffer(url, 180000);
       if (b && b.length > 3000) return b;
     } catch (e) { console.log('mp3 direct:', (e.message || '').slice(0, 80)); }
-    // b) via your download site proxy
     try {
       const proxy = DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent(fileName);
       const b = await fetchBuffer(proxy, 180000);
@@ -1462,7 +1437,6 @@ async function sendAsMp3(sock, jid, data) {
 
   if (!buf && data.url) buf = await grab(data.url);
 
-  // c) re-resolve via your APIs + yt-dlp
   if (!buf) {
     try {
       const again = await downloadYouTube(data.url || data.query || title, true);
@@ -1476,7 +1450,6 @@ async function sendAsMp3(sock, jid, data) {
     return false;
   }
 
-  // Send as playable audio (not document, not URL text)
   try {
     await sock.sendMessage(jid, {
       audio: buf,
@@ -1489,7 +1462,6 @@ async function sendAsMp3(sock, jid, data) {
   } catch (e1) {
     console.log('audio msg fail:', e1.message);
     try {
-      // secondary: document only if audio message rejected
       await sock.sendMessage(jid, {
         document: buf,
         mimetype: 'audio/mpeg',
@@ -1525,8 +1497,7 @@ async function sendAsVideo(sock, jid, data) {
   }
 }
 
-// ============ AI (Kiswahili + English only, simple) ============
-// ============ AI — Confronter API only (no Pollinations) ============
+// ============ AI ============
 async function askAI(text, opts = {}) {
   const q = String(text || '').trim().slice(0, 1200);
   if (!q) return null;
@@ -1539,12 +1510,11 @@ async function askAI(text, opts = {}) {
   const endpoints = [
     '/api/ai/chat?q=',
     '/api/gateway/ai/chat?q=',
-    '/ai/gpt?q=',
-    '/keithai?q='
+    '/ai/gpt?q='
   ];
   for (const ep of endpoints) {
     try {
-      const data = await keithGet(ep + encodeURIComponent(prompt), 45000);
+      const data = await confronterGet(ep + encodeURIComponent(prompt), 45000);
       if (!data || data.status === false) continue;
       let ans = data.result || data.response || data.message || data.answer || data.text;
       if (typeof ans === 'object' && ans) ans = ans.text || ans.message || ans.response || ans.reply || null;
@@ -1558,17 +1528,14 @@ async function askAI(text, opts = {}) {
   return null;
 }
 
-
 async function getLyrics(text) {
-  // 1) Your Confronter APIs (q= param)
   try {
     for (const ep of [
       '/api/search/lyrics?q=',
       '/search/lyrics?q=',
-      '/search/lyrics?query=',
       '/api/gateway/search/lyrics?q='
     ]) {
-      const data = await keithGet(ep + encodeURIComponent(text), 30000);
+      const data = await confronterGet(ep + encodeURIComponent(text), 30000);
       if (!data || data.status === false) continue;
       const r = data.result;
       if (Array.isArray(r) && r[0]?.lyrics) {
@@ -1578,16 +1545,9 @@ async function getLyrics(text) {
       if (typeof r === 'string' && r.length > 30) return { title: text, artist: '', lyrics: r };
     }
   } catch {}
-  try {
-    const { getLyrics: real } = require('./apis');
-    const r = await real(text);
-    if (r?.lyrics) return r;
-  } catch {}
   const endpoints = [
     'https://api.siputzx.my.id/api/s/lyrics?query=',
-    'https://api.siputzx.my.id/api/lyrics?query=',
-    'https://api.ryzendesu.vip/api/search/lyrics?query=',
-    'https://api.giftedtech.web.id/api/search/lyrics?apikey=gifted&query='
+    'https://api.ryzendesu.vip/api/search/lyrics?query='
   ];
   for (const base of endpoints) {
     try {
@@ -1607,28 +1567,26 @@ async function getLyrics(text) {
 }
 
 const TEXTMAKER_STYLES = {
-  neon:      'cinematic neon glowing text "TEXT" with crown, purple blue cyberpunk city night, wet reflective streets, highly detailed 4k',
-  fire:      'cinematic text "TEXT" made of roaring fire and flames with crown, dark dramatic background, intense heat 4k',
-  glitch:    'cinematic glitch text "TEXT", digital RGB distortion, cyberpunk glitch art, dark tech background 4k',
-  ice:       'cinematic frozen ice crystal text "TEXT", blue ice letters, cold winter crystals, frost, dramatic 4k',
-  matrix:    'cinematic green matrix code rain, digital green text "TEXT", hooded hackers, dark matrix background 4k',
-  luxury:    'cinematic luxury gold text "TEXT" with crown, elegant golden letters, luxury watch perfume, premium black 4k',
+  neon: 'cinematic neon glowing text "TEXT" with crown, purple blue cyberpunk city night, wet reflective streets, highly detailed 4k',
+  fire: 'cinematic text "TEXT" made of roaring fire and flames with crown, dark dramatic background, intense heat 4k',
+  glitch: 'cinematic glitch text "TEXT", digital RGB distortion, cyberpunk glitch art, dark tech background 4k',
+  ice: 'cinematic frozen ice crystal text "TEXT", blue ice letters, cold winter crystals, frost, dramatic 4k',
+  matrix: 'cinematic green matrix code rain, digital green text "TEXT", hooded hackers, dark matrix background 4k',
+  luxury: 'cinematic luxury gold text "TEXT" with crown, elegant golden letters, luxury watch perfume, premium black 4k',
   blackpink: 'cinematic blackpink style text "TEXT", hot pink graffiti brush, crown, heart, kpop aesthetic 4k',
-  metallic:  'cinematic chrome metallic 3D text "TEXT", silver steel letters, metal chains, dark reflective 4k',
-  devil:     'cinematic demonic red text "TEXT", devil horns, trident, dark red hellfire, evil style 4k',
-  light:     'cinematic glowing divine light text "TEXT" with crown, bright heavenly rays, soft clouds golden 4k',
-  sand:      'photorealistic text "TEXT" carved written in beach sand, top-down view, sunny beach, sand texture 4k',
-  thunder:   'cinematic 3D rocky metallic text "TEXT" with blue lightning bolts, stormy dark clouds, electric water reflection 4k',
-  hacker:    'cinematic green neon hacker text "TEXT", hooded figure with glowing smile mask, matrix code, dark room 4k',
-  naruto:    'anime Naruto style art, ninja character, bold orange black text logo "TEXT", Konoha village background 4k',
-  paper:     'text "TEXT" written on paper handwritten',
-  glow:      'glowing neon text "TEXT" soft glow dark background 4k',
-  gold:      'golden luxury 3D text "TEXT" shiny gold letters 4k',
-  rainbow:   'colorful rainbow text "TEXT" vibrant multicolor 4k'
+  metallic: 'cinematic chrome metallic 3D text "TEXT", silver steel letters, metal chains, dark reflective 4k',
+  devil: 'cinematic demonic red text "TEXT", devil horns, trident, dark red hellfire, evil style 4k',
+  light: 'cinematic glowing divine light text "TEXT" with crown, bright heavenly rays, soft clouds golden 4k',
+  sand: 'photorealistic text "TEXT" carved written in beach sand, top-down view, sunny beach, sand texture 4k',
+  thunder: 'cinematic 3D rocky metallic text "TEXT" with blue lightning bolts, stormy dark clouds, electric water reflection 4k',
+  hacker: 'cinematic green neon hacker text "TEXT", hooded figure with glowing smile mask, matrix code, dark room 4k',
+  naruto: 'anime Naruto style art, ninja character, bold orange black text logo "TEXT", Konoha village background 4k',
+  paper: 'text "TEXT" written on paper handwritten',
+  glow: 'glowing neon text "TEXT" soft glow dark background 4k',
+  gold: 'golden luxury 3D text "TEXT" shiny gold letters 4k',
+  rainbow: 'colorful rainbow text "TEXT" vibrant multicolor 4k'
 };
 
-
-// ============ CATBOX UPLOAD (no Pollinations) ============
 async function uploadToCatbox(buffer, filename = 'image.jpg') {
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 100) return null;
   try {
@@ -1638,7 +1596,6 @@ async function uploadToCatbox(buffer, filename = 'image.jpg') {
     const r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: form });
     const text = (await r.text()).trim();
     if (text.startsWith('https://') && /catbox\.moe/i.test(text)) return text;
-    console.log('catbox response:', text.slice(0, 120));
     return null;
   } catch (e) {
     console.log('catbox:', e.message);
@@ -1650,15 +1607,12 @@ async function generateTextImage(effect, text) {
   const q = String(text || '').slice(0, 40).trim();
   if (!q) return null;
   const style = String(effect || 'neon').toLowerCase();
-  const template = (typeof TEXTMAKER_STYLES !== 'undefined' && TEXTMAKER_STYLES[style])
-    ? TEXTMAKER_STYLES[style]
-    : 'neon glowing text "TEXT" dark background 4k';
+  const template = TEXTMAKER_STYLES[style] || 'neon glowing text "TEXT" dark background 4k';
   const prompt = String(template).replace(/TEXT/g, q) + ', masterpiece, centered text, no watermark, ultra detailed';
 
   let buf = null;
-  // 1) Your API flux
   try {
-    const data = await keithGet('/ai/flux?q=' + encodeURIComponent(prompt), 90000);
+    const data = await confronterGet('/api/ai/flux?q=' + encodeURIComponent(prompt), 90000);
     let url = null;
     if (data) {
       url = (typeof data.result === 'string' && data.result.startsWith('http')) ? data.result
@@ -1669,17 +1623,7 @@ async function generateTextImage(effect, text) {
     }
   } catch (e) { console.log('flux:', (e.message || '').slice(0, 60)); }
 
-  // 2) Your API magicstudio / flux alt
-  if (!buf || buf.length < 2000) {
-    try {
-      const data = await keithGet('/ai/flux?prompt=' + encodeURIComponent(prompt), 90000);
-      const url = keithExtractUrl(data) || (typeof data?.result === 'string' ? data.result : null);
-      if (url && String(url).startsWith('http')) buf = await fetchBuffer(String(url), 90000);
-    } catch {}
-  }
-
   if (!buf || buf.length < 2000) return null;
-  // Prefer returning buffer for WhatsApp send; also try Catbox for a permanent link
   try {
     const cat = await uploadToCatbox(buf, (style || 'fx') + '.jpg');
     if (cat) buf.catboxUrl = cat;
@@ -1693,7 +1637,7 @@ async function generateAiImage(prompt) {
   let buf = null;
   let srcUrl = null;
   try {
-    const data = await keithGet('/ai/flux?q=' + encodeURIComponent(q), 90000);
+    const data = await confronterGet('/api/ai/flux?q=' + encodeURIComponent(q), 90000);
     srcUrl = (typeof data?.result === 'string' && data.result.startsWith('http'))
       ? data.result
       : (data?.result?.url || data?.url || keithExtractUrl(data));
@@ -1706,7 +1650,7 @@ async function generateAiImage(prompt) {
   return { buffer: buf, url: cat || srcUrl };
 }
 
-
+// ============ START BOT ============
 async function startBot() {
   await ensureData();
   if (typeof config.FONT === 'undefined') config.FONT = 'random';
@@ -1754,12 +1698,15 @@ async function startBot() {
     getMessage: async (key) => {
       try {
         if (!key?.id) return undefined;
-        const c = msgCache.get(key.id);
+        let c = msgCache.get(key.id);
         if (c?.message) return c.message;
-        // Also try by remoteJid + id combo
         if (key.remoteJid) {
-          const alt = msgCache.get(key.remoteJid + ':' + key.id);
-          if (alt?.message) return alt.message;
+          c = msgCache.get(key.remoteJid + ':' + key.id);
+          if (c?.message) return c.message;
+        }
+        if (key.participant) {
+          c = msgCache.get(key.participant + ':' + key.id);
+          if (c?.message) return c.message;
         }
       } catch {}
       return undefined;
@@ -1768,7 +1715,6 @@ async function startBot() {
 
   const _origSend = sock.sendMessage.bind(sock);
   sock.sendMessage = async (jid, content, options) => {
-    // Wait until fully connected
     if (!global.__BOT_READY) {
       await new Promise(r => {
         const t = setInterval(() => {
@@ -1780,7 +1726,7 @@ async function startBot() {
     const r = await _origSend(jid, content, options);
     try {
       if (r?.key?.id && r?.message) {
-        const entry = { key: r.key, message: r.message, timestamp: Date.now() };
+        const entry = { key: r.key, message: r.message, timestamp: Date.now(), fromMe: true, remoteJid: r.key.remoteJid };
         msgCache.set(r.key.id, entry);
         if (r.key.remoteJid) msgCache.set(r.key.remoteJid + ':' + r.key.id, entry);
       }
@@ -1827,15 +1773,6 @@ async function startBot() {
       global.__BOT_READY = true;
       console.log(`✅ ${config.BOT_NAME} ONLINE`);
       setTimeout(() => autoJoinConfigured().catch(() => {}), 2500);
-      setTimeout(async () => {
-        try {
-          const link = await getFreshGroupInviteLink();
-          if (link && config.OWNER_NUMBER) {
-            const oj = getOwnerJid();
-            // (no group invite spam to owner)
-          }
-        } catch {}
-      }, 9000);
       try {
         const pm = presenceMap(config.PRESENCE);
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
@@ -1887,13 +1824,12 @@ async function startBot() {
     }
   });
 
-  // ============ WELCOME / GOODBYE (REAL PHONE OR USERNAME) ============
+  // ============ WELCOME / GOODBYE ============
   sock.ev.on('group-participants.update', async (u) => {
     try {
       const { id, participants, action } = u;
       groupCache.del(id);
 
-      // If BOT was removed from configured group → auto rejoin
       try {
         const me = (sock.user?.id || '').split(':')[0];
         const botRemoved = (action === 'remove' || action === 'leave') && participants.some(p => {
@@ -1933,25 +1869,21 @@ async function startBot() {
         if (!phone) {
           phone = await jidToPhoneAsync(p, null, id);
         }
-        // Direct from jid if normal number
         if (!phone) {
           const raw = String(p).split('@')[0].split(':')[0];
           if (/^\d{6,15}$/.test(raw)) phone = raw;
         }
-        // Last resort: any digits from the jid
         if (!phone) {
           const digits = String(p).replace(/\D/g, '');
           if (digits.length >= 6 && digits.length <= 15) phone = digits;
         }
 
-        // Build tag - NEVER use literal "@user"
         let tag;
         if (phone) {
           tag = '@' + phone;
         } else if (entry?.name && entry.name !== 'Unknown' && entry.name !== 'User') {
           tag = '@' + String(entry.name).replace(/[@\n]/g, '').trim();
         } else {
-          // Use the local part of jid so something real always shows
           const local = String(p).split('@')[0].split(':')[0];
           tag = '@' + (local || 'member');
         }
@@ -1962,7 +1894,6 @@ async function startBot() {
           const raw = (config.WELCOME_MSG || 'Welcome @user to *@group*!')
             .replace(/@user/gi, tag)
             .replace(/@group/gi, gname);
-          // Send WITHOUT heavy font styling so the phone number stays readable
           await sock.sendMessage(id, {
             text: raw + buildFooter(),
             mentions: [mentionJid, p].filter(Boolean)
@@ -1990,7 +1921,7 @@ async function startBot() {
 
   // ============ MESSAGES ============
   const processedMsgIds = new Set();
-  const BOT_STARTED_AT = Math.floor(Date.now() / 1000) - 5; // ignore almost all old msgs on restart
+  const BOT_STARTED_AT = Math.floor(Date.now() / 1000) - 5;
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const m of messages) {
@@ -1999,7 +1930,6 @@ async function startBot() {
         const isStatus =
           m.key.remoteJid === 'status@broadcast' ||
           m.key.remoteJidAlt === 'status@broadcast';
-        // Status can arrive as append/notify — never skip status for auto-view
         if (!isStatus && type !== 'notify') continue;
         if (processedMsgIds.has(m.key.id)) continue;
         processedMsgIds.add(m.key.id);
@@ -2008,7 +1938,6 @@ async function startBot() {
           processedMsgIds.delete(first);
         }
         const ts = Number(m.messageTimestamp || 0);
-        // Only skip OLD chat messages on restart — still process live status
         if (!isStatus && ts && ts < BOT_STARTED_AT) continue;
         handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
       } catch (e) {
@@ -2089,87 +2018,70 @@ async function startBot() {
     return false;
   }
 
-
-async function downloadAndSendApk(jid, m, it, replyFn) {
-  try {
-    const name = it.name || it.title || 'App';
-    const ver = it.version || it.file?.vername || '';
-    const pkg = it.package || '';
-    let link = it.download_url || it.url || it.file?.path || it.file?.path_alt || it.file?.path || '';
-    async function tryApkApis() {
-      const paths = [];
-      if (pkg) {
-        paths.push('/api/download/apk?package=' + encodeURIComponent(pkg));
-        paths.push('/api/gateway/download/apk?package=' + encodeURIComponent(pkg));
+  async function downloadAndSendApk(jid, m, it, replyFn) {
+    try {
+      const name = it.name || it.title || 'App';
+      const ver = it.version || it.file?.vername || '';
+      const pkg = it.package || '';
+      let link = it.download_url || it.url || it.file?.path || it.file?.path_alt || '';
+      async function tryApkApis() {
+        const paths = [];
+        if (pkg) {
+          paths.push('/api/download/apk?package=' + encodeURIComponent(pkg));
+        }
+        paths.push('/api/download/apk?q=' + encodeURIComponent(name));
+        paths.push('/api/search/apk?q=' + encodeURIComponent(name));
+        for (const p of paths) {
+          try {
+            const data = await confronterGet(p, 45000);
+            const r = data?.result || data;
+            const items = Array.isArray(r) ? r : (Array.isArray(r?.results) ? r.results : [r]);
+            for (const x of items) {
+              if (!x) continue;
+              const u = x.download_url || x.url || x.file?.path || x.file?.path_alt;
+              if (u && /^https?:\/\//i.test(String(u))) return String(u);
+            }
+            if (typeof r === 'string' && /^https?:\/\//i.test(r)) return r;
+          } catch {}
+        }
+        return null;
       }
-      paths.push('/api/download/apk?q=' + encodeURIComponent(name));
-      paths.push('/api/search/apk?q=' + encodeURIComponent(name));
-      paths.push('/api/gateway/search/apk?q=' + encodeURIComponent(name));
-      for (const p of paths) {
-        try {
-          const data = await keithGet(p, 45000);
-          const r = data?.result || data;
-          const items = Array.isArray(r) ? r : (Array.isArray(r?.results) ? r.results : [r]);
-          for (const x of items) {
-            if (!x) continue;
-            const u = x.download_url || x.url || x.file?.path || x.file?.path_alt;
-            if (u && /^https?:\/\//i.test(String(u))) return String(u);
-          }
-          if (typeof r === 'string' && /^https?:\/\//i.test(r)) return r;
-        } catch {}
+      if (!link) link = await tryApkApis();
+      if (!link) {
+        await replyFn('❌ No download URL for ' + name);
+        return;
       }
-      return null;
+      const sizeHint = it.size_mb || it.size || '';
+      await replyFn(
+        `📥 *Downloading APK…*\n📱 ${name}${ver ? ' v' + ver : ''}\n` +
+        (sizeHint ? `💾 ${sizeHint}\n` : '') +
+        (pkg ? `📦 ${pkg}\n` : '') +
+        `_File will appear as a document — you can pause/resume in WhatsApp._`
+      );
+      const buf = await fetchBuffer(String(link), 300000);
+      if (!buf || buf.length < 1000) {
+        await replyFn('❌ APK download failed (empty file).\n🔗 ' + link);
+        return;
+      }
+      const mb = (buf.length / (1024 * 1024)).toFixed(2);
+      const fileName = (String(name).replace(/[^\w.\- ]+/g, '').trim().slice(0, 40) || 'app') + '.apk';
+      await sock.sendMessage(
+        jid,
+        {
+          document: buf,
+          mimetype: 'application/vnd.android.package-archive',
+          fileName,
+          caption:
+            `✅ *${name}*${ver ? ' v' + ver : ''}\n` +
+            `💾 ${mb} MB` + (pkg ? `\n📦 ${pkg}` : '') +
+            buildFooter()
+        },
+        { quoted: m }
+      );
+    } catch (e) {
+      await replyFn('❌ APK send failed: ' + (e.message || e));
     }
-    if (!link) link = await tryApkApis();
-    if (!link && pkg) {
-      try {
-        const data = await keithGet('/download/apk?package=' + encodeURIComponent(pkg), 45000);
-        const r = data?.result || data;
-        link = r?.download_url || r?.url || link;
-      } catch {}
-    }
-    if (!link && name) {
-      try {
-        const data = await keithGet('/download/apk?q=' + encodeURIComponent(name), 45000);
-        const r = data?.result || data;
-        link = r?.download_url || r?.url || link;
-      } catch {}
-    }
-    if (!link) {
-      await replyFn('❌ No download URL for ' + name);
-      return;
-    }
-    const sizeHint = it.size_mb || it.size || '';
-    await replyFn(
-      `📥 *Downloading APK…*\n📱 ${name}${ver ? ' v' + ver : ''}\n` +
-      (sizeHint ? `💾 ${sizeHint}\n` : '') +
-      (pkg ? `📦 ${pkg}\n` : '') +
-      `_File will appear as a document — you can pause/resume in WhatsApp._`
-    );
-    const buf = await fetchBuffer(String(link), 300000);
-    if (!buf || buf.length < 1000) {
-      await replyFn('❌ APK download failed (empty file).\n🔗 ' + link);
-      return;
-    }
-    const mb = (buf.length / (1024 * 1024)).toFixed(2);
-    const fileName = (String(name).replace(/[^\w.\- ]+/g, '').trim().slice(0, 40) || 'app') + '.apk';
-    await sock.sendMessage(
-      jid,
-      {
-        document: buf,
-        mimetype: 'application/vnd.android.package-archive',
-        fileName,
-        caption:
-          `✅ *${name}*${ver ? ' v' + ver : ''}\n` +
-          `💾 ${mb} MB` + (pkg ? `\n📦 ${pkg}` : '') +
-          buildFooter()
-      },
-      { quoted: m }
-    );
-  } catch (e) {
-    await replyFn('❌ APK send failed: ' + (e.message || e));
   }
-}
 
   async function handleMessage(m) {
     try {
@@ -2178,7 +2090,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         cacheLid(m.key, m);
         try {
           const unwrapped = unwrapMessage(m.message) || m.message;
-          msgCache.set(m.key.id, {
+          const entry = {
             key: m.key,
             message: unwrapped,
             text: extractText(m.message) || extractText(unwrapped) || '',
@@ -2188,7 +2100,10 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             remoteJid: m.key.remoteJid,
             timestamp: Date.now(),
             fromMe: !!m.key.fromMe
-          });
+          };
+          msgCache.set(m.key.id, entry);
+          if (m.key.remoteJid) msgCache.set(m.key.remoteJid + ':' + m.key.id, entry);
+          if (m.key.participant) msgCache.set(m.key.participant + ':' + m.key.id, entry);
         } catch {}
       }
 
@@ -2273,11 +2188,10 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
       if (!isMe && from && !from.includes('status')) {
         saveUser(sender).catch(() => {});
-        // Store DM chat so broadcast reaches them
         if (!isGroup(from)) saveUser(from).catch(() => {});
       }
 
-      // STATUS auto view + like (poster must see the reaction)
+      // STATUS auto view + like
       if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
         if (isMe) return;
 
@@ -2308,7 +2222,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
         const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
 
-        // Mark as READ — do not skip any status
         if (config.AUTO_VIEW_STATUS !== false) {
           try { await sock.readMessages([m.key]); } catch {}
           try { await sock.readMessages([statusKey]); } catch {}
@@ -2319,9 +2232,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           } catch {}
         }
 
-        // React so the STATUS OWNER sees the heart (statusJidList is required)
         if (config.AUTO_LIKE_STATUS) {
-          await delay(300 + Math.floor(Math.random() * 800));
+          await delay(400 + Math.floor(Math.random() * 900));
           const emoji = statusLikeEmoji();
           const statusJidList = [...new Set(
             [posterJid, participant, botJid, phone ? phone + '@s.whatsapp.net' : null]
@@ -2335,7 +2247,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           )];
 
           let liked = false;
-          // Method 1: status@broadcast + statusJidList (poster sees it)
           try {
             await sock.sendMessage(
               'status@broadcast',
@@ -2346,7 +2257,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           } catch (e) {
             console.log('status like m1:', e?.message);
           }
-          // Method 2: original key
           if (!liked) {
             try {
               await sock.sendMessage(
@@ -2359,13 +2269,11 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
               console.log('status like m2:', e?.message);
             }
           }
-          // Method 3: react toward poster's DM key format
           if (!liked && posterJid) {
             try {
               await sock.sendMessage(posterJid, {
                 react: { text: emoji, key: statusKey }
               });
-              liked = true;
             } catch (e) {
               console.log('status like m3:', e?.message);
             }
@@ -2469,7 +2377,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       if (!cleanBody) return;
 
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
-        // Human-like delay before reply
         await delay(800 + Math.floor(Math.random() * 1500));
         const ans = await askAI(cleanBody, { chat: true, userName: m.pushName || 'User' });
         if (ans && !/<html|doctype|cannot post|AI|bot|assistant/i.test(ans)) {
@@ -2494,7 +2401,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             return;
           }
           const isStatusQuote = ctxQ.remoteJid === 'status@broadcast' || String(ctxQ.remoteJid || '').includes('status');
-          if (isStatusQuote || quoted.imageMessage || quoted.videoMessage || quoted.audioMessage) {
+          if (isQuote || quoted.imageMessage || quoted.videoMessage || quoted.audioMessage) {
             const ok = await saveQuotedMediaToOwner(sock, m, from, sender, quoted);
             if (ok) react(from, m.key, '✅');
             return;
@@ -2502,10 +2409,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         }
       }
 
-
-      // Numeric replies for .play / .apk / .xvideos (BEFORE prefix gate)
+      // Numeric replies for APK / XVideos only (play no longer uses 1/2)
       if (!isMe && /^\d{1,2}$/.test(cleanBody.trim())) {
-        // reply 1/2 after .play / .apk / .xvideos
         const n = parseInt(cleanBody.trim(), 10);
 
         // APK pick
@@ -2531,7 +2436,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
               let data = null;
               for (const ep of ['/api/download/xvideos?url=', '/api/gateway/download/xvideos?url=', '/download/xvideos?url=']) {
                 try {
-                  data = await keithGet(ep + encodeURIComponent(it.url), 90000);
+                  data = await confronterGet(ep + encodeURIComponent(it.url), 90000);
                   if (data && data.status !== false) break;
                 } catch {}
               }
@@ -2563,67 +2468,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             }
             return;
           }
-        }
-
-        // Play 1=audio 2=video
-        if (global.__pendingPlay) {
-          const pending = global.__pendingPlay.get(from) || global.__pendingPlay.get(sender);
-          if (pending?.url && (n === 1 || n === 2)) {
-            const wantAudio = n === 1;
-            await sock.sendMessage(from, {
-              text: (wantAudio ? '⏳ Downloading audio…' : '⏳ Downloading video…') + buildFooter()
-            }, { quoted: m }).catch(() => {});
-            try {
-              const data = await downloadYouTube(pending.url, wantAudio);
-              if (!data?.buffer && !data?.url) {
-                await sock.sendMessage(from, { text: '❌ Download failed. Try again.' + buildFooter() }, { quoted: m });
-                return;
-              }
-              data.title = data.title || pending.title;
-              data.author = data.author || pending.author;
-              data.meta = {
-                title: data.title || pending.title,
-                author: pending.author || data.author || '',
-                views: pending.views,
-                thumbnail: pending.thumbnail
-              };
-              const ok = wantAudio
-                ? await sendAsMp3(sock, from, data)
-                : await sendAsVideo(sock, from, data);
-              if (!ok) {
-                await sock.sendMessage(from, {
-                  text: (wantAudio ? '❌ Failed to send audio.' : '❌ Failed to send video.') + buildFooter()
-                }, { quoted: m });
-              }
-            } catch (e) {
-              await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
-            }
-            return;
-          }
-        }
-      }
-
-      // Pending .play text replies: audio / video
-      if (global.__pendingPlay && !isMe) {
-        const pending = global.__pendingPlay.get(from) || global.__pendingPlay.get(sender);
-        if (pending?.url && /^(audio|video)$/i.test(cleanBody.trim())) {
-          const wantAudio = cleanBody.trim().toLowerCase() === 'audio';
-          await sock.sendMessage(from, {
-            text: (wantAudio ? '⏳ Downloading audio…' : '⏳ Downloading video…') + buildFooter()
-          }, { quoted: m }).catch(() => {});
-          try {
-            const data = await downloadYouTube(pending.url, wantAudio);
-            if (!data?.buffer && !data?.url) {
-              await sock.sendMessage(from, { text: '❌ Download failed.' + buildFooter() }, { quoted: m });
-              return;
-            }
-            data.meta = { title: data.title || pending.title, author: pending.author, views: pending.views };
-            const ok = wantAudio ? await sendAsMp3(sock, from, data) : await sendAsVideo(sock, from, data);
-            if (!ok) await sock.sendMessage(from, { text: '❌ Send failed.' + buildFooter() }, { quoted: m });
-          } catch (e) {
-            await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
-          }
-          return;
         }
       }
 
@@ -2685,7 +2529,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       if (['menu', 'help', 'list'].includes(cmd)) {
         let userCount = 0;
         try { userCount = (await loadUsers()).length; } catch {}
-        // React with multiple random emojis
         for (let i = 0; i < 4; i++) {
           setTimeout(() => {
             react(from, m.key, MENU_EMOJIS[Math.floor(Math.random() * MENU_EMOJIS.length)]);
@@ -2722,16 +2565,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           });
         }
         if (config.OWNER_NUMBER && !(config.DEVELOPERS || []).includes(config.OWNER_NUMBER)) {
-          let displayName = 'User';
-          try {
-            const jid = config.OWNER_NUMBER + '@s.whatsapp.net';
-            const realName = null;
-            if (realName && realName.trim() && realName !== 'User' && realName !== 'Unknown') {
-              displayName = String(realName).replace(/[@\n]/g, '').trim().slice(0, 30);
-            }
-          } catch {}
           contacts.push({
-            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${displayName}\nORG:User\nTEL;type=CELL;type=VOICE;waid=${config.OWNER_NUMBER}:+${config.OWNER_NUMBER}\nEND:VCARD`
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Owner\nORG:User\nTEL;type=CELL;type=VOICE;waid=${config.OWNER_NUMBER}:+${config.OWNER_NUMBER}\nEND:VCARD`
           });
         }
         if (contacts.length) {
@@ -2781,102 +2616,68 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-
-      // Play buttons
-      const btnId =
-        m.message?.buttonsResponseMessage?.selectedButtonId ||
-        m.message?.templateButtonReplyMessage?.selectedId ||
-        m.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-        '';
-      if (btnId && (btnId.startsWith('play_audio:') || btnId.startsWith('play_video:'))) {
-        const isAud = btnId.startsWith('play_audio:');
-        const u = btnId.replace(/^play_(audio|video):/, '');
-        await reply(isAud ? '⏳ Downloading audio…' : '⏳ Downloading video…');
-        const data = await downloadYouTube(u, isAud);
-        if (!data?.buffer && !data?.url) { await reply('❌ Download failed'); return; }
-        if (isAud) {
-          const ok = await sendAsMp3(sock, from, data);
-          if (!ok) await reply('❌ Failed to send audio.');
-        } else {
-          const ok = await sendAsVideo(sock, from, data);
-          if (!ok) await reply('❌ Failed to send video.');
-        }
-        return;
-      }
-
-      // ========== PLAY (search → meta + buttons → audio/video) ==========
+      // ========== PLAY (AUTO AUDIO – NO 1/2) ==========
       if (['play', 'song', 'music'].includes(cmd)) {
         if (!text) { await reply(`Usage: ${prefix}play <song name>`); return; }
         await reply('⏳ Searching…');
         const q = text.replace(/\s+/g, ' ').trim();
+
         let hit = null;
         try { hit = await searchYoutube(q); } catch {}
-        if (!hit?.url) {
-          // fallback: download audio directly by query
+
+        if (hit?.url) {
+          const viewsNum = hit.views != null ? Number(hit.views) : null;
+          const views = viewsNum
+            ? (viewsNum >= 1e9 ? (viewsNum / 1e9).toFixed(1) + 'B'
+              : viewsNum >= 1e6 ? (viewsNum / 1e6).toFixed(1) + 'M'
+              : viewsNum >= 1e3 ? (viewsNum / 1e3).toFixed(1) + 'K'
+              : String(viewsNum))
+            : '';
+
+          const caption =
+            `🎵 *${hit.title || q}*\n` +
+            (hit.author ? `👤 ${hit.author}\n` : '') +
+            (views ? `👁 ${views} views\n` : '') +
+            (hit.duration ? `⏱ ${hit.duration}\n` : '') +
+            `\n⏳ Downloading audio…`;
+
+          try {
+            if (hit.thumbnail) {
+              await sock.sendMessage(from, {
+                image: { url: hit.thumbnail },
+                caption: caption + buildFooter()
+              }, { quoted: m });
+            } else {
+              await reply(caption);
+            }
+          } catch {
+            await reply(caption);
+          }
+        } else {
           await reply('⏳ No search hit — trying direct download…');
-          let data = await downloadYouTube(q, true);
-          if (!data?.buffer && !data?.url) { await reply('❌ Not found. Try another name or a YouTube link.'); return; }
-          const ok = await sendAsMp3(sock, from, data);
-          if (!ok) await reply('❌ Failed to send audio.');
+        }
+
+        const data = await downloadYouTube(hit?.url || q, true);
+        if (!data?.buffer && !data?.url) {
+          await reply('❌ Could not download audio. Try another name or a direct YouTube link.');
           return;
         }
-        // cache for follow-up .audio / .video
-        if (!global.__pendingPlay) global.__pendingPlay = new Map();
-        const playEntry = { ...hit, at: Date.now() };
-        global.__pendingPlay.set(from, playEntry);
-        global.__pendingPlay.set(sender, playEntry);
-        setTimeout(() => {
-          try {
-            global.__pendingPlay.delete(from);
-            global.__pendingPlay.delete(sender);
-          } catch {}
-        }, 20 * 60 * 1000);
-
-        const viewsNum = hit.views != null ? Number(hit.views) : null;
-        const views = viewsNum
-          ? (viewsNum >= 1e9 ? (viewsNum / 1e9).toFixed(1) + 'B'
-            : viewsNum >= 1e6 ? (viewsNum / 1e6).toFixed(1) + 'M'
-            : viewsNum >= 1e3 ? (viewsNum / 1e3).toFixed(1) + 'K'
-            : String(viewsNum))
-          : '';
-        const caption =
-          `🎵 *${hit.title || q}*\n` +
-          (hit.author ? `👤 ${hit.author}\n` : '') +
-          (views ? `👁️ ${views} views\n` : '') +
-          (hit.duration ? `⏱ ${hit.duration}\n` : '') +
-          `\n*Reply with:*\n*1* — 🎧 Audio (MP3)\n*2* — 🎬 Video (MP4)`;
-        const buttons = [
-          { buttonId: 'play_audio:' + hit.url, buttonText: { displayText: '1 🎧 Audio' }, type: 1 },
-          { buttonId: 'play_video:' + hit.url, buttonText: { displayText: '2 🎬 Video' }, type: 1 }
-        ];
-        try {
-          if (hit.thumbnail) {
-            await sock.sendMessage(from, {
-              image: { url: hit.thumbnail },
-              caption: caption + buildFooter(),
-              footer: config.BOT_NAME,
-              buttons,
-              headerType: 4
-            }, { quoted: m });
-          } else {
-            await sock.sendMessage(from, {
-              text: caption + buildFooter(),
-              footer: config.BOT_NAME,
-              buttons,
-              headerType: 1
-            }, { quoted: m });
-          }
-        } catch {
-          await reply(caption + `\n\n${prefix}audio ${hit.url}\n${prefix}video ${hit.url}`);
-        }
+        data.title = data.title || hit?.title || q;
+        data.meta = {
+          title: data.title,
+          author: hit?.author || data.author || '',
+          views: hit?.views,
+          thumbnail: hit?.thumbnail
+        };
+        const ok = await sendAsMp3(sock, from, data);
+        if (!ok) await reply('❌ Failed to send audio.');
         return;
       }
 
-      // ========== AUDIO (explicit or after .play) ==========
+      // ========== AUDIO ==========
       if (['audio', 'ytmp3', 'yta', 'mp3'].includes(cmd)) {
-        let q = text.replace(/\s+/g, ' ').trim();
-        if (!q && global.__pendingPlay?.get(from)?.url) q = global.__pendingPlay.get(from).url;
-        if (!q) { await reply(`Usage: ${prefix}audio <name|url>\nOr ${prefix}play first`); return; }
+        const q = text.replace(/\s+/g, ' ').trim();
+        if (!q) { await reply(`Usage: ${prefix}audio <name|url>`); return; }
         await reply('⏳ Downloading audio…');
         let data = await downloadYouTube(q, true);
         if (!data?.buffer && !data?.url) { await reply('❌ Audio failed.'); return; }
@@ -2885,18 +2686,43 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== VIDEO ==========
+      // ========== VIDEO (AUTO – NO 1/2) ==========
       if (['yt', 'youtube', 'ytmp4', 'video', 'ytv', 'mp4'].includes(cmd)) {
-        let q = text.replace(/\s+/g, ' ').trim();
-        if (!q && global.__pendingPlay?.get(from)?.url) q = global.__pendingPlay.get(from).url;
-        if (!q) { await reply(`Usage: ${prefix}video <url or search>`); return; }
-        await reply('⏳ Downloading video…');
-        let data = await downloadYouTube(q, false);
-        if (!data?.buffer && !data?.url && q.split(' ').length > 2) {
-          const simple = q.split(' ').filter(w => w.length > 2).join(' ');
-          if (simple && simple !== q) data = await downloadYouTube(simple, false);
+        if (!text) { await reply(`Usage: ${prefix}video <name or url>`); return; }
+        await reply('⏳ Searching / downloading video…');
+        const q = text.replace(/\s+/g, ' ').trim();
+
+        let hit = null;
+        if (!isYoutubeUrl(q)) {
+          try { hit = await searchYoutube(q); } catch {}
         }
-        if (!data?.buffer && !data?.url) { await reply('❌ Could not download video.\nTry a direct YouTube link.'); return; }
+
+        if (hit?.url || isYoutubeUrl(q)) {
+          const title = hit?.title || q;
+          const caption =
+            `🎬 *${title}*\n` +
+            (hit?.author ? `👤 ${hit.author}\n` : '') +
+            (hit?.duration ? `⏱ ${hit.duration}\n` : '') +
+            `\n⏳ Downloading video…`;
+          try {
+            if (hit?.thumbnail) {
+              await sock.sendMessage(from, {
+                image: { url: hit.thumbnail },
+                caption: caption + buildFooter()
+              }, { quoted: m });
+            } else {
+              await reply(caption);
+            }
+          } catch { await reply(caption); }
+        }
+
+        const data = await downloadYouTube(hit?.url || q, false);
+        if (!data?.buffer && !data?.url) {
+          await reply('❌ Could not download video.\nTry a direct YouTube link.');
+          return;
+        }
+        data.title = data.title || hit?.title || q;
+        data.meta = { title: data.title, author: hit?.author, views: hit?.views };
         const ok = await sendAsVideo(sock, from, data);
         if (!ok) await reply('❌ Downloaded but failed to send video.');
         return;
@@ -2906,7 +2732,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       if (['tiktok', 'tt'].includes(cmd)) {
         if (!text || !text.includes('tiktok')) { await reply(`Usage: ${prefix}tiktok <url>`); return; }
         await reply('⏳ Downloading TikTok…');
-        let data = await downloadTiktokKeith(text);
+        let data = await downloadTiktokConfronter(text);
         if (!data?.url) {
           try {
             const r = await dlGet('https://tikwm.com/api/?url=' + encodeURIComponent(text));
@@ -2933,7 +2759,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         await reply('⏳ Downloading Instagram…');
         try {
           let urls = [];
-          const keith = await downloadInstagramKeith(text);
+          const keith = await downloadInstagramConfronter(text);
           if (keith?.urls?.length) urls = keith.urls;
           if (!urls.length) {
             const r = await dlGet('https://api.siputzx.my.id/api/d/igdl?url=' + encodeURIComponent(text));
@@ -2951,7 +2777,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== XVIDEOS / XNXX (Confronter APIs) ==========
+      // ========== XVIDEOS / XNXX ==========
       if (['xvideos', 'xv', 'xnxx'].includes(cmd)) {
         if (!text) {
           await reply(`Usage:\n${prefix}xvideos <search>\n${prefix}xvideos <video url>`);
@@ -2968,7 +2794,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
               '/download/xvideos?url='
             ]) {
               try {
-                data = await keithGet(ep + encodeURIComponent(text.trim()), 90000);
+                data = await confronterGet(ep + encodeURIComponent(text.trim()), 90000);
                 if (data && data.status !== false) break;
               } catch {}
             }
@@ -3004,7 +2830,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             '/search/xvideos?q='
           ]) {
             try {
-              const data = await keithGet(ep + encodeURIComponent(text.trim()), 45000);
+              const data = await confronterGet(ep + encodeURIComponent(text.trim()), 45000);
               const r = data?.result;
               if (Array.isArray(r)) items = r;
               else if (Array.isArray(r?.results)) items = r.results;
@@ -3033,15 +2859,14 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-
-      // ========== FUN (Keith) ==========
+      // ========== FUN ==========
       if (['joke', 'jokes', 'meme', 'fact', 'quote', 'truth', 'dare', 'pickup', 'insult'].includes(cmd)) {
         const map = {
           joke: '/fun/jokes', jokes: '/fun/jokes', meme: '/fun/meme', fact: '/fun/fact',
           quote: '/fun/quote', truth: '/fun/truth', dare: '/fun/dare',
           pickup: '/fun/pickuplines', insult: '/fun/insult'
         };
-        const data = await keithGet(map[cmd], 20000);
+        const data = await confronterGet(map[cmd], 20000);
         let textOut = null;
         if (data) {
           textOut = data.result || data.joke || data.meme || data.fact || data.quote || data.message || data.data;
@@ -3055,12 +2880,12 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== NEWS (Keith) ==========
+      // ========== NEWS ==========
       if (cmd === 'news') {
         const src = (text || 'bbc').toLowerCase();
-        const path = src.includes('tech') ? '/news/tech' : src.includes('citizen') ? '/news/citizen' : src.includes('ntv') ? '/news/ntv' : src.includes('kbc') ? '/news/kbc' : src.includes('kenya') ? '/news/kenyans' : '/news/bbc';
+        const path = src.includes('tech') ? '/news/tech' : '/news/bbc';
         await reply('⏳ Fetching news…');
-        const data = await keithGet(path, 25000);
+        const data = await confronterGet(path, 25000);
         if (!data || data.status === false) { await reply('❌ News unavailable'); return; }
         let items = data.result || data.data || data.articles || data;
         if (!Array.isArray(items)) items = [items];
@@ -3073,18 +2898,17 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== SPORTS (Keith) ==========
+      // ========== SPORTS ==========
       if (['livescore', 'epl', 'standings', 'scorers'].includes(cmd)) {
         await reply('⏳ Sports data…');
         try {
           let msg = '';
-          // 1) Your API
           try {
             let path = '/api/sports/livescore';
             if (cmd === 'epl' || cmd === 'standings') path = '/api/sports/epl';
             if (cmd === 'scorers') path = '/api/sports/epl?type=scorers';
             if (text && /stand/i.test(text)) path = '/api/sports/epl?type=standings';
-            const data = await keithGet(path, 25000);
+            const data = await confronterGet(path, 25000);
             if (data && data.status !== false && data.result) {
               const r = data.result;
               if (typeof r === 'string') msg = r;
@@ -3101,7 +2925,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             }
           } catch {}
 
-          // 2) ESPN free scoreboard (Premier League)
           if (!msg) {
             const espnUrls = {
               livescore: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
@@ -3147,8 +2970,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== AI IMAGE / IMAGINE (Keith Flux) ==========
-            if (['imagine', 'flux', 'draw', 'aiimage'].includes(cmd)) {
+      // ========== AI IMAGE ==========
+      if (['imagine', 'flux', 'draw', 'aiimage'].includes(cmd)) {
         if (!text) { await reply(`Usage: ${prefix}imagine <prompt>`); return; }
         await reply('🎨 Generating image…');
         try {
@@ -3164,25 +2987,15 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-
       if (['shazam', 'findsong', 'whatsong'].includes(cmd)) {
         let mediaUrl = null;
-        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const ctx = m.message?.extendedTextMessage?.contextInfo;
-        try {
-          if (quoted) {
-            const qType = Object.keys(quoted).find(k => /Message$/.test(k) || k === 'audioMessage' || k === 'videoMessage');
-            // prefer direct url if user pasted one
-          }
-        } catch {}
         if (text && /^https?:\/\//i.test(text.trim())) mediaUrl = text.trim();
-        // reply to audio/video: upload not always available — require URL for API path
         if (!mediaUrl) {
-          await reply(`Usage: ${prefix}shazam <audio/video url>\nOr reply is limited — paste a direct media link.`);
+          await reply(`Usage: ${prefix}shazam <audio/video url>`);
           return;
         }
         await reply('⏳ Identifying song…');
-        const data = await keithGet('/ai/shazam?url=' + encodeURIComponent(mediaUrl), 60000);
+        const data = await confronterGet('/ai/shazam?url=' + encodeURIComponent(mediaUrl), 60000);
         const r = data?.result || data;
         if (!r || r.success === false) { await reply('❌ Could not identify song'); return; }
         const title = r.title || r.track || r.song || 'Unknown';
@@ -3208,7 +3021,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         const isUrl = /open\.spotify\.com|spotify\.com/i.test(text);
         if (isUrl) {
           await reply('⏳ Downloading from Spotify…');
-          const data = await keithGet('/download/spotify?url=' + encodeURIComponent(text.trim()), 70000);
+          const data = await confronterGet('/download/spotify?url=' + encodeURIComponent(text.trim()), 70000);
           const r = data?.result || data;
           const url = r?.url || (typeof r === 'string' ? r : null);
           if (!url) { await reply('❌ Download failed'); return; }
@@ -3228,7 +3041,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           }
         } else {
           await reply('⏳ Searching Spotify…');
-          const data = await keithGet('/search/spotify?q=' + encodeURIComponent(text), 30000);
+          const data = await confronterGet('/search/spotify?q=' + encodeURIComponent(text), 30000);
           const list = Array.isArray(data?.result) ? data.result : [];
           if (!list.length) { await reply('❌ No tracks found'); return; }
           let msg = `🎧 *Spotify:* ${text}\n\n`;
@@ -3326,7 +3139,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       }
 
       // ========== .vv ==========
-      if (cmd === 'vv' || cmd === 'viewonce' || cmd === 'rvo' || cmd === '') {
+      if (cmd === 'vv' || cmd === 'viewonce' || cmd === 'rvo') {
         try {
           const quoted = getCtx(m).quotedMessage;
           let vo = quoted?.viewOnceMessage?.message || quoted?.viewOnceMessageV2?.message || quoted?.viewOnceMessageV2Extension?.message;
@@ -3471,11 +3284,26 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== CLEAR (wipe this chat) ==========
+      // ========== CLEAR (fixed) ==========
       if (cmd === 'clear' || cmd === 'clearchat' || cmd === 'wipe') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('🧹 Clearing…');
-        let ok = false;
+        await reply('🧹 Clearing recent bot messages…');
+
+        let deleted = 0;
+        try {
+          const entries = [...msgCache.entries()].reverse();
+          for (const [, cached] of entries) {
+            if (deleted >= 40) break;
+            if (cached?.remoteJid === from && cached?.fromMe && cached?.key) {
+              try {
+                await sock.sendMessage(from, { delete: cached.key });
+                deleted++;
+                await delay(250);
+              } catch {}
+            }
+          }
+        } catch {}
+
         try {
           if (typeof sock.chatModify === 'function') {
             const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
@@ -3483,31 +3311,14 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
               delete: true,
               lastMessages: [{ key: m.key, messageTimestamp: ts }]
             }, from);
-            ok = true;
           }
-        } catch (e) {
-          console.log('clear:', e.message);
-        }
-        // Best-effort: delete last bot messages from cache
-        try {
-          let deleted = 0;
-          for (const [id, cached] of [...msgCache.entries()].reverse()) {
-            if (deleted >= 30) break;
-            if (cached?.remoteJid === from && cached?.fromMe && cached?.key) {
-              try {
-                await sock.sendMessage(from, { delete: cached.key });
-                deleted++;
-              } catch {}
-            }
-          }
-          if (deleted) ok = true;
         } catch {}
-        try { await keithGet('/tools/clear?chat=' + encodeURIComponent(from), 10000); } catch {}
-        if (ok) await reply('✅ Clear requested. WhatsApp may only remove recent messages.');
-        else await reply('❌ Clear not supported fully on this Baileys/WhatsApp version. Delete chat manually on the phone if needed.');
+
+        await reply(deleted
+          ? `✅ Cleared ${deleted} recent message(s).`
+          : '✅ Clear requested. WhatsApp may only remove recent messages from this device.');
         return;
       }
-
 
       // ========== FUN ==========
       if (cmd === 'joke') {
@@ -3554,7 +3365,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         const forceDl = /\s--dl\b/i.test(raw) || /^(\d+)$/.test(raw);
         const q = raw.replace(/\s--dl\b/i, '').trim();
 
-        // If user sent only a number, use last search cache
         if (/^\d+$/.test(q) && global.__apkCache?.get(from)?.length) {
           const idx = parseInt(q, 10) - 1;
           const list = global.__apkCache.get(from);
@@ -3573,7 +3383,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
             '/search/apk?q=' + encodeURIComponent(q)
           ]) {
             try {
-              data = await keithGet(ep, 40000);
+              data = await confronterGet(ep, 40000);
               const rr = data?.result;
               const test = Array.isArray(rr) ? rr : (rr?.results || (rr ? [rr] : []));
               if (test.length) break;
@@ -3605,10 +3415,9 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           else if (Array.isArray(r?.results)) items = r.results;
           else if (r && (r.download_url || r.url || r.package)) items = [r];
 
-          // direct package download endpoint
           if (!items.length) {
             try {
-              data = await keithGet('/download/apk?q=' + encodeURIComponent(q), 40000);
+              data = await confronterGet('/download/apk?q=' + encodeURIComponent(q), 40000);
               const one = data?.result || data;
               if (one && (one.download_url || one.url)) items = [one];
             } catch {}
@@ -3620,7 +3429,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           global.__apkCache.set(from, items.slice(0, 10));
           setTimeout(() => { try { global.__apkCache.delete(from); } catch {} }, 15 * 60 * 1000);
 
-          // Auto-download top result if --dl or single clear match
           if (forceDl || items.length === 1) {
             await downloadAndSendApk(from, m, items[0], reply);
             return;
@@ -3643,42 +3451,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         } catch (e) {
           await reply('❌ APK failed: ' + e.message);
         }
-        return;
-      }
-
-      // ========== XNXX ==========
-      if (cmd === 'xnxx') {
-        if (!text) { await reply(`Usage: ${prefix}xnxx query`); return; }
-        await reply('⏳ Searching…');
-        try {
-          const q = encodeURIComponent(text.trim());
-          const urls = [
-            `https://api.siputzx.my.id/api/s/xnxx?query=${q}`,
-            `https://api.siputzx.my.id/api/xnxx/search?query=${q}`,
-            `https://api.ryzendesu.vip/api/search/xnxx?query=${q}`
-          ];
-          let items = [];
-          for (const u of urls) {
-            try {
-              const r = await dlGet(u, { timeout: 35000 });
-              const d = r?.data?.data || r?.data?.result || r?.data;
-              const arr = Array.isArray(d) ? d : (d?.list || d?.result || []);
-              if (arr.length) { items = arr; break; }
-            } catch {}
-          }
-          if (!items.length) { await reply('❌ No results.'); return; }
-          const top = items.slice(0, 5);
-          let msg = `🔞 *Results:* ${text}\n\n`;
-          for (let i = 0; i < top.length; i++) {
-            const it = top[i];
-            const title = it.title || it.name || 'Video';
-            const link = it.url || it.link || it.path || '';
-            msg += `*${i + 1}.* ${title}\n`;
-            if (link) msg += `${link}\n`;
-            msg += '\n';
-          }
-          await reply(msg.trim());
-        } catch (e) { await reply('❌ Search failed: ' + e.message); }
         return;
       }
 
@@ -3836,7 +3608,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       }
       if (cmd === 'font') {
         const v = String(args[0] || '').toLowerCase();
-        const allowed = ['normal', 'sans', 'bold', 'italic', 'double', 'script', 'tiny', 'random', 'off'];
+        const allowed = ['normal', 'sans', 'bold', 'italic', 'double', 'script', 'tiny', 'random', 'off',
+          'serif', 'serif-bold', 'serif-italic', 'sans-bold', 'sans-italic', 'typewriter', 'small-caps'];
         if (!v) return reply(`Font: *${config.FONT || 'random'}*\nOptions: ${allowed.join(', ')}`);
         if (!allowed.includes(v)) return reply(`Invalid. Use: ${allowed.join(', ')}`);
         config.FONT = v === 'off' ? 'normal' : v;
@@ -4011,12 +3784,8 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         try {
           const code = await sock.requestPairingCode(number);
           await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. Open WhatsApp → Linked Devices\n2. Link a Device → Link with phone number instead\n3. Enter the code above\n\nCode expires in ~1 minute.');
-          try {
-            const gLink = await getFreshGroupInviteLink();
-            if (gLink) await sock.sendMessage(from, { text: '👥 Bot group:\n' + gLink }).catch(() => {});
-          } catch {}
         } catch (e) {
-          await reply('❌ Pairing failed: ' + e.message + '\n\nNote: pairing needs a recent @whiskeysockets/baileys (6.6+). If this keeps failing, update Baileys in package.json.');
+          await reply('❌ Pairing failed: ' + e.message);
         }
         return;
       }
@@ -4033,7 +3802,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== PANEL (simplified - keep original if needed) ==========
+      // ========== PANEL ==========
       if (cmd === 'ramlist') {
         await reply(`*AVAILABLE RAM PLANS*\n\n1GB / 50% CPU\n2GB / 70% CPU\n3GB / 90% CPU\n4GB / 110% CPU\n5GB / 150% CPU\nUNLI (Admin only)`);
         return;
@@ -4234,7 +4003,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== BROADCAST (owner → all users' DM) ==========
+      // ========== BROADCAST ==========
       if (['broadcast', 'bc', 'push', 'announce'].includes(cmd)) {
         if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) {
           await reply(roast('owner'));
@@ -4249,7 +4018,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
           return;
         }
 
-        // Build payload: reply to media OR caption text
         const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
           || m.message?.imageMessage
           || m.message?.videoMessage
@@ -4264,7 +4032,6 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         let kind = 'text';
 
         if (mediaMsg) {
-          // unwrap if quoted is nested
           const src = mediaMsg.imageMessage || mediaMsg.videoMessage || mediaMsg.audioMessage || mediaMsg.documentMessage
             ? mediaMsg
             : mediaMsg;
@@ -4347,58 +4114,49 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         return;
       }
 
-      // ========== BLOCK / UNBLOCK ==========
+      // ========== BLOCK / UNBLOCK (fixed) ==========
       if (['block', 'unblock'].includes(cmd)) {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        const inGroup = isGroup(from);
 
-        let targets = [];
-        const quotedP = getQuoted(m);
-        if (quotedP) targets.push(quotedP);
-        for (const j of getMentioned(m)) targets.push(j);
-        if (text) {
-          const nums = String(text).match(/\d{6,15}/g) || [];
-          for (const n of nums) targets.push(n + '@s.whatsapp.net');
+        let targets = getTargetUsers(m, text, from, isGroup(from));
+        if (!targets.length && !isGroup(from) && from !== 'status@broadcast') {
+          targets = [from];
         }
-        if (!targets.length && !inGroup && from && !from.endsWith('@g.us') && from !== 'status@broadcast') {
-          targets.push(from);
-        }
-        targets = [...new Set(targets.filter(Boolean))];
         if (!targets.length) {
-          await reply(inGroup
-            ? `Reply to their message or tag them.\n${prefix}${cmd}`
-            : `In this chat type: ${prefix}${cmd}`);
+          await reply(`Reply to their message, tag them, or:\n${prefix}${cmd} 2547xxxxxxxx`);
           return;
         }
 
-        let ok = 0, fail = 0;
+        let ok = 0;
         const labels = [];
         for (const jid of targets) {
           try {
             let phone = await jidToPhoneAsync(jid, m, from);
             if (!phone) phone = dig(String(jid).split('@')[0].split(':')[0]);
+
             if (!/^\d{6,15}$/.test(phone || '')) {
               try {
                 const wa = await sock.onWhatsApp(jidNormalizedUser(String(jid)));
                 if (wa?.[0]?.jid) phone = dig(String(wa[0].jid).split('@')[0]);
               } catch {}
             }
-            // Prefer resolved phone; else try raw jid
+
             const targetJid = /^\d{6,15}$/.test(phone || '')
-              ? (phone + '@s.whatsapp.net')
+              ? phone + '@s.whatsapp.net'
               : jidNormalizedUser(String(jid));
-            if (!targetJid || targetJid.endsWith('@g.us')) { fail++; continue; }
+
+            if (!targetJid || targetJid.endsWith('@g.us')) continue;
+
             await sock.updateBlockStatus(targetJid, cmd === 'block' ? 'block' : 'unblock');
-            labels.push(phone ? ('+' + phone) : targetJid.split('@')[0]);
+            labels.push(phone ? '+' + phone : targetJid.split('@')[0]);
             ok++;
             await delay(400);
           } catch (e) {
-            console.log(cmd + ' err:', e.message);
-            fail++;
+            console.log(cmd + ':', e.message);
           }
         }
         if (ok) await reply(`✅ *${cmd.toUpperCase()}*\n${labels.join(', ')}`);
-        else await reply(`❌ ${cmd} failed.\nReply to their message or: ${prefix}${cmd} 2547xxxxxxxx`);
+        else await reply(`❌ ${cmd} failed. Reply to their message or give a full number.`);
         return;
       }
     } catch (err) {
