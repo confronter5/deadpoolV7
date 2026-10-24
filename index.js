@@ -2277,69 +2277,97 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         if (!isGroup(from)) saveUser(from).catch(() => {});
       }
 
-      // STATUS auto view + like
+      // STATUS auto view + like (poster must see the reaction)
       if (from === 'status@broadcast' || m.key?.remoteJidAlt === 'status@broadcast') {
         if (isMe) return;
+
+        cacheLid(m.key, m);
+        const participant =
+          m.key.participant ||
+          m.key.participantAlt ||
+          m.participant ||
+          m.key.remoteJidAlt ||
+          undefined;
 
         const statusKey = {
           remoteJid: 'status@broadcast',
           id: m.key.id,
           fromMe: false,
-          participant: m.key.participant || m.key.participantAlt || m.participant || undefined
+          participant
         };
 
-        cacheLid(m.key, m);
-        const rawP = statusKey.participant || '';
+        const rawP = String(participant || '');
         let posterJid = rawP;
         const phone = jidToPhone(rawP, m);
         if (phone) {
           posterJid = phone + '@s.whatsapp.net';
-          if (String(rawP).includes('@lid')) {
-            _lidMap.set(String(rawP).split('@')[0], phone);
-          }
+          if (rawP.includes('@lid')) _lidMap.set(rawP.split('@')[0], phone);
+        } else if (rawP && !rawP.includes('@')) {
+          posterJid = rawP + '@s.whatsapp.net';
         }
 
-        // Always mark viewed (no skip) — works for every new status
+        const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+
+        // Mark as READ — do not skip any status
         if (config.AUTO_VIEW_STATUS !== false) {
           try { await sock.readMessages([m.key]); } catch {}
           try { await sock.readMessages([statusKey]); } catch {}
           try {
             if (typeof sock.sendReceipt === 'function') {
-              await sock.sendReceipt(statusKey.remoteJid, statusKey.participant, [statusKey.id], 'read');
+              await sock.sendReceipt('status@broadcast', participant, [m.key.id], 'read');
             }
           } catch {}
         }
 
+        // React so the STATUS OWNER sees the heart (statusJidList is required)
         if (config.AUTO_LIKE_STATUS) {
-          await delay(400 + Math.floor(Math.random() * 600));
+          await delay(300 + Math.floor(Math.random() * 800));
           const emoji = statusLikeEmoji();
-          const botJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-          const statusJidList = [
-            ...new Set(
-              [posterJid, rawP, m.key.participant, m.key.participantAlt, botJid]
-                .filter(Boolean)
-                .map(j => {
-                  const p = dig(String(j).split('@')[0].split(':')[0]);
-                  if (/^\d{6,15}$/.test(p)) return p + '@s.whatsapp.net';
-                  return String(j);
-                })
-            )
-          ];
+          const statusJidList = [...new Set(
+            [posterJid, participant, botJid, phone ? phone + '@s.whatsapp.net' : null]
+              .filter(Boolean)
+              .map((j) => {
+                const s = String(j);
+                if (s.includes('@')) return jidNormalizedUser(s);
+                const d = dig(s);
+                return /^\d{6,15}$/.test(d) ? d + '@s.whatsapp.net' : s;
+              })
+          )];
+
+          let liked = false;
+          // Method 1: status@broadcast + statusJidList (poster sees it)
           try {
             await sock.sendMessage(
               'status@broadcast',
               { react: { text: emoji, key: statusKey } },
               { statusJidList }
             );
-          } catch {
+            liked = true;
+          } catch (e) {
+            console.log('status like m1:', e?.message);
+          }
+          // Method 2: original key
+          if (!liked) {
             try {
               await sock.sendMessage(
                 'status@broadcast',
                 { react: { text: emoji, key: m.key } },
                 { statusJidList }
               );
+              liked = true;
             } catch (e) {
-              console.log('status like failed:', e?.message);
+              console.log('status like m2:', e?.message);
+            }
+          }
+          // Method 3: react toward poster's DM key format
+          if (!liked && posterJid) {
+            try {
+              await sock.sendMessage(posterJid, {
+                react: { text: emoji, key: statusKey }
+              });
+              liked = true;
+            } catch (e) {
+              console.log('status like m3:', e?.message);
             }
           }
         }
@@ -2379,7 +2407,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       }
 
       const body = extractText(m.message);
-      const cleanBody = (body || '').trim();
+      const cleanBody = String(body || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 
       async function replySimple(text) {
         try { await sock.sendMessage(from, { text: styleReplyText(String(text)) }); } catch {}
@@ -2477,6 +2505,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
       // Numeric replies for .play / .apk / .xvideos (BEFORE prefix gate)
       if (!isMe && /^\d{1,2}$/.test(cleanBody.trim())) {
+        // reply 1/2 after .play / .apk / .xvideos
         const n = parseInt(cleanBody.trim(), 10);
 
         // APK pick
@@ -2538,7 +2567,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
         // Play 1=audio 2=video
         if (global.__pendingPlay) {
-          const pending = global.__pendingPlay.get(from);
+          const pending = global.__pendingPlay.get(from) || global.__pendingPlay.get(sender);
           if (pending?.url && (n === 1 || n === 2)) {
             const wantAudio = n === 1;
             await sock.sendMessage(from, {
@@ -2576,7 +2605,7 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
 
       // Pending .play text replies: audio / video
       if (global.__pendingPlay && !isMe) {
-        const pending = global.__pendingPlay.get(from);
+        const pending = global.__pendingPlay.get(from) || global.__pendingPlay.get(sender);
         if (pending?.url && /^(audio|video)$/i.test(cleanBody.trim())) {
           const wantAudio = cleanBody.trim().toLowerCase() === 'audio';
           await sock.sendMessage(from, {
@@ -2793,8 +2822,15 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
         }
         // cache for follow-up .audio / .video
         if (!global.__pendingPlay) global.__pendingPlay = new Map();
-        global.__pendingPlay.set(from, hit);
-        setTimeout(() => { try { global.__pendingPlay.delete(from); } catch {} }, 10 * 60 * 1000);
+        const playEntry = { ...hit, at: Date.now() };
+        global.__pendingPlay.set(from, playEntry);
+        global.__pendingPlay.set(sender, playEntry);
+        setTimeout(() => {
+          try {
+            global.__pendingPlay.delete(from);
+            global.__pendingPlay.delete(sender);
+          } catch {}
+        }, 20 * 60 * 1000);
 
         const viewsNum = hit.views != null ? Number(hit.views) : null;
         const views = viewsNum
@@ -3040,16 +3076,74 @@ async function downloadAndSendApk(jid, m, it, replyFn) {
       // ========== SPORTS (Keith) ==========
       if (['livescore', 'epl', 'standings', 'scorers'].includes(cmd)) {
         await reply('⏳ Sports data…');
-        let path = '/livescore';
-        if (cmd === 'epl') path = text && text.includes('stand') ? '/epl/standings' : text && text.includes('scorer') ? '/epl/scorers' : '/epl/matches';
-        if (cmd === 'standings') path = '/epl/standings';
-        if (cmd === 'scorers') path = '/epl/scorers';
-        if (cmd === 'livescore') path = '/livescore';
-        const data = await keithGet(path, 25000);
-        if (!data || data.status === false) { await reply('❌ Sports data unavailable'); return; }
-        let out = data.result || data.data || data;
-        if (typeof out === 'object') out = JSON.stringify(out, null, 1).slice(0, 3000);
-        await reply(`⚽ *${cmd.toUpperCase()}*\n\n${String(out).slice(0, 3000)}`);
+        try {
+          let msg = '';
+          // 1) Your API
+          try {
+            let path = '/api/sports/livescore';
+            if (cmd === 'epl' || cmd === 'standings') path = '/api/sports/epl';
+            if (cmd === 'scorers') path = '/api/sports/epl?type=scorers';
+            if (text && /stand/i.test(text)) path = '/api/sports/epl?type=standings';
+            const data = await keithGet(path, 25000);
+            if (data && data.status !== false && data.result) {
+              const r = data.result;
+              if (typeof r === 'string') msg = r;
+              else if (r.text) msg = r.text;
+              else if (Array.isArray(r.matches)) {
+                msg = r.matches.slice(0, 15).map((g, i) => {
+                  return `${i + 1}. ${g.home || g.name || '?'} ${g.score || g.status || ''} ${g.away || ''}`.trim();
+                }).join('\n');
+              } else if (Array.isArray(r.table)) {
+                msg = r.table.slice(0, 20).map((row, i) =>
+                  `${row.rank || i + 1}. ${row.team || row.name}  Pts:${row.points || row.pts || '-'}`
+                ).join('\n');
+              }
+            }
+          } catch {}
+
+          // 2) ESPN free scoreboard (Premier League)
+          if (!msg) {
+            const espnUrls = {
+              livescore: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
+              epl: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
+              standings: 'https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',
+              scorers: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard'
+            };
+            const url = espnUrls[cmd] || espnUrls.epl;
+            const r = await axios.get(url, { timeout: 20000, validateStatus: () => true });
+            if (r.status < 400 && r.data) {
+              if (cmd === 'standings' && r.data?.children?.[0]?.standings?.entries) {
+                const rows = r.data.children[0].standings.entries.slice(0, 20);
+                msg = rows.map((e, i) => {
+                  const name = e.team?.displayName || e.team?.name || '?';
+                  const pts = e.stats?.find((s) => s.name === 'points')?.displayValue || e.stats?.find((s) => s.name === 'points')?.value || '-';
+                  return `${i + 1}. ${name}  Pts:${pts}`;
+                }).join('\n');
+              } else {
+                const events = r.data.events || [];
+                if (events.length) {
+                  msg = events.slice(0, 20).map((ev) => {
+                    const comp = ev.competitions?.[0];
+                    const home = comp?.competitors?.find((c) => c.homeAway === 'home');
+                    const away = comp?.competitors?.find((c) => c.homeAway === 'away');
+                    const hs = home?.score ?? '-';
+                    const as = away?.score ?? '-';
+                    const st = ev.status?.type?.shortDetail || ev.status?.type?.description || '';
+                    return `• ${home?.team?.shortDisplayName || home?.team?.displayName || '?'} ${hs}-${as} ${away?.team?.shortDisplayName || away?.team?.displayName || '?'}\n  ${st}`;
+                  }).join('\n\n');
+                }
+              }
+            }
+          }
+
+          if (!msg) {
+            await reply('❌ Sports data unavailable right now.');
+            return;
+          }
+          await reply(`⚽ *${cmd.toUpperCase()}*\n\n${msg}`.slice(0, 3500));
+        } catch (e) {
+          await reply('❌ Sports: ' + (e.message || 'failed'));
+        }
         return;
       }
 
