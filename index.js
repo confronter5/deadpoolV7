@@ -8,6 +8,7 @@
  * - Quoted number picks fixed for APK & XVideos (cache shape bug)
  * - Panel (Pterodactyl) commands fully implemented
  * - .update = real git pull + restart, .clear, .block with verification
+ * FIX: dig / envBool / envList moved above config (TDZ crash on Heroku)
  */
 
 const {
@@ -43,6 +44,16 @@ try {
     res.end((typeof config !== 'undefined' ? config.BOT_NAME : 'Bot') + ' is alive\n');
   }).listen(KEEP_PORT, () => console.log('Web server on port ' + KEEP_PORT));
 } catch (e) { console.log('keep server:', e.message); }
+
+// ============ HELPERS (must be before config - fixes TDZ crash) ============
+const dig = v => String(v || '').replace(/\D/g, '');
+function envBool(v, def) {
+  if (v === undefined || v === null || v === '') return def;
+  return ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase());
+}
+function envList(v) {
+  return String(v || '').split(/[\s,]+/).map(s => String(s).replace(/\D/g, '')).filter(Boolean);
+}
 
 // ============ CONFIG ============
 const defaults = {
@@ -89,11 +100,6 @@ const defaults = {
 let fileConfig = {};
 try { fileConfig = require('./config'); } catch {}
 const env = process.env;
-function envBool(v, def) {
-  if (v === undefined || v === null || v === '') return def;
-  return ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase());
-}
-function envList(v) { return String(v || '').split(/[\s,]+/).map(s => String(s).replace(/\D/g, '')).filter(Boolean); }
 const config = {
   ...defaults,
   ...fileConfig,
@@ -174,7 +180,6 @@ async function fetchBuffer(url, t = 120000) {
   throw lastErr || new Error('fetch failed');
 }
 const delay = ms => new Promise(r => setTimeout(r, ms));
-const dig = v => String(v || '').replace(/\D/g, '');
 
 // ============ PATHS ============
 const AUTH_DIR = path.join(__dirname, 'auth_info');
