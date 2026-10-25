@@ -716,9 +716,21 @@ async function autoJoinConfigured() {
   }, 3 * 60 * 1000);
 }
 
-// ============ CONFRONTER API LAYER ============
+// ============ API LAYER ============
+// Keith (apis.keithsite.lol) = primary for YT / TikTok / IG / FB
+// Confronter (apis.techwizardx.top) = everything else + fallback
+const KEITH_API = (process.env.KEITH_API || 'https://apis.keithsite.lol').replace(/\/+$/, '');
 const CONFRONTER_API = config.CONFRONTER_API;
 const DOWNLOAD_SITE = config.DOWNLOAD_SITE;
+
+async function keithGet(path, timeout = 90000) {
+  try {
+    const p = path.startsWith('/') ? path : '/' + path;
+    const r = await dlGet(KEITH_API + p, { timeout });
+    return r?.data ?? null;
+  } catch (e) { console.log('keithGet:', (e.message || '').slice(0, 80)); return null; }
+}
+
 async function confronterGet(path, timeout = 60000) {
   try {
     let p = path.startsWith('/') ? path : '/' + path;
@@ -789,6 +801,25 @@ function formatMediaCaption(meta, kind) {
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
 
 async function searchYoutube(query) {
+  // 1) Keith search
+  try {
+    const data = await keithGet('/search/yts?q=' + encodeURIComponent(query), 30000);
+    const list = Array.isArray(data?.result) ? data.result : (Array.isArray(data?.results) ? data.results : []);
+    const v = list[0];
+    if (v) {
+      const id = v.id || v.videoId || '';
+      const url = v.url || (id ? 'https://www.youtube.com/watch?v=' + id : null);
+      if (url) return {
+        url,
+        title: v.title || query,
+        thumbnail: v.thumbnail || v.thumb || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
+        duration: v.duration || v.timestamp || null,
+        author: v.author || v.channel || v.uploader || '',
+        views: v.views || v.viewCount || null
+      };
+    }
+  } catch (e) { console.log('keith yts:', (e.message || '').slice(0, 60)); }
+  // 2) Confronter fallback
   try {
     const data = await confronterGet('/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5', 40000);
     const list = data?.result?.results || (Array.isArray(data?.result) ? data.result : data?.results) || [];
@@ -806,6 +837,29 @@ async function searchYoutube(query) {
       };
     }
   } catch (e) { console.log('yts:', (e.message || '').slice(0, 60)); }
+  return null;
+}
+
+async function downloadViaKeith(url, audioOnly = true) {
+  const eps = audioOnly
+    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/dlmp3?url=', '/download/mp3?url=', '/download/yta?url=']
+    : ['/download/ytmp4?url=', '/download/video?url=', '/download/dlmp4?url=', '/download/mp4?url=', '/download/ytv?url='];
+  for (const ep of eps) {
+    try {
+      const data = await keithGet(ep + encodeURIComponent(url), 90000);
+      if (!data || data.status === false || data.success === false) continue;
+      const mediaUrl = extractMediaUrl(data);
+      if (!mediaUrl) continue;
+      const meta = extractMeta(data);
+      const title = String(meta.title || data.title || 'Media').slice(0, 120);
+      let buf = null;
+      try { buf = await fetchBuffer(String(mediaUrl), 120000); } catch {}
+      if (!buf || buf.length < 5000) {
+        try { buf = await proxyFetch(mediaUrl, audioOnly); } catch {}
+      }
+      return { buffer: (buf && buf.length > 5000) ? buf : null, title, url: String(mediaUrl), meta: { ...meta, title } };
+    } catch (e) { console.log('keith ep', ep, (e.message || '').slice(0, 50)); }
+  }
   return null;
 }
 
@@ -946,13 +1000,27 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  // 1) local yt-dlp (most reliable)
+  let lastUrl = null, lastMeta = null;
+  // 1) Keith API first (reliable for YT)
+  try {
+    const d = await downloadViaKeith(url, audioOnly);
+    if (d) {
+      d.title = d.title || title;
+      if (d.buffer && d.buffer.length > 5000) return d;
+      if (d.url) {
+        lastUrl = d.url; lastMeta = d.meta || { title: d.title };
+        let buf = await proxyFetch(d.url, audioOnly).catch(() => null);
+        if (!buf) buf = await tryFetchMediaUrl(d.url);
+        if (buf && buf.length > 5000) return { buffer: buf, title: d.title, url: d.url, meta: d.meta };
+      }
+    }
+  } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 60)); }
+  // 2) local yt-dlp
   try {
     const d = await downloadViaYtdl(url, audioOnly);
     if (d?.buffer && d.buffer.length > 5000) { d.title = d.title || title; return d; }
-  } catch (e) { console.log('ytdl first:', (e.message || '').slice(0, 60)); }
-  // 2) confronter engine
-  let lastUrl = null, lastMeta = null;
+  } catch (e) { console.log('ytdl:', (e.message || '').slice(0, 60)); }
+  // 3) Confronter fallback
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const d = await downloadViaConfronter(url, audioOnly);
@@ -2016,16 +2084,25 @@ async function startBot() {
         return;
       }
 
-      // ============ TIKTOK ============
+      // ============ TIKTOK (Keith primary) ============
       if (['tiktok', 'tt'].includes(cmd)) {
-        if (!text || !text.includes('tiktok')) { await reply('Usage: ' + prefix + 'tiktok <url>'); return; }
+        if (!text || !/tiktok\.com|vm\.tiktok|vt\.tiktok/i.test(text)) { await reply('Usage: ' + prefix + 'tiktok <url>'); return; }
         await reply('Downloading TikTok...');
         let mediaUrl = null, title = 'TikTok';
+        // Keith first
         try {
-          const data = await confronterGet('/api/download/tiktok?url=' + encodeURIComponent(text.trim()), 60000);
+          const data = await keithGet('/download/tiktokdl3?url=' + encodeURIComponent(text.trim()), 60000);
           mediaUrl = extractMediaUrl(data);
-          title = extractMeta(data).title || data?.result?.title || 'TikTok';
+          title = extractMeta(data).title || data?.result?.title || data?.result?.caption || 'TikTok';
         } catch {}
+        // Confronter fallback
+        if (!mediaUrl) {
+          try {
+            const data = await confronterGet('/api/download/tiktok?url=' + encodeURIComponent(text.trim()), 60000);
+            mediaUrl = extractMediaUrl(data);
+            title = extractMeta(data).title || data?.result?.title || 'TikTok';
+          } catch {}
+        }
         if (!mediaUrl) { await reply('Failed to download TikTok.'); return; }
         let buf = await proxyFetch(mediaUrl, false).catch(() => null);
         if (!buf) buf = await fetchBuffer(mediaUrl, 120000).catch(() => null);
@@ -2036,19 +2113,42 @@ async function startBot() {
         return;
       }
 
-      // ============ INSTAGRAM ============
+      // ============ INSTAGRAM (Keith primary) ============
       if (['ig', 'instagram', 'insta'].includes(cmd)) {
         if (!text || !text.includes('instagram')) { await reply('Usage: ' + prefix + 'ig <url>'); return; }
         await reply('Downloading Instagram...');
         try {
-          const data = await confronterGet('/api/download/instagram?url=' + encodeURIComponent(text.trim()), 60000);
-          const r = data?.result;
           let urls = [];
-          if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl))).filter(u => typeof u === 'string' && u.startsWith('http'));
-          else { const u = extractMediaUrl(data); if (u) urls = [u]; }
+          // Keith first
+          for (const ep of ['/download/instadl?url=', '/download/instagramdl?url=']) {
+            try {
+              const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+              if (!data || data.success === false || data.status === false) continue;
+              const r = data?.result;
+              if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl || x.video || x.image))).filter(u => typeof u === 'string' && u.startsWith('http'));
+              else {
+                const u = extractMediaUrl(data);
+                if (u) urls = [u];
+                if (r?.url) urls.push(r.url);
+                if (r?.video) urls.push(r.video);
+                if (r?.images && Array.isArray(r.images)) urls.push(...r.images);
+              }
+              if (urls.length) break;
+            } catch {}
+          }
+          // Confronter fallback
+          if (!urls.length) {
+            try {
+              const data = await confronterGet('/api/download/instagram?url=' + encodeURIComponent(text.trim()), 60000);
+              const r = data?.result;
+              if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl))).filter(u => typeof u === 'string' && u.startsWith('http'));
+              else { const u = extractMediaUrl(data); if (u) urls = [u]; }
+            } catch {}
+          }
+          urls = [...new Set(urls.filter(Boolean))];
           if (!urls.length) { await reply('Failed to download Instagram.'); return; }
           for (const url of urls.slice(0, 6)) {
-            const isV = /\.(mp4|webm|mov)(\?|$)/i.test(url) || /video/i.test(url);
+            const isV = /\.(mp4|webm|mov)(\?|$)/i.test(url) || /video|reel/i.test(url);
             try {
               if (isV) await sock.sendMessage(from, { video: { url }, caption: 'Instagram' + buildFooter() });
               else await sock.sendMessage(from, { image: { url }, caption: 'Instagram' + buildFooter() });
@@ -2061,13 +2161,25 @@ async function startBot() {
         return;
       }
 
-      // ============ FACEBOOK ============
+      // ============ FACEBOOK (Keith primary) ============
       if (['fb', 'facebook'].includes(cmd)) {
         if (!text || !/facebook\.com|fb\.watch/i.test(text)) { await reply('Usage: ' + prefix + 'fb <url>'); return; }
         await reply('Downloading Facebook video...');
         try {
-          const data = await confronterGet('/api/download/facebook?url=' + encodeURIComponent(text.trim()), 60000);
-          const u = extractMediaUrl(data);
+          let u = null;
+          for (const ep of ['/download/fbdown?url=', '/download/fbdl?url=']) {
+            try {
+              const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+              u = extractMediaUrl(data);
+              if (u) break;
+            } catch {}
+          }
+          if (!u) {
+            try {
+              const data = await confronterGet('/api/download/facebook?url=' + encodeURIComponent(text.trim()), 60000);
+              u = extractMediaUrl(data);
+            } catch {}
+          }
           if (!u) { await reply('Failed to download.'); return; }
           let buf = await proxyFetch(u, false).catch(() => null);
           if (!buf) buf = await fetchBuffer(u, 120000).catch(() => null);
