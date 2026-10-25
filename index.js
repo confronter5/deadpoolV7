@@ -1142,6 +1142,40 @@ async function searchYoutube(query) {
 // ============ CONFRONTER APIs ONLY ============
 const CONFRONTER_API = (process.env.CONFRONTER_API || process.env.API_BASE || config.CONFRONTER_API || 'https://apis.techwizardx.top').replace(/\/+$/, '');
 const DOWNLOAD_SITE = (process.env.DOWNLOAD_SITE || 'https://confronter-downloads.onrender.com').replace(/\/+$/, '');
+// Tokyo CDN via Keith (same class of links that worked for you before)
+const KEITH_CDN = (process.env.KEITH_CDN || 'https://apis.keithsite.lol').replace(/\/+$/, '');
+
+/** Get Tokyo/CDN media URL from Keith (proven CDN path) */
+async function downloadViaKeithCdn(url, audioOnly = true) {
+  const paths = audioOnly
+    ? ['/download/ytmp3?url=', '/download/yta?url=', '/download/audio?url=']
+    : ['/download/ytmp4?url=', '/download/ytv?url=', '/download/video?url='];
+  for (const p of paths) {
+    try {
+      const r = await axios.get(KEITH_CDN + p + encodeURIComponent(url), {
+        timeout: 45000,
+        validateStatus: () => true
+      });
+      const d = r.data;
+      if (!d || d.status === false) continue;
+      let mediaUrl =
+        (typeof d.result === 'string' && d.result.startsWith('http') ? d.result : null) ||
+        d.result?.url || d.result?.download || d.url || d.download || keithExtractUrl(d);
+      if (!mediaUrl || !/^https?:\/\//i.test(String(mediaUrl))) continue;
+      mediaUrl = String(mediaUrl);
+      const title = d.result?.title || d.title || 'media';
+      let buf = null;
+      try {
+        buf = await fetchBuffer(mediaUrl, 90000);
+      } catch {}
+      if (buf && buf.length > 5000) return { buffer: buf, title, url: mediaUrl, meta: { title, source: 'keith-cdn' } };
+      return { buffer: null, title, url: mediaUrl, meta: { title, source: 'keith-cdn' } };
+    } catch (e) {
+      console.log('keith-cdn:', (e.message || '').slice(0, 60));
+    }
+  }
+  return null;
+}
 
 async function confronterGet(path, timeout = 60000) {
   try {
@@ -1485,11 +1519,25 @@ async function downloadYouTube(query, audioOnly = true) {
   }
 
   // Keep last good remote URL even if our server cannot download bytes
-  // (Tokyo blocks datacenter IPs; WhatsApp servers can often still fetch)
   let lastUrl = null;
   let lastMeta = null;
 
-  // 2) Confronter API
+  // 2) Keith Tokyo CDN (same CDN that worked for you on keithsite)
+  try {
+    const data = await downloadViaKeithCdn(url, audioOnly);
+    if (data) {
+      data.title = data.title || title;
+      if (data.buffer && data.buffer.length > 5000) return data;
+      if (data.url) {
+        lastUrl = data.url;
+        lastMeta = data.meta || { title: data.title, source: 'keith-cdn' };
+      }
+    }
+  } catch (e) {
+    console.log('keith-cdn:', (e.message || '').slice(0, 60));
+  }
+
+  // 3) Confronter API / engine file stream
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const data = await downloadViaConfronter(url, audioOnly);
@@ -1990,16 +2038,26 @@ async function startBot() {
     getMessage: async (key) => {
       try {
         if (!key?.id) return undefined;
-        let c = msgCache.get(key.id);
-        if (c?.message) return c.message;
-        if (key.remoteJid) {
-          c = msgCache.get(key.remoteJid + ':' + key.id);
+        // Multi-key lookup so WA never shows "Waiting for this message"
+        const keys = [
+          key.id,
+          key.remoteJid ? key.remoteJid + ':' + key.id : null,
+          key.participant ? key.participant + ':' + key.id : null,
+          key.remoteJid && key.participant ? key.remoteJid + ':' + key.participant + ':' + key.id : null
+        ].filter(Boolean);
+        for (const k of keys) {
+          const c = msgCache.get(k);
           if (c?.message) return c.message;
         }
-        if (key.participant) {
-          c = msgCache.get(key.participant + ':' + key.id);
-          if (c?.message) return c.message;
-        }
+        // Scan cache for matching id (slower fallback)
+        try {
+          for (const k of msgCache.keys()) {
+            if (String(k).endsWith(key.id) || k === key.id) {
+              const c = msgCache.get(k);
+              if (c?.message) return c.message;
+            }
+          }
+        } catch {}
       } catch {}
       return undefined;
     }
@@ -2063,6 +2121,8 @@ async function startBot() {
     if (connection === 'open') {
       global.__BOT_SOCK = sock;
       global.__BOT_READY = true;
+      // Ignore any messages that arrived before this reconnect (stops old command replies)
+      global.__BOT_READY_AT = Math.floor(Date.now() / 1000);
       console.log(`✅ ${config.BOT_NAME} ONLINE`);
       setTimeout(() => autoJoinConfigured().catch(() => {}), 2500);
       try {
@@ -2213,7 +2273,7 @@ async function startBot() {
 
   // ============ MESSAGES ============
   const processedMsgIds = new Set();
-  const BOT_STARTED_AT = Math.floor(Date.now() / 1000) - 5;
+  if (!global.__BOT_READY_AT) global.__BOT_READY_AT = Math.floor(Date.now() / 1000);
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const m of messages) {
@@ -2222,6 +2282,7 @@ async function startBot() {
         const isStatus =
           m.key.remoteJid === 'status@broadcast' ||
           m.key.remoteJidAlt === 'status@broadcast';
+        // notify only — ignore history/append on reconnect
         if (!isStatus && type !== 'notify') continue;
         if (processedMsgIds.has(m.key.id)) continue;
         processedMsgIds.add(m.key.id);
@@ -2230,7 +2291,13 @@ async function startBot() {
           processedMsgIds.delete(first);
         }
         const ts = Number(m.messageTimestamp || 0);
-        if (!isStatus && ts && ts < BOT_STARTED_AT) continue;
+        const readyAt = Number(global.__BOT_READY_AT || 0);
+        if (!isStatus && ts) {
+          // skip anything from before this connection, or older than 2 minutes
+          if (readyAt && ts < readyAt - 2) continue;
+          if (Math.floor(Date.now() / 1000) - ts > 120) continue;
+        }
+        if (!isStatus && !global.__BOT_READY) continue;
         handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
       } catch (e) {
         console.log('upsert err:', e?.message);
@@ -2701,64 +2768,88 @@ async function startBot() {
         }
       }
 
-      // Numeric replies for APK / XVideos only (play no longer uses 1/2)
+      // Numeric replies for APK / XVideos — ONLY when user QUOTES the results message
+      // Bare "1" / "2" without quote does nothing (avoids confusion)
       if (!isMe && /^\d{1,2}$/.test(cleanBody.trim())) {
         const n = parseInt(cleanBody.trim(), 10);
+        const ctxQ = getCtx(m);
+        const quoted = ctxQ.quotedMessage;
+        const hasQuote = !!(quoted || ctxQ.stanzaId);
 
-        // APK pick
+        if (!hasQuote) {
+          // ignore bare numbers — user must reply/quote the list
+          return;
+        }
+
+        // Prefer the list tied to the quoted message id
+        const qid = ctxQ.stanzaId || null;
+
+        // APK pick (quote required)
         if (global.__apkCache?.get(from)?.length) {
-          const list = global.__apkCache.get(from);
-          const it = list[n - 1];
-          if (it) {
-            const replyFn = async (txt) => {
-              await sock.sendMessage(from, { text: String(txt) + buildFooter() }, { quoted: m }).catch(() => {});
-            };
-            await downloadAndSendApk(from, m, it, replyFn);
-            return;
+          const entry = global.__apkCache.get(from);
+          const list = Array.isArray(entry) ? entry : entry?.list;
+          const listMsgId = Array.isArray(entry) ? null : entry?.msgId;
+          if (listMsgId && qid && listMsgId !== qid) {
+            // quoted a different message — ignore
+          } else {
+            const it = list?.[n - 1];
+            if (it) {
+              const replyFn = async (txt) => {
+                await sock.sendMessage(from, { text: String(txt) + buildFooter() }, { quoted: m }).catch(() => {});
+              };
+              await downloadAndSendApk(from, m, it, replyFn);
+              return;
+            }
           }
         }
 
-        // XVideos pick
+        // XVideos / XNXX pick (quote required)
         if (global.__xvCache?.get(from)?.length) {
-          const list = global.__xvCache.get(from);
-          const it = list[n - 1];
-          if (it?.url) {
-            await sock.sendMessage(from, { text: '⏳ Downloading video…' + buildFooter() }, { quoted: m }).catch(() => {});
-            try {
-              let data = null;
-              for (const ep of ['/api/download/xvideos?url=', '/api/gateway/download/xvideos?url=', '/download/xvideos?url=']) {
-                try {
-                  data = await confronterGet(ep + encodeURIComponent(it.url), 90000);
-                  if (data && data.status !== false) break;
-                } catch {}
-              }
-              const r = data?.result || data;
-              const vurl = r?.url || r?.download_url || r?.video || keithExtractUrl(data);
-              if (!vurl) {
-                await sock.sendMessage(from, { text: '❌ Download failed' + buildFooter() }, { quoted: m });
-                return;
-              }
+          const entry = global.__xvCache.get(from);
+          const list = Array.isArray(entry) ? entry : entry?.list;
+          const listMsgId = Array.isArray(entry) ? null : entry?.msgId;
+          if (listMsgId && qid && listMsgId !== qid) {
+            // quoted different message
+          } else {
+            const it = list?.[n - 1];
+            if (it?.url) {
+              await sock.sendMessage(from, { text: '⏳ Downloading video…' + buildFooter() }, { quoted: m }).catch(() => {});
               try {
-                const buf = await fetchBuffer(String(vurl), 180000);
-                if (buf && buf.length > 5000) {
-                  await sock.sendMessage(from, {
-                    video: buf,
-                    caption: (it.title || r?.title || 'Video') + buildFooter(),
-                    mimetype: 'video/mp4'
-                  }, { quoted: m });
-                } else {
-                  await sock.sendMessage(from, {
-                    video: { url: String(vurl) },
-                    caption: (it.title || 'Video') + buildFooter()
-                  }, { quoted: m });
+                let data = null;
+                for (const ep of ['/api/download/xvideos?url=', '/api/gateway/download/xvideos?url=', '/download/xvideos?url=']) {
+                  try {
+                    data = await confronterGet(ep + encodeURIComponent(it.url), 90000);
+                    if (data && data.status !== false) break;
+                  } catch {}
                 }
-              } catch {
-                await sock.sendMessage(from, { text: '❌ Could not send video.' + buildFooter() }, { quoted: m });
+                const r = data?.result || data;
+                const vurl = r?.url || r?.download_url || r?.video || keithExtractUrl(data);
+                if (!vurl) {
+                  await sock.sendMessage(from, { text: '❌ Download failed' + buildFooter() }, { quoted: m });
+                  return;
+                }
+                try {
+                  const buf = await fetchBuffer(String(vurl), 180000);
+                  if (buf && buf.length > 5000) {
+                    await sock.sendMessage(from, {
+                      video: buf,
+                      caption: (it.title || r?.title || 'Video') + buildFooter(),
+                      mimetype: 'video/mp4'
+                    }, { quoted: m });
+                  } else {
+                    await sock.sendMessage(from, {
+                      video: { url: String(vurl) },
+                      caption: (it.title || 'Video') + buildFooter()
+                    }, { quoted: m });
+                  }
+                } catch {
+                  await sock.sendMessage(from, { text: '❌ Could not send video.' + buildFooter() }, { quoted: m });
+                }
+              } catch (e) {
+                await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
               }
-            } catch (e) {
-              await sock.sendMessage(from, { text: '❌ ' + (e.message || 'failed') + buildFooter() }, { quoted: m });
+              return;
             }
-            return;
           }
         }
       }
@@ -3131,9 +3222,6 @@ async function startBot() {
             } catch {}
           }
           if (!items.length) { await reply('❌ No results. Try another keyword.'); return; }
-          if (!global.__xvCache) global.__xvCache = new Map();
-          global.__xvCache.set(from, items.slice(0, 10));
-          setTimeout(() => { try { global.__xvCache.delete(from); } catch {} }, 15 * 60 * 1000);
 
           let msg = `🔞 *Results:* ${text}\n\n`;
           items.slice(0, 8).forEach((it, i) => {
@@ -3143,8 +3231,11 @@ async function startBot() {
             if (link) msg += `${link}\n`;
             msg += '\n';
           });
-          msg += `_Reply with a number to download, or:\n${prefix}xvideos <url>_`;
-          await reply(msg.trim().slice(0, 4000));
+          msg += `*Reply to this message* with a number (e.g. 1) to download.\nOr: ${prefix}xvideos <url>`;
+          const sent = await sock.sendMessage(from, { text: styleReplyText(msg.trim().slice(0, 4000)) + buildFooter() }, { quoted: m }).catch(() => null);
+          if (!global.__xvCache) global.__xvCache = new Map();
+          global.__xvCache.set(from, { list: items.slice(0, 10), msgId: sent?.key?.id || null });
+          setTimeout(() => { try { global.__xvCache.delete(from); } catch {} }, 15 * 60 * 1000);
         } catch (e) {
           await reply('❌ Search failed: ' + e.message);
         }
@@ -3717,10 +3808,6 @@ async function startBot() {
 
           if (!items.length) { await reply('❌ No APK found for: ' + q); return; }
 
-          if (!global.__apkCache) global.__apkCache = new Map();
-          global.__apkCache.set(from, items.slice(0, 10));
-          setTimeout(() => { try { global.__apkCache.delete(from); } catch {} }, 15 * 60 * 1000);
-
           if (forceDl || items.length === 1) {
             await downloadAndSendApk(from, m, items[0], reply);
             return;
@@ -3738,8 +3825,11 @@ async function startBot() {
             if (size) msg += `💾 ${size}\n`;
             msg += `\n`;
           }
-          msg += `Download:\n• ${prefix}apk 1\n• ${prefix}apk ${q} --dl\n\n_WhatsApp shows size & allows pause/resume while downloading the document._`;
-          await reply(msg.trim().slice(0, 4000));
+          msg += `*Reply to this message* with a number to download:\n• 1  or  ${prefix}apk 1\n• ${prefix}apk ${q} --dl\n\n_WhatsApp shows size & allows pause/resume._`;
+          const sent = await sock.sendMessage(from, { text: styleReplyText(msg.trim().slice(0, 4000)) + buildFooter() }, { quoted: m }).catch(() => null);
+          if (!global.__apkCache) global.__apkCache = new Map();
+          global.__apkCache.set(from, { list: items.slice(0, 10), msgId: sent?.key?.id || null });
+          setTimeout(() => { try { global.__apkCache.delete(from); } catch {} }, 15 * 60 * 1000);
         } catch (e) {
           await reply('❌ APK failed: ' + e.message);
         }
