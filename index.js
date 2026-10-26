@@ -304,12 +304,12 @@ const FONT_MAPS = {
   script: {a:'𝓪',b:'𝓫',c:'𝓬',d:'𝓭',e:'𝓮',f:'𝓯',g:'𝓰',h:'𝓱',i:'𝓲',j:'𝓳',k:'𝓴',l:'𝓵',m:'𝓶',n:'𝓷',o:'𝓸',p:'𝓹',q:'𝓺',r:'𝓻',s:'𝓼',t:'𝓽',u:'𝓾',v:'𝓿',w:'𝔀',x:'𝔁',y:'𝔂',z:'𝔃',A:'𝓐',B:'𝓑',C:'𝓒',D:'𝓓',E:'𝓔',F:'𝓕',G:'𝓖',H:'𝓗',I:'𝓘',J:'𝓙',K:'𝓚',L:'𝓛',M:'𝓜',N:'𝓝',O:'𝓞',P:'𝓟',Q:'𝓠',R:'𝓡',S:'𝓢',T:'𝓣',U:'𝓤',V:'𝓥',W:'𝓦',X:'𝓧',Y:'𝓨',Z:'𝓩'},
   tiny: {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'},
   serif: {a:'𝑎',b:'𝑏',c:'𝑐',d:'𝑑',e:'𝑒',f:'𝑓',g:'𝑔',h:'ℎ',i:'𝑖',j:'𝑗',k:'𝑘',l:'𝑙',m:'𝑚',n:'𝑛',o:'𝑜',p:'𝑝',q:'𝑞',r:'𝑟',s:'𝑠',t:'𝑡',u:'𝑢',v:'𝑣',w:'𝑤',x:'𝑥',y:'𝑦',z:'𝑧',A:'𝐴',B:'𝐵',C:'𝐶',D:'𝐷',E:'𝐸',F:'𝐹',G:'𝐺',H:'𝐻',I:'𝐼',J:'𝐽',K:'𝐾',L:'𝐿',M:'𝑀',N:'𝑁',O:'𝑂',P:'𝑃',Q:'𝑄',R:'𝑅',S:'𝑆',T:'𝑇',U:'𝑈',V:'𝑉',W:'𝑊',X:'𝑋',Y:'𝑌',Z:'𝑍'},
+  'serif-bold': {a:'𝐚',b:'𝐛',c:'𝐜',d:'𝐝',e:'𝐞',f:'𝐟',g:'𝐠',h:'𝐡',i:'𝐢',j:'𝐣',k:'𝐤',l:'𝐥',m:'𝐦',n:'𝐧',o:'𝐨',p:'𝐩',q:'𝐪',r:'𝐫',s:'𝐬',t:'𝐭',u:'𝐮',v:'𝐯',w:'𝐰',x:'𝐱',y:'𝐲',z:'𝐳',A:'𝐀',B:'𝐁',C:'𝐂',D:'𝐃',E:'𝐄',F:'𝐅',G:'𝐆',H:'𝐇',I:'𝐈',J:'𝐉',K:'𝐊',L:'𝐋',M:'𝐌',N:'𝐍',O:'𝐎',P:'𝐏',Q:'𝐐',R:'𝐑',S:'𝐒',T:'𝐓',U:'𝐔',V:'𝐕',W:'𝐖',X:'𝐗',Y:'𝐘',Z:'𝐙','0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'},
   typewriter: {a:'𝚊',b:'𝚋',c:'𝚌',d:'𝚍',e:'𝚎',f:'𝚏',g:'𝚐',h:'𝚑',i:'𝚒',j:'𝚓',k:'𝚔',l:'𝚕',m:'𝚖',n:'𝚗',o:'𝚘',p:'𝚙',q:'𝚚',r:'𝚛',s:'𝚜',t:'𝚝',u:'𝚞',v:'𝚟',w:'𝚠',x:'𝚡',y:'𝚢',z:'𝚣',A:'𝙰',B:'𝙱',C:'𝙲',D:'𝙳',E:'𝙴',F:'𝙵',G:'𝙶',H:'𝙷',I:'𝙸',J:'𝙹',K:'𝙺',L:'𝙻',M:'𝙼',N:'𝙽',O:'𝙾',P:'𝙿',Q:'𝚀',R:'𝚁',S:'𝚂',T:'𝚃',U:'𝚄',V:'𝚅',W:'𝚆',X:'𝚇',Y:'𝚈',Z:'𝚉','0':'𝟶','1':'𝟷','2':'𝟸','3':'𝟹','4':'𝟺','5':'𝟻','6':'𝟼','7':'𝟽','8':'𝟾','9':'𝟿'},
   'small-caps': {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'}
 };
 FONT_MAPS['sans-bold'] = FONT_MAPS.bold;
 FONT_MAPS['sans-italic'] = FONT_MAPS.italic;
-FONT_MAPS['serif-bold'] = FONT_MAPS.serif;
 FONT_MAPS['serif-italic'] = FONT_MAPS.serif;
 const FONT_NAMES = Object.keys(FONT_MAPS);
 let _lastFontIdx = 0;
@@ -425,9 +425,47 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   await sock.sendMessage(jid, { text: full }).catch(() => {});
 }
 function buildStartMessage() {
-  if (config.START_MSG && String(config.START_MSG).trim()) return String(config.START_MSG).replace(/\\n/g, '\n');
+  const sb = (t) => applyFont(String(t), 'serif-bold');
+  const name = config.BOT_NAME || 'Bot';
   const p = config.PREFIX || '.';
-  return '*ONLINE - ' + config.BOT_NAME + '*\nPrefix: *' + p + '* | Mode: *' + config.MODE + '*\nType *' + p + 'menu*';
+  const exp = getExpiryInfo();
+  const mode = config.MODE || 'public';
+
+  // env / app.json START_MSG with placeholders → still boxed + serif-bold
+  if (config.START_MSG && String(config.START_MSG).trim()) {
+    const raw = String(config.START_MSG)
+      .replace(/\\n/g, '\n')
+      .replace(/\{bot\}|\{name\}/gi, name)
+      .replace(/\{prefix\}/gi, p)
+      .replace(/\{expiry\}|\{exp\}/gi, exp)
+      .replace(/\{mode\}/gi, mode)
+      .trim();
+    const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    // first line = title (bot name), rest = body rows "Label: value"
+    const title = lines[0] || name;
+    let m = '┌─「 ' + sb(title) + ' 」\n';
+    for (const line of lines.slice(1)) {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        const left = line.slice(0, idx).trim();
+        const right = line.slice(idx + 1).trim();
+        m += '│ ' + sb(left) + ' : ' + sb(right) + '\n';
+      } else {
+        m += '│ ' + sb(line) + '\n';
+      }
+    }
+    m += '└────────────';
+    return m;
+  }
+
+  // default boxed start
+  let m = '┌─「 ' + sb(name) + ' 」\n';
+  m += '│ ' + sb('Status') + ' : ' + sb('Online') + '\n';
+  m += '│ ' + sb('Prefix') + ' : ' + sb(p) + '\n';
+  m += '│ ' + sb('Expiry') + ' : ' + sb(exp) + '\n';
+  m += '│ ' + sb('Made by') + ' : ' + sb('Confronter') + '\n';
+  m += '└────────────';
+  return m;
 }
 
 // ============ AUTH ============
@@ -544,10 +582,19 @@ async function saveQuotedMediaToOwner(m, from, sender, quoted) {
 
 // ============ CTX / TARGETS ============
 function getCtx(m) {
+  // cover every common message shape so quoted replies always resolve
   return m.message?.extendedTextMessage?.contextInfo
     || m.message?.imageMessage?.contextInfo
     || m.message?.videoMessage?.contextInfo
-    || m.message?.documentMessage?.contextInfo || {};
+    || m.message?.documentMessage?.contextInfo
+    || m.message?.audioMessage?.contextInfo
+    || m.message?.stickerMessage?.contextInfo
+    || m.message?.buttonsResponseMessage?.contextInfo
+    || m.message?.listResponseMessage?.contextInfo
+    || m.message?.templateButtonReplyMessage?.contextInfo
+    || m.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo
+    || m.message?.viewOnceMessage?.message?.extendedTextMessage?.contextInfo
+    || {};
 }
 function getMentioned(m) { return getCtx(m).mentionedJid || []; }
 function getTargetUsers(m, text, from, isGroupChat) {
@@ -647,7 +694,13 @@ async function forwardDelete(key, cached) {
     if (deletedText) header += '\nContent:\n' + deletedText;
 
     const mediaTypes = { imageMessage: 'image', videoMessage: 'video', audioMessage: 'audio', stickerMessage: 'sticker', documentMessage: 'document' };
-    if (mediaTypes[type]) {
+    if (mediaTypes[type] || cached.mediaBuffer) {
+      // prefer pre-cached buffer (instant, no "Waiting for this message")
+      if (cached.mediaBuffer && cached.mediaBuffer.length > 100) {
+        const fakeDl = { buffer: cached.mediaBuffer, type: cached.mediaType || type, msg };
+        await sendMediaWithHeader(target, fakeDl, header);
+        return;
+      }
       const dl = await downloadMediaMsg(msg);
       if (dl?.buffer && dl.buffer.length > 100) {
         await sendMediaWithHeader(target, dl, header);
@@ -1056,55 +1109,80 @@ async function downloadYouTube(query, audioOnly = true) {
 // ============ SENDERS ============
 // IMPORTANT: never pass fileName together with audio - several Baileys/client combos
 // then render the message as a DOCUMENT instead of a playable audio message.
+async function fetchAudioBuffer(url) {
+  if (!url || !/^https?:\/\//i.test(String(url))) return null;
+  // 1) download-site proxy
+  try {
+    const b = await proxyFetch(url, true);
+    if (b && b.length > 3000) return b;
+  } catch {}
+  // 2) direct with browser-like headers
+  try {
+    const r = await axios.get(String(url), {
+      responseType: 'arraybuffer', timeout: 180000, maxContentLength: 80 * 1024 * 1024, validateStatus: () => true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'audio/mpeg,audio/*,*/*',
+        Referer: 'https://www.youtube.com/'
+      }
+    });
+    if (r.status < 400 && r.data) {
+      const b = Buffer.from(r.data);
+      if (b.length > 3000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) return b;
+    }
+  } catch {}
+  // 3) generic fetchBuffer
+  try {
+    const b = await fetchBuffer(String(url), 180000);
+    if (b && b.length > 3000) return b;
+  } catch {}
+  return null;
+}
+
 async function sendAsMp3(jid, data) {
   if (!data) return false;
-  const meta = data.meta || {};
-  const title = meta.title || data.title || 'audio';
-  const caption = '🎧 *' + title + '*' + (meta.artist ? '\n👤 ' + meta.artist : '') + (meta.views ? '\n👁 ' + meta.views : '') + buildFooter();
+  // NO title / caption / fileName on the audio message itself — pure WhatsApp music player
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 3000) ? data.buffer : null;
   const mediaUrl = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
 
-  // Always try hard to get a real buffer so WhatsApp shows a proper audio player (not document / not text link)
-  if (!buf && mediaUrl) {
-    buf = await proxyFetch(mediaUrl, true).catch(() => null);
-    if (!buf) { try { buf = await fetchBuffer(mediaUrl, 180000); } catch {} }
-  }
+  if (!buf && mediaUrl) buf = await fetchAudioBuffer(mediaUrl);
   if (!buf && mediaUrl && isYoutubeUrl(mediaUrl)) {
     try { const again = await downloadViaYtdl(mediaUrl, true); if (again?.buffer?.length > 3000) buf = again.buffer; } catch {}
   }
-  if (!buf && mediaUrl) {
-    // one more pass via download site
-    buf = await proxyFetch(mediaUrl, true).catch(() => null);
+  // if still no buffer but we have a YT page url in meta, re-hit Keith
+  if (!buf) {
+    const yt = mediaUrl || data.meta?.url || data.pageUrl;
+    if (yt && isYoutubeUrl(String(yt))) {
+      try {
+        const d2 = await downloadViaKeith(String(yt), true);
+        if (d2?.buffer?.length > 3000) buf = d2.buffer;
+        else if (d2?.url) buf = await fetchAudioBuffer(d2.url);
+      } catch {}
+    }
   }
 
   if (buf && buf.length > 3000) {
-    // force real mp3 bytes so client never treats it as voice-note / wav / document
-    buf = await toMp3(buf);
-    // STRICT: audio only, mimetype audio/mpeg, NO fileName, NO ptt, NO seconds, NO waveform
+    // optional convert to mp3 if ffmpeg exists; otherwise send bytes as-is
     try {
-      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false });
-      await sock.sendMessage(jid, { text: caption }).catch(() => {});
-      return true;
-    } catch (e) { console.log('audio mpeg:', e.message); }
-    try {
-      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4', ptt: false });
-      await sock.sendMessage(jid, { text: caption }).catch(() => {});
-      return true;
-    } catch (e) { console.log('audio mp4:', e.message); }
+      const converted = await toMp3(buf);
+      if (converted && converted.length > 1000) buf = converted;
+    } catch {}
+    // pure audio player — no fileName, no ptt, no seconds, no caption on the audio
+    for (const mime of ['audio/mpeg', 'audio/mp4', 'audio/ogg; codecs=opus']) {
+      try {
+        await sock.sendMessage(jid, { audio: buf, mimetype: mime, ptt: false });
+        return true;
+      } catch (e) { console.log('audio send', mime, e.message); }
+    }
   }
 
-  // URL path — still send as pure audio (never document, never fileName)
   if (mediaUrl) {
-    try {
-      await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: 'audio/mpeg', ptt: false });
-      await sock.sendMessage(jid, { text: caption }).catch(() => {});
-      return true;
-    } catch (e) { console.log('audio url mpeg:', e.message); }
-    try {
-      await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: 'audio/mp4', ptt: false });
-      await sock.sendMessage(jid, { text: caption }).catch(() => {});
-      return true;
-    } catch (e) { console.log('audio url mp4:', e.message); }
+    for (const mime of ['audio/mpeg', 'audio/mp4']) {
+      try {
+        await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: mime, ptt: false });
+        return true;
+      } catch (e) { console.log('audio url', mime, e.message); }
+    }
   }
 
   await sock.sendMessage(jid, { text: 'Could not send playable audio. Try another song or a direct YouTube link.' + buildFooter() }).catch(() => {});
@@ -1185,28 +1263,34 @@ async function getLyrics(text) {
 
 // ============ IMAGE GEN (flux + pollinations fallback) ============
 const TEXTMAKER_STYLES = {
-  neon: 'cinematic neon glowing text "TEXT" with crown, purple blue cyberpunk city night, wet reflective streets, highly detailed 4k',
-  fire: 'cinematic text "TEXT" made of roaring fire and flames with crown, dark dramatic background, intense heat 4k',
-  glitch: 'cinematic glitch text "TEXT", digital RGB distortion, cyberpunk glitch art, dark tech background 4k',
-  ice: 'cinematic frozen ice crystal text "TEXT", blue ice letters, cold winter crystals, frost, dramatic 4k',
-  matrix: 'cinematic green matrix code rain, digital green text "TEXT", hooded hackers, dark matrix background 4k',
-  luxury: 'cinematic luxury gold text "TEXT" with crown, elegant golden letters, luxury black background, premium 4k',
-  blackpink: 'cinematic blackpink style text "TEXT", hot pink graffiti brush, crown, heart, kpop aesthetic 4k',
-  metallic: 'cinematic chrome metallic 3D text "TEXT", silver steel letters, dark reflective 4k',
-  devil: 'cinematic demonic red text "TEXT", devil horns, dark red hellfire, evil style 4k',
-  light: 'cinematic glowing divine light text "TEXT" with crown, bright heavenly rays, golden 4k',
-  sand: 'photorealistic text "TEXT" carved in beach sand, top-down view, sunny beach, sand texture 4k',
-  thunder: 'cinematic 3D rocky metallic text "TEXT" with blue lightning bolts, stormy dark clouds, electric reflection 4k',
-  hacker: 'cinematic green neon hacker text "TEXT", hooded figure with glowing mask, matrix code, dark room 4k',
-  naruto: 'anime Naruto style art, ninja character, bold orange black text logo "TEXT", Konoha background 4k',
-  paper: 'text "TEXT" written on paper, handwritten',
-  glow: 'glowing neon text "TEXT" soft glow dark background 4k',
-  gold: 'golden luxury 3D text "TEXT" shiny gold letters 4k',
-  rainbow: 'colorful rainbow text "TEXT" vibrant multicolor 4k',
-  fire2: 'cinematic text "TEXT" made of fire and embers, dark background 4k'
+  neon: 'large centered glowing neon sign that clearly reads the exact word TEXT, purple and blue neon letters, cyberpunk city night background, wet reflective streets, highly detailed 4k',
+  fire: 'large centered text made of roaring fire that clearly spells TEXT, flames forming each letter, dark dramatic background, intense heat, 4k',
+  glitch: 'large centered glitch text that clearly reads TEXT, digital RGB distortion, cyberpunk glitch art, dark tech background, 4k',
+  ice: 'large centered frozen ice crystal letters that clearly spell TEXT, blue ice, frost, dramatic winter background, 4k',
+  matrix: 'large centered digital green text that clearly reads TEXT, matrix code rain background, hooded hacker silhouette, 4k',
+  luxury: 'large centered elegant gold 3D letters that clearly spell TEXT with a crown, luxury black background, premium, 4k',
+  blackpink: 'large centered hot pink graffiti text that clearly reads TEXT, crown and hearts, blackpink kpop aesthetic, 4k',
+  metallic: 'large centered chrome metallic 3D letters that clearly spell TEXT, silver steel, dark reflective background, 4k',
+  devil: 'large centered demonic red letters that clearly spell TEXT, devil horns, dark red hellfire background, 4k',
+  light: 'large centered glowing divine letters that clearly spell TEXT with a crown, bright heavenly rays, golden light, 4k',
+  sand: 'photorealistic top-down view of the word TEXT carved clearly in beach sand, sunny beach, sand texture, 4k',
+  thunder: 'large centered rocky metallic 3D text that clearly reads TEXT with blue lightning bolts, stormy dark clouds, 4k',
+  hacker: 'large centered green neon hacker text that clearly reads TEXT, hooded figure, matrix code, dark room, 4k',
+  naruto: 'anime naruto style, bold orange and black logo text that clearly reads TEXT, konoha background, 4k',
+  paper: 'handwritten text that clearly reads TEXT on white paper, clean calligraphy',
+  glow: 'large centered soft glowing neon letters that clearly spell TEXT, dark background, 4k',
+  gold: 'large centered shiny golden 3D letters that clearly spell TEXT, luxury gold, 4k',
+  rainbow: 'large centered colorful rainbow letters that clearly spell TEXT, vibrant multicolor, 4k',
+  fire2: 'large centered letters made of fire and embers that clearly spell TEXT, dark background, 4k'
 };
 async function genImage(prompt) {
-  // 1) confronter flux
+  // 1) pollinations first (reliable free text-in-image)
+  try {
+    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?nologo=true&width=1024&height=1024&seed=' + Date.now();
+    const buf = await fetchBuffer(url, 120000);
+    if (buf && buf.length > 2000) return buf;
+  } catch (e) { console.log('pollinations:', (e.message || '').slice(0, 60)); }
+  // 2) confronter flux
   try {
     const data = await confronterGet('/api/ai/flux?q=' + encodeURIComponent(prompt), 90000);
     let url = null;
@@ -1216,11 +1300,6 @@ async function genImage(prompt) {
       if (buf && buf.length > 2000) return buf;
     }
   } catch (e) { console.log('flux:', (e.message || '').slice(0, 60)); }
-  // 2) pollinations (free, no key)
-  try {
-    const buf = await fetchBuffer('https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?nologo=true&width=1024&height=1024', 120000);
-    if (buf && buf.length > 2000) return buf;
-  } catch (e) { console.log('pollinations:', (e.message || '').slice(0, 60)); }
   return null;
 }
 async function generateTextImage(effect, text) {
@@ -1228,7 +1307,8 @@ async function generateTextImage(effect, text) {
   if (!q) return null;
   const style = String(effect || 'neon').toLowerCase();
   const template = TEXTMAKER_STYLES[style] || TEXTMAKER_STYLES.neon;
-  const prompt = String(template).replace(/TEXT/g, q) + ', masterpiece, centered text, no watermark, ultra detailed';
+  // force the exact word into the prompt twice so models render the letters
+  const prompt = String(template).split('TEXT').join(q) + ', the text must be readable and spell "' + q + '", masterpiece, centered, no watermark, ultra detailed';
   return genImage(prompt);
 }
 async function generateAiImage(prompt) {
@@ -1537,11 +1617,27 @@ async function startBot() {
         participantAlt: m.key.participantAlt || m.key.remoteJidAlt || null,
         remoteJid: m.key.remoteJid,
         timestamp: Date.now(),
-        fromMe: !!m.key.fromMe
+        fromMe: !!m.key.fromMe,
+        mediaBuffer: null,
+        mediaType: null
       };
       msgCache.set(m.key.id, entry);
       if (m.key.remoteJid) msgCache.set(m.key.remoteJid + ':' + m.key.id, entry);
       if (m.key.participant) msgCache.set(m.key.participant + ':' + m.key.id, entry);
+      // pre-download media so anti-delete / viewonce never shows "Waiting for this message"
+      const hasMedia = !!(unwrapped?.imageMessage || unwrapped?.videoMessage || unwrapped?.audioMessage || unwrapped?.stickerMessage || unwrapped?.documentMessage
+        || m.message?.viewOnceMessage || m.message?.viewOnceMessageV2 || m.message?.viewOnceMessageV2Extension);
+      if (hasMedia && !m.key.fromMe) {
+        downloadMediaMsg(m.message).then(dl => {
+          if (dl?.buffer && dl.buffer.length > 50) {
+            entry.mediaBuffer = dl.buffer;
+            entry.mediaType = dl.type;
+            entry.message = dl.msg || entry.message;
+            msgCache.set(m.key.id, entry);
+            if (m.key.remoteJid) msgCache.set(m.key.remoteJid + ':' + m.key.id, entry);
+          }
+        }).catch(() => {});
+      }
     } catch {}
   }
 
@@ -1667,11 +1763,14 @@ async function startBot() {
       const isMe = !!m.key.fromMe;
 
       if (!isMe) {
-        const bl = await loadBlacklist();
-        if (bl.includes(jidNormalizedUser(sender))) {
-          await sock.sendMessage(from, { text: 'You are blocked from using this bot.' }).catch(() => {});
-          return;
-        }
+        try {
+          const bl = await loadBlacklist();
+          const sid = jidNormalizedUser(sender);
+          const sdig = dig(sid);
+          if (bl.some(x => x === sid || dig(x) === sdig)) {
+            return; // silently ignore blocked users
+          }
+        } catch {}
       }
 
       if (!isMe && from && from !== 'status@broadcast') {
@@ -1899,30 +1998,23 @@ async function startBot() {
         }
       }
 
-      // ---- numeric reply (quoted) picks for APK / XVideos ----
+      // ---- numeric reply picks for APK / XVideos (quoted OR bare number if cache exists) ----
       if (!isMe && /^\d{1,2}$/.test(cleanBody)) {
         const n = parseInt(cleanBody, 10);
-        const ctxQ = getCtx(m);
-        const quoted = ctxQ.quotedMessage;
-        const hasQuote = !!(quoted || ctxQ.stanzaId);
-        if (hasQuote) {
-          const qid = ctxQ.stanzaId || null;
+        if (n >= 1 && n <= 20) {
           const a = getCachedList(global.__apkCache, from);
-          if (a.list?.length) {
-            if (!(a.msgId && qid && a.msgId !== qid)) {
-              const it = a.list[n - 1];
-              if (it) { await downloadAndSendApk(from, m, it, reply); return; }
-            }
+          if (a.list?.length && a.list[n - 1]) {
+            await downloadAndSendApk(from, m, a.list[n - 1], reply);
+            return;
           }
           const x = getCachedList(global.__xvCache, from);
-          if (x.list?.length) {
-            if (!(x.msgId && qid && x.msgId !== qid)) {
-              const it = x.list[n - 1];
-              if (it?.url) { await downloadXvItem(from, m, it, reply); return; }
-            }
+          if (x.list?.length && x.list[n - 1]?.url) {
+            await downloadXvItem(from, m, x.list[n - 1], reply);
+            return;
           }
         }
-        return; // bare numbers without quote are ignored
+        // no matching cache → ignore bare number (don't fall through as command)
+        return;
       }
 
       if (!cleanBody.startsWith(prefix)) return;
@@ -1972,7 +2064,8 @@ async function startBot() {
       if (['ping', 'p'].includes(cmd)) {
         const t0 = Date.now();
         try { await sock.sendPresenceUpdate('composing', from); } catch {}
-        await reply('*PONG*\nSpeed: *' + (Date.now() - t0) + 'ms*');
+        const ms = Date.now() - t0;
+        await reply('💀 *' + config.BOT_NAME + '*\nPinging Motherfucker...\n\n⚡ Latency: *' + ms + 'ms*');
         return;
       }
       if (cmd === 'alive' || cmd === 'uptime') {
@@ -2869,7 +2962,6 @@ async function startBot() {
       // ============ BLOCK / UNBLOCK ============
       if (['block', 'unblock'].includes(cmd)) {
         let targets = getTargetUsers(m, text, from, isGroup(from));
-        // also accept bare number in text: .block 2547xxxxxxxx
         if (!targets.length && text) {
           const nums = String(text).match(/\d{8,15}/g) || [];
           for (const n of nums) targets.push(dig(n) + '@s.whatsapp.net');
@@ -2881,19 +2973,25 @@ async function startBot() {
         const errs = [];
         for (const jid of targets) {
           try {
-            let phone = await jidToPhoneAsync(jid, m, from);
-            if (!phone) phone = dig(String(jid).split('@')[0].split(':')[0]);
-            if (!/^\d{6,15}$/.test(phone || '')) {
-              try {
-                const wa = await sock.onWhatsApp(jidNormalizedUser(String(jid)));
-                if (wa?.[0]?.jid) phone = dig(String(wa[0].jid).split('@')[0]);
-              } catch {}
-            }
-            if (!/^\d{6,15}$/.test(phone || '')) {
-              errs.push('invalid number: ' + String(jid).split('@')[0]);
+            let phone = dig(String(jid).split('@')[0].split(':')[0]);
+            try {
+              const p2 = await jidToPhoneAsync(jid, m, from);
+              if (p2 && /^\d{8,15}$/.test(p2)) phone = p2;
+            } catch {}
+            // resolve real WA jid via onWhatsApp (avoids BAD-REQUEST)
+            let targetJid = null;
+            try {
+              const wa = await sock.onWhatsApp(phone);
+              if (wa?.[0]?.exists && wa[0].jid) {
+                targetJid = jidNormalizedUser(wa[0].jid);
+                phone = dig(String(wa[0].jid).split('@')[0]) || phone;
+              }
+            } catch {}
+            if (!targetJid && /^\d{8,15}$/.test(phone || '')) targetJid = phone + '@s.whatsapp.net';
+            if (!targetJid) {
+              errs.push('not on WhatsApp: ' + String(jid).split('@')[0]);
               continue;
             }
-            const targetJid = phone + '@s.whatsapp.net';
             const action = cmd === 'block' ? 'block' : 'unblock';
             let done = false;
             let lastErr = '';
@@ -2902,8 +3000,9 @@ async function startBot() {
                 await sock.updateBlockStatus(targetJid, action);
                 done = true;
               } catch (e) {
-                lastErr = e?.message || String(e);
-                await delay(700);
+                lastErr = e?.output?.statusCode || e?.message || String(e);
+                // 400/405 sometimes still applied — verify
+                await delay(800);
               }
             }
             if (!done) {
@@ -2913,26 +3012,27 @@ async function startBot() {
                 if (cmd === 'block' ? blocked : !blocked) done = true;
               } catch {}
             }
-            if (done) {
-              labels.push('+' + phone);
-              ok++;
-              // also add to bot blacklist so they can't use commands either
+            // always maintain bot-side blacklist so commands are denied even if WA block fails
+            try {
+              let list = await loadBlacklist();
+              const id = jidNormalizedUser(targetJid);
               if (cmd === 'block') {
-                try {
-                  let list = await loadBlacklist();
-                  const id = jidNormalizedUser(targetJid);
-                  if (!list.includes(id)) { list.push(id); await saveBlacklist(list); }
-                } catch {}
+                if (!list.includes(id)) list.push(id);
+                if (phone) {
+                  const alt = dig(phone) + '@s.whatsapp.net';
+                  if (!list.includes(alt)) list.push(alt);
+                }
               } else {
-                try {
-                  let list = await loadBlacklist();
-                  const id = jidNormalizedUser(targetJid);
-                  list = list.filter(x => x !== id);
-                  await saveBlacklist(list);
-                } catch {}
+                list = list.filter(x => x !== id && dig(x) !== dig(targetJid));
               }
+              await saveBlacklist(list);
+            } catch {}
+            if (done || cmd === 'block') {
+              // treat bot-blacklist success as partial success for block
+              labels.push('+' + phone + (done ? '' : ' (bot-blocked)'));
+              ok++;
             } else {
-              errs.push('+' + phone + (lastErr ? ' (' + lastErr.slice(0, 40) + ')' : ''));
+              errs.push('+' + phone + (lastErr ? ' (' + String(lastErr).slice(0, 40) + ')' : ''));
             }
             await delay(400);
           } catch (e) {
