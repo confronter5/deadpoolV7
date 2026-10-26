@@ -207,6 +207,45 @@ function getCachedList(cache, from) {
   } catch { return { list: null, msgId: null }; }
 }
 
+// ============ PICK-LIST RESOLVER (quoted number replies for APK / XVideos / XNXX) ============
+function resolvePickList(m, from) {
+  try {
+    const quotedId = getCtx(m)?.stanzaId;
+    const a = global.__apkCache?.get(from);
+    const x = global.__xvCache?.get(from);
+    // 1) if the user QUOTED the results message, that message id decides which list
+    if (quotedId) {
+      if (a?.msgId === quotedId && a.list?.length) return { type: 'apk', list: a.list };
+      if (x?.msgId === quotedId && x.list?.length) return { type: 'xv', list: x.list };
+    }
+    // 2) bare number (no quote) -> whichever results list was sent most recently
+    const last = global.__lastListType?.get(from);
+    if (last === 'xv' && x?.list?.length) return { type: 'xv', list: x.list };
+    if (a?.list?.length) return { type: 'apk', list: a.list };
+    if (x?.list?.length) return { type: 'xv', list: x.list };
+  } catch {}
+  return null;
+}
+
+// ============ BUFFER VALIDATORS (stop HTML/error pages being sent as media) ============
+function isAudioBuffer(b) {
+  if (!b || b.length < 12) return false;
+  if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return true;                       // MPEG frame
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return true;               // ID3 tag
+  if (b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) return true; // OggS
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return true; // ftyp (m4a)
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return true; // RIFF/wav
+  return false;
+}
+function isImageBuffer(b) {
+  if (!b || b.length < 12) return false;
+  if (b[0] === 0xff && b[1] === 0xd8) return true;                               // JPEG
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return true; // PNG
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return true; // WEBP/RIFF
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return true; // WEBP/ftyp
+  return false;
+}
+
 // ============ LID / NAME HELPERS ============
 function cacheLid(key, msg) {
   try {
@@ -1114,7 +1153,7 @@ async function fetchAudioBuffer(url) {
   // 1) download-site proxy
   try {
     const b = await proxyFetch(url, true);
-    if (b && b.length > 3000) return b;
+    if (b && isAudioBuffer(b) && b.length > 3000) return b;
   } catch {}
   // 2) direct with browser-like headers
   try {
@@ -1128,20 +1167,19 @@ async function fetchAudioBuffer(url) {
     });
     if (r.status < 400 && r.data) {
       const b = Buffer.from(r.data);
-      if (b.length > 3000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) return b;
+      if (b.length > 3000 && isAudioBuffer(b)) return b;
     }
   } catch {}
   // 3) generic fetchBuffer
   try {
     const b = await fetchBuffer(String(url), 180000);
-    if (b && b.length > 3000) return b;
+    if (b && isAudioBuffer(b) && b.length > 3000) return b;
   } catch {}
   return null;
 }
 
 async function sendAsMp3(jid, data) {
   if (!data) return false;
-  // NO title / caption / fileName on the audio message itself — pure WhatsApp music player
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 3000) ? data.buffer : null;
   const mediaUrl = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
 
@@ -1149,7 +1187,6 @@ async function sendAsMp3(jid, data) {
   if (!buf && mediaUrl && isYoutubeUrl(mediaUrl)) {
     try { const again = await downloadViaYtdl(mediaUrl, true); if (again?.buffer?.length > 3000) buf = again.buffer; } catch {}
   }
-  // if still no buffer but we have a YT page url in meta, re-hit Keith
   if (!buf) {
     const yt = mediaUrl || data.meta?.url || data.pageUrl;
     if (yt && isYoutubeUrl(String(yt))) {
@@ -1162,13 +1199,30 @@ async function sendAsMp3(jid, data) {
   }
 
   if (buf && buf.length > 3000) {
-    // optional convert to mp3 if ffmpeg exists; otherwise send bytes as-is
     try {
       const converted = await toMp3(buf);
       if (converted && converted.length > 1000) buf = converted;
     } catch {}
-    // pure audio player — no fileName, no ptt, no seconds, no caption on the audio
-    for (const mime of ['audio/mpeg', 'audio/mp4', 'audio/ogg; codecs=opus']) {
+    // shrink if too big for a WhatsApp audio message (>15MB)
+    const ff = which('ffmpeg');
+    if (ff && buf.length > 15 * 1024 * 1024) {
+      try {
+        const inp = path.join(TMP_DIR, 'big' + Date.now() + '.bin'), outp = inp + '.mp3';
+        await fs.writeFile(inp, buf);
+        await execP('"' + ff + '" -y -i "' + inp + '" -vn -c:a libmp3lame -b:a 64k "' + outp + '"', { timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
+        const out = await fs.readFile(outp);
+        if (out.length > 1000) buf = out;
+        try { await fs.remove(inp); await fs.remove(outp); } catch {}
+      } catch {}
+    }
+    // pick the mimetype that matches the ACTUAL bytes so WA renders a player, not a document
+    const guessed = guessAudioMime(buf);
+    const mimes = [];
+    if (guessed === 'audio/ogg') mimes.push('audio/ogg; codecs=opus', 'audio/ogg');
+    else if (guessed === 'audio/mp4') mimes.push('audio/mp4', 'audio/mpeg');
+    else if (guessed === 'audio/wav') mimes.push('audio/mpeg', 'audio/mp4');
+    else mimes.push('audio/mpeg', 'audio/mp4', 'audio/ogg; codecs=opus');
+    for (const mime of [...new Set(mimes)]) {
       try {
         await sock.sendMessage(jid, { audio: buf, mimetype: mime, ptt: false });
         return true;
@@ -1183,6 +1237,7 @@ async function sendAsMp3(jid, data) {
         return true;
       } catch (e) { console.log('audio url', mime, e.message); }
     }
+    try { await sock.sendMessage(jid, { text: 'Could not attach the audio directly. Download / play it here:\n' + mediaUrl }); return false; } catch {}
   }
 
   await sock.sendMessage(jid, { text: 'Could not send playable audio. Try another song or a direct YouTube link.' + buildFooter() }).catch(() => {});
@@ -1198,6 +1253,10 @@ async function sendAsVideo(jid, data) {
   if (!buf && u) {
     buf = await proxyFetch(u, false).catch(() => null);
     if (!buf) { try { buf = await fetchBuffer(u, 150000); } catch {} }
+  }
+  // last resort: re-rip the youtube page locally when the CDN link is unfetchable
+  if (!buf && u && isYoutubeUrl(u)) {
+    try { const d2 = await downloadViaYtdl(u, false); if (d2?.buffer?.length > 5000) buf = d2.buffer; } catch {}
   }
   if (buf && buf.length > 5000) {
     try {
@@ -1284,12 +1343,18 @@ const TEXTMAKER_STYLES = {
   fire2: 'large centered letters made of fire and embers that clearly spell TEXT, dark background, 4k'
 };
 async function genImage(prompt) {
-  // 1) pollinations first (reliable free text-in-image)
-  try {
-    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?nologo=true&width=1024&height=1024&seed=' + Date.now();
-    const buf = await fetchBuffer(url, 120000);
-    if (buf && buf.length > 2000) return buf;
-  } catch (e) { console.log('pollinations:', (e.message || '').slice(0, 60)); }
+  // 1) pollinations first - retry with fresh seeds, switch model on last try
+  for (let i = 0; i < 3; i++) {
+    try {
+      const seed = Math.floor(Math.random() * 999999);
+      const model = i === 2 ? '&model=flux' : '';
+      const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?nologo=true&width=1024&height=1024&seed=' + seed + model;
+      const buf = await fetchBuffer(url, 90000);
+      if (buf && isImageBuffer(buf) && buf.length > 2000) return buf;
+      console.log('pollinations: invalid image bytes, retry', i);
+    } catch (e) { console.log('pollinations:', (e.message || '').slice(0, 60)); }
+    await delay(800);
+  }
   // 2) confronter flux
   try {
     const data = await confronterGet('/api/ai/flux?q=' + encodeURIComponent(prompt), 90000);
@@ -1297,7 +1362,7 @@ async function genImage(prompt) {
     if (data) url = (typeof data.result === 'string' && data.result.startsWith('http')) ? data.result : (data.result?.url || data.url || data.image || extractMediaUrl(data));
     if (url && String(url).startsWith('http')) {
       const buf = await fetchBuffer(String(url), 90000);
-      if (buf && buf.length > 2000) return buf;
+      if (buf && isImageBuffer(buf) && buf.length > 2000) return buf;
     }
   } catch (e) { console.log('flux:', (e.message || '').slice(0, 60)); }
   return null;
@@ -1434,12 +1499,12 @@ async function startBot() {
         ].filter(Boolean);
         for (const k of keys) {
           const c = msgCache.get(k);
-          if (c?.message) return proto.Message.fromObject(c.message);
+          if (c?.message) return proto.Message.fromObject(c.rawMessage || c.message);
         }
         for (const k of msgCache.keys()) {
           if (String(k).endsWith(key.id)) {
             const c = msgCache.get(k);
-            if (c?.message) return proto.Message.fromObject(c.message);
+            if (c?.message) return proto.Message.fromObject(c.rawMessage || c.message);
           }
         }
       } catch {}
@@ -1458,7 +1523,7 @@ async function startBot() {
     const r = await _origSend(jid, content, options);
     try {
       if (r?.key?.id && r?.message) {
-        const entry = { key: r.key, message: r.message, timestamp: Date.now(), fromMe: true, remoteJid: r.key.remoteJid };
+        const entry = { key: r.key, message: r.message, rawMessage: r.message, timestamp: Date.now(), fromMe: true, remoteJid: r.key.remoteJid };
         msgCache.set(r.key.id, entry);
         if (r.key.remoteJid) msgCache.set(r.key.remoteJid + ':' + r.key.id, entry);
       }
@@ -1611,6 +1676,7 @@ async function startBot() {
       const entry = {
         key: m.key,
         message: unwrapped,
+        rawMessage: m.message,
         text: extractText(m.message) || '',
         pushName: m.pushName || null,
         participant: m.key.participant || m.key.remoteJid,
@@ -1833,18 +1899,18 @@ async function startBot() {
           try { if (typeof sock.sendReceipt === 'function') await sock.sendReceipt('status@broadcast', participant, [m.key.id], 'read'); } catch {}
         }
         if (config.AUTO_LIKE_STATUS) {
-          await delay(400 + Math.floor(Math.random() * 900));
+          await delay(300 + Math.floor(Math.random() * 800));
+          // EXACT emoji the owner configured (.reaction <emoji>) - statusLikeEmoji() returns it verbatim
           const emoji = statusLikeEmoji();
-          const statusJidList = [...new Set([posterJid, participant, botJid, phone ? phone + '@s.whatsapp.net' : null].filter(Boolean).map(j => {
-            const s = String(j);
-            if (s.includes('@')) return jidNormalizedUser(s);
-            const d = dig(s);
-            return /^\d{6,15}$/.test(d) ? d + '@s.whatsapp.net' : s;
-          }))];
+          // React with the EXACT original message key so the poster sees the emoji, never "Waiting for this message"
+          const poster = phone ? phone + '@s.whatsapp.net' : (rawP.includes('@') ? jidNormalizedUser(rawP) : rawP + '@s.whatsapp.net');
+          const reactKey = { ...m.key, fromMe: false, participant: m.key.participant || participant };
+          const likeJidList = [...new Set([poster, jidNormalizedUser(poster)])];
           let liked = false;
-          try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: statusKey } }, { statusJidList }); liked = true; } catch {}
-          if (!liked) { try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: m.key } }, { statusJidList }); liked = true; } catch {} }
-          if (!liked && posterJid) { try { await sock.sendMessage(posterJid, { react: { text: emoji, key: statusKey } }); } catch {} }
+          try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } }, { statusJidList: likeJidList }); liked = true; }
+          catch (e) { console.log('status react 1:', e.message); }
+          if (!liked) { try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } }); liked = true; } catch (e) { console.log('status react 2:', e.message); } }
+          if (!liked) { try { await sock.sendMessage('status@broadcast', { react: { text: emoji, key: statusKey } }, { statusJidList: likeJidList }); liked = true; } catch {} }
         }
         return;
       }
@@ -1998,18 +2064,14 @@ async function startBot() {
         }
       }
 
-      // ---- numeric reply picks for APK / XVideos (quoted OR bare number if cache exists) ----
+      // ---- numeric reply picks for APK / XVideos / XNXX (quote-aware) ----
       if (!isMe && /^\d{1,2}$/.test(cleanBody)) {
         const n = parseInt(cleanBody, 10);
         if (n >= 1 && n <= 20) {
-          const a = getCachedList(global.__apkCache, from);
-          if (a.list?.length && a.list[n - 1]) {
-            await downloadAndSendApk(from, m, a.list[n - 1], reply);
-            return;
-          }
-          const x = getCachedList(global.__xvCache, from);
-          if (x.list?.length && x.list[n - 1]?.url) {
-            await downloadXvItem(from, m, x.list[n - 1], reply);
+          const pick = resolvePickList(m, from);
+          if (pick?.list?.[n - 1]) {
+            if (pick.type === 'apk') await downloadAndSendApk(from, m, pick.list[n - 1], reply);
+            else await downloadXvItem(from, m, pick.list[n - 1], reply);
             return;
           }
         }
@@ -2039,13 +2101,14 @@ async function startBot() {
       console.log('CMD:', cmd, '| fromMe:', isMe, '| from:', String(from || '').split('@')[0]);
       react(from, m.key, cmdReactEmoji());
 
-      // ---- numeric command variants: .apk 1 / .xvideos 2 / .1 / .2 ----
+      // ---- numeric command variants: .apk 1 / .xvideos 2 / .1 / .2 (quote-aware) ----
       if (/^\d{1,2}$/.test(cmd)) {
         const n = parseInt(cmd, 10);
-        const a = getCachedList(global.__apkCache, from);
-        if (a.list?.[n - 1]) { await downloadAndSendApk(from, m, a.list[n - 1], reply); return; }
-        const x = getCachedList(global.__xvCache, from);
-        if (x.list?.[n - 1]?.url) { await downloadXvItem(from, m, x.list[n - 1], reply); return; }
+        const pick = resolvePickList(m, from);
+        if (pick?.list?.[n - 1]) {
+          if (pick.type === 'apk') await downloadAndSendApk(from, m, pick.list[n - 1], reply);
+          else await downloadXvItem(from, m, pick.list[n - 1], reply);
+        }
         return;
       }
 
@@ -2310,7 +2373,9 @@ async function startBot() {
           msg += '*Reply to this message* with a number to download, or: ' + prefix + 'xvideos <url>';
           const sent = await sock.sendMessage(from, { text: styleReplyText(msg.trim().slice(0, 4000)) + buildFooter() }, { quoted: m }).catch(() => null);
           if (!global.__xvCache) global.__xvCache = new Map();
+          if (!global.__lastListType) global.__lastListType = new Map();
           global.__xvCache.set(from, { list: items.slice(0, 10), msgId: sent?.key?.id || null });
+          global.__lastListType.set(from, 'xv');
           setTimeout(() => { try { global.__xvCache.delete(from); } catch {} }, 15 * 60 * 1000);
         } catch (e) { await reply('Search failed: ' + e.message); }
         return;
@@ -2695,7 +2760,9 @@ async function startBot() {
           msg += '*Reply to this message* with a number (e.g. 1) to download, or: ' + prefix + 'apk ' + q + ' --dl';
           const sent = await sock.sendMessage(from, { text: styleReplyText(msg.trim().slice(0, 4000)) + buildFooter() }, { quoted: m }).catch(() => null);
           if (!global.__apkCache) global.__apkCache = new Map();
+          if (!global.__lastListType) global.__lastListType = new Map();
           global.__apkCache.set(from, { list: items.slice(0, 10), msgId: sent?.key?.id || null });
+          global.__lastListType.set(from, 'apk');
           setTimeout(() => { try { global.__apkCache.delete(from); } catch {} }, 15 * 60 * 1000);
         } catch (e) { await reply('APK failed: ' + e.message); }
         return;
@@ -3291,3 +3358,4 @@ startBot().catch(e => {
   process.exit(1);
 });
 process.on('uncaughtException', e => console.log('Uncaught:', e.message));
+
