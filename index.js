@@ -487,12 +487,27 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  try { await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') }); } catch {}
-  await delay(400);
+  // ONE message: loading text is edited in-place into the full menu (async combined)
+  let loadingKey = null;
+  try {
+    const loading = await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') });
+    loadingKey = loading?.key || null;
+  } catch {}
   const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   full += foot;
+  // Prefer in-place edit so loading + menu are the same bubble
+  if (loadingKey) {
+    try {
+      await sock.sendMessage(jid, { text: full, edit: loadingKey });
+      return;
+    } catch (e) {
+      console.log('menu edit:', e.message);
+      try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {}
+    }
+  }
+  // Fallback if edit unsupported: optional image menu, else text
   const buffer = await resolveMenuImageBuffer();
   if (buffer) {
     try { await sock.sendMessage(jid, { image: buffer, caption: full }); return; } catch {}
@@ -1102,17 +1117,56 @@ async function downloadViaConfronter(url, audioOnly = true) {
 }
 async function proxyFetch(mediaUrl, audioOnly) {
   if (!mediaUrl || !/^https?:\/\//i.test(String(mediaUrl))) return null;
-  try {
-    const name = encodeURIComponent('file' + (audioOnly ? '.mp3' : '.mp4'));
-    const r = await axios.get(DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(String(mediaUrl)) + '&name=' + name, {
-      responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
-      headers: { 'User-Agent': UA, Accept: audioOnly ? 'audio/mpeg,*/*' : 'video/mp4,*/*' }
-    });
-    if (r.status < 400 && r.data) {
-      const b = Buffer.from(r.data);
-      if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) return b;
-    }
-  } catch (e) { console.log('proxy:', (e.message || '').slice(0, 80)); }
+  const accept = audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,video/*,*/*';
+  const name = encodeURIComponent('file' + (audioOnly ? '.mp3' : '.mp4'));
+  // Matches confronter-downloads.onrender.com routes from site JS
+  const tries = [
+    DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(String(mediaUrl)) + '&name=' + name,
+    DOWNLOAD_SITE + '/api/stream?url=' + encodeURIComponent(String(mediaUrl)),
+    DOWNLOAD_SITE + '/api/download?url=' + encodeURIComponent(String(mediaUrl)),
+    CONFRONTER_API + '/api/download/file?url=' + encodeURIComponent(String(mediaUrl)),
+    CONFRONTER_API + '/api/gateway/download/file?url=' + encodeURIComponent(String(mediaUrl))
+  ];
+  for (const u of tries) {
+    try {
+      const r = await axios.get(u, {
+        responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
+        maxRedirects: 8,
+        headers: {
+          'User-Agent': UA,
+          Accept: accept,
+          Referer: DOWNLOAD_SITE + '/',
+          Origin: DOWNLOAD_SITE,
+          'Accept-Encoding': 'identity'
+        }
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        // skip JSON error bodies
+        if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) return b;
+      }
+    } catch (e) { console.log('proxy:', (e.message || '').slice(0, 60)); }
+  }
+  // Tokyo direct (site serves mp3 via tokyo CDN for browsers)
+  if (/tokyo\.xyz|123tokyo/i.test(String(mediaUrl))) {
+    try {
+      const r = await axios.get(String(mediaUrl), {
+        responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
+        maxRedirects: 8,
+        headers: {
+          'User-Agent': UA,
+          Accept: accept,
+          Referer: 'https://123tokyo.xyz/',
+          Origin: 'https://123tokyo.xyz',
+          'Accept-Encoding': 'identity'
+        }
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        if (b.length > 5000 && b[0] !== 0x7b) return b;
+      }
+    } catch (e) { console.log('tokyo direct:', (e.message || '').slice(0, 60)); }
+  }
   return null;
 }
 async function tryFetchMediaUrl(mediaUrl) {
@@ -1132,7 +1186,64 @@ async function downloadYouTube(query, audioOnly = true) {
     title = found.title || query;
   }
   let lastUrl = null, lastMeta = null;
-  // 1) Keith API first (reliable for YT)
+  // 0) DOWNLOAD_SITE + Confronter gateway (site uses both)
+  try {
+    const paths = audioOnly
+      ? [
+          DOWNLOAD_SITE + '/api/yt/mp3?url=',
+          CONFRONTER_API + '/api/download/ytmp3/file?url=',
+          CONFRONTER_API + '/api/gateway/download/ytmp3/file?url=',
+          CONFRONTER_API + '/api/download/ytmp3?url=',
+          CONFRONTER_API + '/api/gateway/download/ytmp3?url='
+        ]
+      : [
+          DOWNLOAD_SITE + '/api/yt/mp4?url=',
+          CONFRONTER_API + '/api/download/ytmp4/file?url=',
+          CONFRONTER_API + '/api/gateway/download/ytmp4/file?url=',
+          CONFRONTER_API + '/api/download/ytmp4?url=',
+          CONFRONTER_API + '/api/gateway/download/ytmp4?url='
+        ];
+    for (const full of paths) {
+      try {
+        // binary file endpoints
+        if (full.includes('/file?')) {
+          const r = await axios.get(full + encodeURIComponent(url), {
+            responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
+            headers: { 'User-Agent': UA, Accept: audioOnly ? 'audio/mpeg,*/*' : 'video/mp4,*/*' }
+          });
+          if (r.status < 400 && r.data) {
+            const b = Buffer.from(r.data);
+            if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) {
+              return { buffer: b, title, url: null, meta: { title } };
+            }
+          }
+          continue;
+        }
+        const r = await dlGet(full + encodeURIComponent(url), { timeout: 120000 });
+        const d = r?.data?.result || r?.data;
+        if (d?.buffer || d?.data) {
+          try {
+            const raw = d.buffer || d.data;
+            const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'base64');
+            if (buf.length > 5000) return { buffer: buf, title: d?.title || title, url: null, meta: d };
+          } catch {}
+        }
+        const mediaUrl = d?.url || d?.download || d?.link || extractMediaUrl(r?.data);
+        if (mediaUrl) {
+          let buf = await proxyFetch(mediaUrl, audioOnly).catch(() => null);
+          if (!buf) buf = await tryFetchMediaUrl(mediaUrl);
+          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: String(mediaUrl), meta: d };
+          lastUrl = String(mediaUrl); lastMeta = d;
+        }
+      } catch (e) { console.log('yt0:', (e.message || '').slice(0, 50)); }
+    }
+  } catch (e) { console.log('yt site0:', (e.message || '').slice(0, 50)); }
+  // 1) local yt-dlp / ytdl-core (buffer on VPS; may fail on slim Heroku)
+  try {
+    const d = await downloadViaYtdl(url, audioOnly);
+    if (d?.buffer && d.buffer.length > 5000) { d.title = d.title || title; return d; }
+  } catch (e) { console.log('ytdl:', (e.message || '').slice(0, 60)); }
+  // 2) Keith API
   try {
     const d = await downloadViaKeith(url, audioOnly);
     if (d) {
@@ -1146,11 +1257,6 @@ async function downloadYouTube(query, audioOnly = true) {
       }
     }
   } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 60)); }
-  // 2) local yt-dlp
-  try {
-    const d = await downloadViaYtdl(url, audioOnly);
-    if (d?.buffer && d.buffer.length > 5000) { d.title = d.title || title; return d; }
-  } catch (e) { console.log('ytdl:', (e.message || '').slice(0, 60)); }
   // 3) Confronter fallback
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -1167,19 +1273,60 @@ async function downloadYouTube(query, audioOnly = true) {
       }
     }
   } catch (e) { console.log('confronter dl:', (e.message || '').slice(0, 60)); }
-  // 3) download site own endpoint
+  // DOWNLOAD_SITE yt endpoints (often return usable CDN + better for buffer)
   try {
-    const r = await dlGet(DOWNLOAD_SITE + (audioOnly ? '/api/yt/mp3?url=' : '/api/yt/mp4?url=') + encodeURIComponent(url), { timeout: 90000 });
-    const d = r?.data?.result || r?.data;
-    const mediaUrl = d?.url || d?.download || d?.link || extractMediaUrl(r?.data);
-    if (mediaUrl) {
-      lastUrl = String(mediaUrl); lastMeta = d;
-      let buf = await proxyFetch(mediaUrl, audioOnly).catch(() => null);
-      if (!buf) buf = await tryFetchMediaUrl(mediaUrl);
-      if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: String(mediaUrl), meta: d };
+    for (const path of (audioOnly
+      ? ['/api/yt/mp3?url=', '/api/download/ytmp3?url=', '/api/ytdl/mp3?url=']
+      : ['/api/yt/mp4?url=', '/api/download/ytmp4?url=', '/api/ytdl/mp4?url='])) {
+      try {
+        const r = await dlGet(DOWNLOAD_SITE + path + encodeURIComponent(url), { timeout: 120000 });
+        const d = r?.data?.result || r?.data;
+        // binary-like? some sites return buffer base64
+        if (d?.buffer || d?.data) {
+          try {
+            const raw = d.buffer || d.data;
+            const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'base64');
+            if (buf.length > 5000) return { buffer: buf, title: d?.title || title, url: null, meta: d };
+          } catch {}
+        }
+        const mediaUrl = d?.url || d?.download || d?.link || extractMediaUrl(r?.data);
+        if (mediaUrl) {
+          lastUrl = String(mediaUrl); lastMeta = d;
+          let buf = await proxyFetch(mediaUrl, audioOnly).catch(() => null);
+          if (!buf) buf = await tryFetchMediaUrl(mediaUrl);
+          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: String(mediaUrl), meta: d };
+        }
+      } catch (e) { console.log('DOWNLOAD_SITE path:', (e.message || '').slice(0, 50)); }
     }
   } catch (e) { console.log('DOWNLOAD_SITE:', (e.message || '').slice(0, 60)); }
-  // 4) URL-only - WhatsApp will fetch it directly (Tokyo/CDN links work for WA even if your host is blocked)
+  // Hard buffer for Tokyo / CDN — never give up after one fail
+  if (lastUrl) {
+    for (let i = 0; i < 3; i++) {
+      let buf = await proxyFetch(lastUrl, audioOnly).catch(() => null);
+      if (!buf) buf = await tryFetchMediaUrl(lastUrl);
+      if (!buf) {
+        try {
+          const r = await axios.get(String(lastUrl), {
+            responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
+            headers: {
+              'User-Agent': UA,
+              Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,*/*',
+              Referer: 'https://123tokyo.xyz/',
+              Origin: 'https://123tokyo.xyz',
+              'Accept-Encoding': 'identity'
+            }
+          });
+          if (r.status < 400 && r.data) {
+            const b = Buffer.from(r.data);
+            if (b.length > 5000 && b[0] !== 0x7b) buf = b;
+          }
+        } catch {}
+      }
+      if (buf && buf.length > 5000) return { buffer: buf, title: (lastMeta && (lastMeta.title || lastMeta.name)) || title, url: lastUrl, meta: lastMeta || { title } };
+      await delay(600);
+    }
+  }
+  // last: still return url so sender can try WA-side fetch, but sender will also re-buffer
   if (lastUrl) return { buffer: null, url: lastUrl, title: (lastMeta && (lastMeta.title || lastMeta.name)) || title, meta: lastMeta || { title } };
   return null;
 }
@@ -1189,30 +1336,32 @@ async function downloadYouTube(query, audioOnly = true) {
 // then render the message as a DOCUMENT instead of a playable audio message.
 async function fetchAudioBuffer(url) {
   if (!url || !/^https?:\/\//i.test(String(url))) return null;
-  // 1) download-site proxy
+  // 1) multi proxy
   try {
     const b = await proxyFetch(url, true);
-    if (b && isAudioBuffer(b) && b.length > 3000) return b;
+    if (b && b.length > 3000 && (isAudioBuffer(b) || b.length > 50000)) return b;
   } catch {}
-  // 2) direct with browser-like headers
-  try {
-    const r = await axios.get(String(url), {
-      responseType: 'arraybuffer', timeout: 180000, maxContentLength: 80 * 1024 * 1024, validateStatus: () => true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'audio/mpeg,audio/*,*/*',
-        Referer: 'https://www.youtube.com/'
+  // 2) Tokyo-friendly headers
+  const headerSets = [
+    { 'User-Agent': UA, Accept: 'audio/mpeg,audio/*,*/*', Referer: 'https://123tokyo.xyz/', Origin: 'https://123tokyo.xyz', 'Accept-Encoding': 'identity' },
+    { 'User-Agent': UA, Accept: 'audio/mpeg,audio/*,*/*', Referer: 'https://www.youtube.com/', 'Accept-Encoding': 'identity' },
+    { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36', Accept: '*/*', Referer: 'https://123tokyo.xyz/' }
+  ];
+  for (const headers of headerSets) {
+    try {
+      const r = await axios.get(String(url), {
+        responseType: 'arraybuffer', timeout: 180000, maxContentLength: 80 * 1024 * 1024, validateStatus: () => true, headers
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        if (b.length > 3000 && (isAudioBuffer(b) || b.length > 50000)) return b;
       }
-    });
-    if (r.status < 400 && r.data) {
-      const b = Buffer.from(r.data);
-      if (b.length > 3000 && isAudioBuffer(b)) return b;
-    }
-  } catch {}
+    } catch {}
+  }
   // 3) generic fetchBuffer
   try {
     const b = await fetchBuffer(String(url), 180000);
-    if (b && isAudioBuffer(b) && b.length > 3000) return b;
+    if (b && b.length > 3000 && (isAudioBuffer(b) || b.length > 50000)) return b;
   } catch {}
   return null;
 }
@@ -1269,17 +1418,41 @@ async function sendAsMp3(jid, data) {
     }
   }
 
-  if (mediaUrl) {
-    for (const mime of ['audio/mpeg', 'audio/mp4']) {
+  // Final: re-download via yt APIs then send buffer only (no long CDN links in chat)
+  if (mediaUrl || data.pageUrl) {
+    const yt = (data.pageUrl && isYoutubeUrl(data.pageUrl)) ? data.pageUrl : (isYoutubeUrl(mediaUrl) ? mediaUrl : null);
+    if (yt) {
       try {
-        await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: mime, ptt: false });
-        return true;
-      } catch (e) { console.log('audio url', mime, e.message); }
+        const again = await downloadViaYtdl(yt, true);
+        if (again?.buffer?.length > 3000) {
+          let b = again.buffer;
+          try { const c = await toMp3(b); if (c?.length > 1000) b = c; } catch {}
+          try {
+            await sock.sendMessage(jid, { audio: b, mimetype: 'audio/mpeg', ptt: false });
+            return true;
+          } catch {}
+        }
+      } catch {}
     }
-    try { await sock.sendMessage(jid, { text: 'Could not attach the audio directly. Download / play it here:\n' + mediaUrl }); return false; } catch {}
+    // one more proxy round
+    if (mediaUrl) {
+      const b2 = await fetchAudioBuffer(mediaUrl);
+      if (b2 && b2.length > 3000) {
+        try {
+          await sock.sendMessage(jid, { audio: b2, mimetype: guessAudioMime(b2), ptt: false });
+          return true;
+        } catch {}
+      }
+      for (const mime of ['audio/mpeg', 'audio/mp4']) {
+        try {
+          await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: mime, ptt: false });
+          return true;
+        } catch (e) { console.log('audio url', mime, e.message); }
+      }
+    }
   }
 
-  await sock.sendMessage(jid, { text: 'Could not send playable audio. Try another song or a direct YouTube link.' + buildFooter() }).catch(() => {});
+  await sock.sendMessage(jid, { text: 'Could not send playable audio. Try again or use a direct YouTube link.' + buildFooter() }).catch(() => {});
   return false;
 }
 async function sendAsVideo(jid, data) {
@@ -1308,11 +1481,16 @@ async function sendAsVideo(jid, data) {
     }
   }
   if (u) {
+    // force buffer once more before URL
+    let b3 = await proxyFetch(u, false).catch(() => null);
+    if (!b3) { try { b3 = await fetchBuffer(u, 180000); } catch {} }
+    if (b3 && b3.length > 5000) {
+      try { await sock.sendMessage(jid, { video: b3, mimetype: 'video/mp4' }); return true; } catch {}
+    }
     try { await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4' }); return true; }
     catch (e) { console.log('video url:', e.message); }
-    try { await sock.sendMessage(jid, { text: 'Download video:\n' + u }); return true; } catch {}
   }
-  await sock.sendMessage(jid, { text: 'Could not send video.' + buildFooter() }).catch(() => {});
+  await sock.sendMessage(jid, { text: 'Could not send video. Try a direct YouTube link.' + buildFooter() }).catch(() => {});
   return false;
 }
 
@@ -2692,25 +2870,35 @@ async function startBot() {
 
       // ============ CLEAR ============
       if (['clear', 'clearchat', 'wipe'].includes(cmd)) {
-        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('Clearing recent bot messages in this chat...');
+        // Like WhatsApp "Clear chat" for this conversation (bot side)
+        try {
+          const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
+          if (typeof sock.chatModify === 'function') {
+            try {
+              await sock.chatModify({
+                clear: { messages: [{ id: m.key.id, fromMe: true, timestamp: String(ts) }] }
+              }, from);
+            } catch {}
+            try {
+              await sock.chatModify({
+                delete: true,
+                lastMessages: [{ key: m.key, messageTimestamp: ts }]
+              }, from);
+            } catch {}
+          }
+        } catch (e) { console.log('clear chatModify:', e.message); }
+        // also remove recent bot messages this session
         let deleted = 0;
         try {
           const entries = [...msgCache.entries()].reverse();
           for (const [, c] of entries) {
-            if (deleted >= 60) break;
+            if (deleted >= 40) break;
             if (c?.remoteJid === from && c?.fromMe && c?.key) {
-              try { await sock.sendMessage(from, { delete: c.key }); deleted++; await delay(200); } catch {}
+              try { await sock.sendMessage(from, { delete: c.key }); deleted++; await delay(120); } catch {}
             }
           }
         } catch {}
-        try {
-          if (typeof sock.chatModify === 'function') {
-            const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
-            await sock.chatModify({ delete: true, lastMessages: [{ key: m.key, messageTimestamp: ts }] }, from);
-          }
-        } catch {}
-        await reply(deleted ? 'Cleared ' + deleted + ' recent bot message(s).' : 'Clear requested. WhatsApp may keep some messages - only the bot\'s own messages can be removed.');
+        await reply('🧹 Chat cleared.');
         return;
       }
 
@@ -3165,12 +3353,12 @@ async function startBot() {
         else await reply('❌ ' + cmd + ' failed.\n' + (errs.length ? errs.join('\n') : 'Reply to their message or use full number:\n' + prefix + cmd + ' 2547xxxxxxxx'));
         return;
       }
-      // ============ PAIR (deadpool-session.onrender.com for other users) ============
+      // ============ PAIR (uses pair site API silently — no link shown) ============
       if (cmd === 'pair') {
         const number = dig(args[0] || '');
         const pairSite = (config.PAIR_SITE || 'https://deadpool-session.onrender.com').replace(/\/+$/, '');
         if (!number || number.length < 10) {
-          await reply('📲 *Pairing*\n\nUsage: ' + prefix + 'pair 2547xxxxxxx\n\nOr open:\n' + pairSite + '\n\nNumber = country code + digits only (no +)');
+          await reply('📲 *Pairing*\n\nUsage: ' + prefix + 'pair 2547xxxxxxx\n\nNumber = country code + digits only (no +)');
           return;
         }
         await reply('⏳ Requesting pairing code for +' + number + '...');
@@ -3202,7 +3390,6 @@ async function startBot() {
               '2. Link a Device\n' +
               '3. Link with phone number instead\n' +
               '4. Enter the code (expires ~1 min)\n\n' +
-              'Site: ' + pairSite + '\n' +
               '_Session will be sent when linked._'
             );
             (async () => {
@@ -3225,14 +3412,14 @@ async function startBot() {
           } else if (session) {
             await reply('🔑 *SESSION for +' + number + '*\n\n```' + session + '```');
           } else {
-            await reply('Code not ready. Open the site:\n' + pairSite + '\n\nOr retry ' + prefix + 'pair ' + number);
+            await reply('Code not ready. Retry: ' + prefix + 'pair ' + number);
           }
         } catch (e) {
           try {
             const code = await sock.requestPairingCode(number);
-            await reply('📲 Local code (this bot account):\n```' + code + '```\n\nSite error: ' + e.message + '\nPrefer site for *other* users:\n' + pairSite);
+            await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. WhatsApp → Linked Devices\n2. Link a Device → phone number instead\n3. Enter the code');
           } catch (e2) {
-            await reply('Pair failed: ' + e.message + '\nUse the site: ' + pairSite);
+            await reply('Pair failed: ' + e.message);
           }
         }
         return;
