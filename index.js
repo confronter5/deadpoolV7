@@ -1,14 +1,16 @@
 /**
- * DEADPOOL V8 - Confronter Edition (full fixed)
+ * DEADPOOL V8 - Confronter Edition (full merged)
  * - APIs: https://apis.techwizardx.top  | Download site: https://confronter-downloads.onrender.com
+ * - Pair site: https://deadpool-session.onrender.com  (.pair for other users)
  * - Anti-delete / anti-edit / viewOnce: no more "Waiting for this message"
- * - .play/.audio -> real playable audio (NOT document). fileName removed from audio messages.
- * - .video -> buffer-first, proxy via download site, link last
- * - Textmakers + imagine: Confronter flux + pollinations fallback
- * - Quoted number picks fixed for APK & XVideos (cache shape bug)
- * - Panel (Pterodactyl) commands fully implemented
- * - .update = real git pull + restart, .clear, .block with verification
- * FIX: dig / envBool / envList moved above config (TDZ crash on Heroku)
+ * - .play/.audio -> pure playable audio (no caption/fileName)
+ * - .video -> pure video (no caption)
+ * - Menu: Sans Bold + Deadpool branding + loading text
+ * - Welcome/left: persistent LID map (no @lid degradation)
+ * - .block never blocks the bot number
+ * - .update = git pull + restart
+ * - Textmakers + imagine, panel, quoted APK/XV picks
+ * FIX: dig / envBool / envList before config (TDZ)
  */
 
 const {
@@ -64,7 +66,8 @@ const defaults = {
   MODE: 'public',
   SESSION: '',
   POWERED_BY: '> *Powered by Confronter*',
-  FONT: 'off',
+  FONT: 'sans-bold',
+  PAIR_SITE: 'https://deadpool-session.onrender.com',
   AUTO_VIEW_STATUS: true,
   AUTO_LIKE_STATUS: true,
   AUTO_REACT: false,
@@ -121,6 +124,7 @@ const config = {
   PANEL_APIKEY: env.PANEL_APIKEY || fileConfig.PANEL_APIKEY || defaults.PANEL_APIKEY,
   PANEL_EGG: env.PANEL_EGG || fileConfig.PANEL_EGG || defaults.PANEL_EGG,
   REPO_URL: env.REPO_URL || fileConfig.REPO_URL || defaults.REPO_URL,
+  PAIR_SITE: (env.PAIR_SITE || fileConfig.PAIR_SITE || defaults.PAIR_SITE || 'https://deadpool-session.onrender.com').replace(/\/+$/, ''),
   BOT_EXPIRY_DATE: env.BOT_EXPIRY_DATE || env.EXPIRY_DATE || fileConfig.BOT_EXPIRY_DATE || defaults.BOT_EXPIRY_DATE,
   BOT_EXPIRY_DAYS: env.BOT_EXPIRY_DAYS || env.EXPIRY_DAYS || fileConfig.BOT_EXPIRY_DAYS || defaults.BOT_EXPIRY_DAYS,
   EXPIRY_MSG: env.EXPIRY_MSG || fileConfig.EXPIRY_MSG || defaults.EXPIRY_MSG,
@@ -194,6 +198,27 @@ const groupCache = new NodeCache({ stdTTL: 5 * 60, checkperiod: 120 });
 const floodMap = new Map();
 let sock = null;
 const _lidMap = new Map();
+const LID_MAP_FILE = path.join(DATA_DIR, 'lid_map.json');
+try {
+  if (fs.existsSync(LID_MAP_FILE)) {
+    const obj = fs.readJsonSync(LID_MAP_FILE);
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (k && v && /^\d{6,15}$/.test(String(v))) _lidMap.set(String(k), String(v));
+    }
+  }
+} catch {}
+function persistLidMap() {
+  try {
+    const obj = {};
+    for (const [k, v] of _lidMap.entries()) obj[k] = v;
+    fs.writeJsonSync(LID_MAP_FILE, obj);
+  } catch {}
+}
+let _lidSaveTimer = null;
+function scheduleLidSave() {
+  if (_lidSaveTimer) return;
+  _lidSaveTimer = setTimeout(() => { _lidSaveTimer = null; persistLidMap(); }, 2000);
+}
 
 const games = { family100: {}, tebakgambar: {}, tebakkata: {}, tebakkalimat: {}, tebaklirik: {}, caklontong: {}, caklontong_desk: {}, math: {} };
 
@@ -253,7 +278,7 @@ function cacheLid(key, msg) {
     const alt = key?.participantAlt || msg?.key?.participantAlt || msg?.key?.remoteJidAlt;
     if (p && String(p).includes('@lid') && alt && !String(alt).includes('@lid')) {
       const phone = String(alt).split('@')[0].split(':')[0];
-      if (/^\d{6,15}$/.test(phone)) _lidMap.set(String(p).split('@')[0], phone);
+      if (/^\d{6,15}$/.test(phone)) { _lidMap.set(String(p).split('@')[0], phone); scheduleLidSave(); }
     }
   } catch {}
 }
@@ -266,7 +291,7 @@ function jidToPhone(jid, msg) {
     const alt = msg?.key?.participantAlt || msg?.key?.remoteJidAlt || msg?.participantAlt;
     if (alt && !String(alt).includes('@lid')) {
       const n = String(alt).split('@')[0].split(':')[0];
-      if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); return n; }
+      if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); scheduleLidSave(); return n; }
     }
     return null;
   }
@@ -284,7 +309,7 @@ async function jidToPhoneAsync(jid, msg, from) {
       const entry = meta.participants.find(x => String(x.id || '').split('@')[0] === lid || String(x.lid || '').split('@')[0] === lid);
       if (entry?.phoneNumber) {
         const n = String(entry.phoneNumber).split('@')[0].replace(/\D/g, '');
-        if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); return n; }
+        if (/^\d{6,15}$/.test(n)) { _lidMap.set(lid, n); scheduleLidSave(); return n; }
       }
     } catch {}
   }
@@ -417,9 +442,18 @@ const isBotExpired = () => getExpiryInfo() === 'Expired';
 function buildMainMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
-  let m = '💀 *' + config.BOT_NAME + '*\n👋 Hi ' + (pushName || 'User') + '!\n👥 Users: ' + (userCount || 0) + '\n⏳ Active: ' + exp + '\n\n';
+  const sb = (t) => applyFont(String(t), 'sans-bold');
+  let m = '';
+  m += '💀 *' + sb(config.BOT_NAME) + '*\n';
+  m += sb('Deadpool is king') + '\n';
+  m += sb('Ruling the Weak') + '\n';
+  m += sb('Never defeated') + '\n';
+  m += sb('Made by Confronter') + '\n\n';
+  m += '👋 Hi ' + (pushName || 'User') + '!\n';
+  m += '👥 Users: ' + (userCount || 0) + '\n';
+  m += '⏳ Active: ' + exp + '\n\n';
   const box = (title, cmds) => {
-    let s = '┌─「 *' + title + '* 」\n';
+    let s = '┌─「 *' + sb(title) + '* 」\n';
     for (const c of cmds) s += '│ ' + p + c + '\n';
     return s + '└────────────\n\n';
   };
@@ -453,6 +487,8 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
+  try { await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') }); } catch {}
+  await delay(400);
   const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
@@ -499,6 +535,9 @@ function buildStartMessage() {
 
   // default boxed start
   let m = '┌─「 ' + sb(name) + ' 」\n';
+  m += '│ ' + sb('Deadpool is king') + '\n';
+  m += '│ ' + sb('Ruling the Weak') + '\n';
+  m += '│ ' + sb('Never defeated') + '\n';
   m += '│ ' + sb('Status') + ' : ' + sb('Online') + '\n';
   m += '│ ' + sb('Prefix') + ' : ' + sb(p) + '\n';
   m += '│ ' + sb('Expiry') + ' : ' + sb(exp) + '\n';
@@ -1245,35 +1284,33 @@ async function sendAsMp3(jid, data) {
 }
 async function sendAsVideo(jid, data) {
   if (!data) return false;
-  const meta = data.meta || {};
-  const title = meta.title || data.title || 'video';
-  const caption = formatMediaCaption(meta, 'video');
+  const title = (data.meta && data.meta.title) || data.title || 'video';
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) ? data.buffer : null;
   const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
   if (!buf && u) {
     buf = await proxyFetch(u, false).catch(() => null);
     if (!buf) { try { buf = await fetchBuffer(u, 150000); } catch {} }
   }
-  // last resort: re-rip the youtube page locally when the CDN link is unfetchable
   if (!buf && u && isYoutubeUrl(u)) {
     try { const d2 = await downloadViaYtdl(u, false); if (d2?.buffer?.length > 5000) buf = d2.buffer; } catch {}
   }
+  // Pure video — no caption (same as pure audio)
   if (buf && buf.length > 5000) {
     try {
-      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4', caption });
+      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
       return true;
     } catch (e) {
       console.log('video buf:', e.message);
       try {
-        await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: title.replace(/[^\w\s\-\.]/g, '').slice(0, 40) + '.mp4', caption });
+        await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: title.replace(/[^\w\s\-\.]/g, '').slice(0, 40) + '.mp4' });
         return true;
       } catch {}
     }
   }
   if (u) {
-    try { await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4', caption }); return true; }
+    try { await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4' }); return true; }
     catch (e) { console.log('video url:', e.message); }
-    try { await sock.sendMessage(jid, { text: caption + '\n\nDownload video:\n' + u }); return true; } catch {}
+    try { await sock.sendMessage(jid, { text: 'Download video:\n' + u }); return true; } catch {}
   }
   await sock.sendMessage(jid, { text: 'Could not send video.' + buildFooter() }).catch(() => {});
   return false;
@@ -1630,15 +1667,18 @@ async function startBot() {
         if (entry?.phoneNumber) phone = String(entry.phoneNumber).split('@')[0].replace(/\D/g, '');
         if (!phone) phone = await jidToPhoneAsync(p, null, id);
         if (!phone) { const raw = String(p).split('@')[0].split(':')[0]; if (/^\d{6,15}$/.test(raw)) phone = raw; }
-        const tag = phone ? '@' + phone : (entry?.name && entry.name !== 'Unknown' ? '@' + entry.name : '@' + (String(p).split('@')[0].split(':')[0] || 'member'));
-        const mentionJid = phone ? phone + '@s.whatsapp.net' : p;
+        if (phone && String(p).includes('@lid')) { _lidMap.set(String(p).split('@')[0], phone); scheduleLidSave(); }
+        const tag = phone ? '@' + phone : (entry?.name && entry.name !== 'Unknown' ? '@' + entry.name : '@member');
+        const mentionJids = [];
+        if (phone) mentionJids.push(phone + '@s.whatsapp.net');
+        if (p) mentionJids.push(p);
         if (action === 'add' && config.WELCOME) {
           const raw = (config.WELCOME_MSG || 'Welcome @user to *@group*!').replace(/@user/gi, tag).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [mentionJid, p].filter(Boolean) });
+          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [...new Set(mentionJids)] });
         }
         if ((action === 'remove' || action === 'leave') && config.GOODBYE) {
           const raw = (config.GOODBYE_MSG || 'Goodbye @user from *@group*.').replace(/@user/gi, tag).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [mentionJid, p].filter(Boolean) });
+          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [...new Set(mentionJids)] });
         }
       }
     } catch (e) { console.log('welcome/goodbye:', e.message); }
@@ -2676,13 +2716,18 @@ async function startBot() {
 
       // ============ UPDATE (real git pull + restart) ============
       if (cmd === 'update') {
+        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
         await reply('Checking for updates...');
         try {
           if (!(await fs.pathExists(path.join(__dirname, '.git')))) {
-            await reply('No git repo found here.\nTo use .update: deploy with git (git clone ...), then set your remote. On Heroku use GitHub auto-deploy instead.');
+            await reply('No git repo found.\nDeploy with git clone, or use Heroku GitHub auto-deploy.\nOptional: REPO_URL env.');
             return;
           }
           const branch = ((await execP('git rev-parse --abbrev-ref HEAD')).stdout || 'main').trim();
+          const repoUrl = (config.REPO_URL || '').trim();
+          if (repoUrl) {
+            try { await execP('git remote set-url origin ' + repoUrl, { timeout: 15000 }); } catch {}
+          }
           await execP('git fetch origin ' + branch, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
           const local = ((await execP('git rev-parse HEAD')).stdout || '').trim();
           const remote = ((await execP('git rev-parse origin/' + branch)).stdout || '').trim();
@@ -3035,6 +3080,7 @@ async function startBot() {
         }
         if (!targets.length && !isGroup(from) && from !== 'status@broadcast') targets = [from];
         if (!targets.length) return reply('Reply to their message, tag them, or:\n' + prefix + cmd + ' 2547xxxxxxxx');
+        const botNum = dig(sock.user?.id || '');
         let ok = 0;
         const labels = [];
         const errs = [];
@@ -3045,6 +3091,10 @@ async function startBot() {
               const p2 = await jidToPhoneAsync(jid, m, from);
               if (p2 && /^\d{8,15}$/.test(p2)) phone = p2;
             } catch {}
+            if (botNum && phone === botNum) {
+              errs.push('cannot ' + cmd + ' bot number');
+              continue;
+            }
             // resolve real WA jid via onWhatsApp (avoids BAD-REQUEST)
             let targetJid = null;
             try {
@@ -3057,6 +3107,10 @@ async function startBot() {
             if (!targetJid && /^\d{8,15}$/.test(phone || '')) targetJid = phone + '@s.whatsapp.net';
             if (!targetJid) {
               errs.push('not on WhatsApp: ' + String(jid).split('@')[0]);
+              continue;
+            }
+            if (botNum && dig(targetJid) === botNum) {
+              errs.push('cannot ' + cmd + ' bot number');
               continue;
             }
             const action = cmd === 'block' ? 'block' : 'unblock';
@@ -3111,16 +3165,76 @@ async function startBot() {
         else await reply('❌ ' + cmd + ' failed.\n' + (errs.length ? errs.join('\n') : 'Reply to their message or use full number:\n' + prefix + cmd + ' 2547xxxxxxxx'));
         return;
       }
-      // ============ PAIR ============
+      // ============ PAIR (deadpool-session.onrender.com for other users) ============
       if (cmd === 'pair') {
-        const allowed = isOwner(sender, m) || !config.OWNER_NUMBER;
-        if (!allowed) { await reply(roast('owner')); return; }
         const number = dig(args[0] || '');
-        if (!number || number.length < 10) return reply('Usage: ' + prefix + 'pair 2547xxxxxxx');
+        const pairSite = (config.PAIR_SITE || 'https://deadpool-session.onrender.com').replace(/\/+$/, '');
+        if (!number || number.length < 10) {
+          await reply('📲 *Pairing*\n\nUsage: ' + prefix + 'pair 2547xxxxxxx\n\nOr open:\n' + pairSite + '\n\nNumber = country code + digits only (no +)');
+          return;
+        }
+        await reply('⏳ Requesting pairing code for +' + number + '...');
         try {
-          const code = await sock.requestPairingCode(number);
-          await reply('📲 *Pairing Code for +' + number + '*\n\n```' + code + '```\n\n1. WhatsApp -> Linked Devices\n2. Link a Device -> Link with phone number instead\n3. Enter the code (expires in ~1 minute)');
-        } catch (e) { await reply('Pairing failed: ' + e.message); }
+          const r = await axios.post(pairSite + '/api/pair', { phone: number }, {
+            timeout: 30000, validateStatus: () => true,
+            headers: { 'Content-Type': 'application/json', 'User-Agent': UA }
+          });
+          if (r.status >= 400 || !r.data?.id) throw new Error((r.data && r.data.error) || ('HTTP ' + r.status));
+          const jobId = r.data.id;
+          let code = null, session = null;
+          for (let i = 0; i < 30; i++) {
+            await delay(1500);
+            const s = await axios.get(pairSite + '/api/status/' + encodeURIComponent(jobId), {
+              timeout: 15000, validateStatus: () => true, headers: { 'User-Agent': UA }
+            });
+            if (s.status === 404) throw new Error('Session expired — try again');
+            const j = s.data || {};
+            if (j.error && j.status === 'error') throw new Error(j.error);
+            if (j.code) { code = j.code; break; }
+            if (j.session) { session = j.session; break; }
+          }
+          if (code) {
+            await reply(
+              '📲 *Pairing Code for +' + number + '*\n\n' +
+              '```' + code + '```\n\n' +
+              '*On the phone:*\n' +
+              '1. WhatsApp → Linked Devices\n' +
+              '2. Link a Device\n' +
+              '3. Link with phone number instead\n' +
+              '4. Enter the code (expires ~1 min)\n\n' +
+              'Site: ' + pairSite + '\n' +
+              '_Session will be sent when linked._'
+            );
+            (async () => {
+              try {
+                for (let i = 0; i < 25; i++) {
+                  await delay(3000);
+                  const s2 = await axios.get(pairSite + '/api/status/' + encodeURIComponent(jobId), {
+                    timeout: 12000, validateStatus: () => true
+                  }).then(x => x.data).catch(() => null);
+                  if (s2?.session) {
+                    await sock.sendMessage(from, {
+                      text: '🔑 *SESSION for +' + number + '*\n\n```' + s2.session + '```\n\nPut in env as SESSION / SESSION_ID'
+                    }).catch(() => {});
+                    break;
+                  }
+                  if (s2?.status === 'error' || s2?.status === 'done') break;
+                }
+              } catch {}
+            })();
+          } else if (session) {
+            await reply('🔑 *SESSION for +' + number + '*\n\n```' + session + '```');
+          } else {
+            await reply('Code not ready. Open the site:\n' + pairSite + '\n\nOr retry ' + prefix + 'pair ' + number);
+          }
+        } catch (e) {
+          try {
+            const code = await sock.requestPairingCode(number);
+            await reply('📲 Local code (this bot account):\n```' + code + '```\n\nSite error: ' + e.message + '\nPrefer site for *other* users:\n' + pairSite);
+          } catch (e2) {
+            await reply('Pair failed: ' + e.message + '\nUse the site: ' + pairSite);
+          }
+        }
         return;
       }
       if (cmd === 'getsession' || cmd === 'session') {
