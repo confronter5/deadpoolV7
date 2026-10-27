@@ -318,9 +318,16 @@ async function jidToPhoneAsync(jid, msg, from) {
 async function whoLabel(jid, msg, from, pushName) {
   const phone = await jidToPhoneAsync(jid, msg, from);
   if (phone) return '+' + phone;
-  const name = pushName || null;
-  if (name && name !== 'Unknown' && name.trim()) return '@' + String(name).replace(/[@\n]/g, '').trim();
-  return (String(jid || '').split('@')[0]) || 'Unknown';
+  // pushName preferred over raw lid
+  const name = (pushName || msg?.pushName || null);
+  if (name && String(name).trim() && name !== 'Unknown') {
+    return '@' + String(name).replace(/[@\n]/g, '').trim();
+  }
+  const raw = String(jid || '').split('@')[0].split(':')[0];
+  // never show long lid-looking numbers without +
+  if (/^\d{6,15}$/.test(raw) && raw.length <= 15) return '+' + raw;
+  if (name) return '@' + String(name).replace(/[@\n]/g, '').trim();
+  return 'Unknown';
 }
 function getDisplayName(jid, msg, pushName = null) {
   const phone = jidToPhone(jid, msg);
@@ -482,42 +489,33 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // ONE message: bot image + caption edited in-place (no delete, fast)
+  // One loading caption (all branding in ONE block), then edit to full menu — fast, no delete
   const sb = (t) => {
     try { return applyFont(String(t), 'sans-bold'); } catch { return String(t); }
   };
+  const loadingBlock = [
+    '⏳ Loading menu...',
+    sb('Deadpool is king'),
+    sb('Ruling the Weak'),
+    sb('Never defeated'),
+    sb('Made by Confronter')
+  ].join('\n');
+
   const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   full += foot;
 
+  // Preload image in parallel with building text
   const buffer = await resolveMenuImageBuffer();
-  const frames = [
-    '⏳ ' + sb('Loading menu...'),
-    sb('Deadpool is king'),
-    sb('Ruling the Weak'),
-    sb('Never defeated'),
-    sb('Made by Confronter')
-  ];
 
   if (buffer) {
     let key = null;
     try {
-      const sent = await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(frames[0]) });
+      const sent = await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(loadingBlock) });
       key = sent?.key || null;
-    } catch (e) {
-      console.log('menu img0:', e.message);
-    }
+    } catch (e) { console.log('menu img:', e.message); }
     if (key) {
-      // very fast caption edits on same image message
-      for (let i = 1; i < frames.length; i++) {
-        try {
-          await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(frames[i]), edit: key });
-        } catch {
-          try { await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: key }); } catch {}
-        }
-        await delay(90);
-      }
       try {
         await sock.sendMessage(jid, { image: buffer, caption: full, edit: key });
         return;
@@ -525,24 +523,19 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
         try { await sock.sendMessage(jid, { text: full, edit: key }); return; } catch {}
       }
     }
-    // fallback: single image menu
     try {
       await sock.sendMessage(jid, { image: buffer, caption: full });
       return;
     } catch {}
   }
 
-  // text-only path: edit same bubble into full menu
+  // text-only
   let loadingKey = null;
   try {
-    const loading = await sock.sendMessage(jid, { text: styleReplyText(frames[0]) });
+    const loading = await sock.sendMessage(jid, { text: styleReplyText(loadingBlock) });
     loadingKey = loading?.key || null;
   } catch {}
   if (loadingKey) {
-    for (let i = 1; i < frames.length; i++) {
-      try { await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: loadingKey }); } catch {}
-      await delay(90);
-    }
     try {
       await sock.sendMessage(jid, { text: full, edit: loadingKey });
       return;
@@ -1898,22 +1891,36 @@ async function startBot() {
       } catch {}
       for (const p of participants) {
         let phone = null;
+        let displayName = null;
         const entry = (meta?.participants || []).find(x => x.id === p || x.lid === p || dig(x.id) === dig(p) || dig(x.lid || '') === dig(p));
         if (entry?.phoneNumber) phone = String(entry.phoneNumber).split('@')[0].replace(/\D/g, '');
         if (!phone) phone = await jidToPhoneAsync(p, null, id);
-        if (!phone) { const raw = String(p).split('@')[0].split(':')[0]; if (/^\d{6,15}$/.test(raw)) phone = raw; }
-        if (phone && String(p).includes('@lid')) { _lidMap.set(String(p).split('@')[0], phone); scheduleLidSave(); }
-        const tag = phone ? '@' + phone : (entry?.name && entry.name !== 'Unknown' ? '@' + entry.name : '@member');
-        const mentionJids = [];
-        if (phone) mentionJids.push(phone + '@s.whatsapp.net');
-        if (p) mentionJids.push(p);
+        if (!phone) {
+          const raw = String(p).split('@')[0].split(':')[0];
+          // only accept real phone lengths, not huge lid ids
+          if (/^\d{8,15}$/.test(raw)) phone = raw;
+        }
+        if (entry?.name && entry.name !== 'Unknown') displayName = entry.name;
+        // Never show @lid or giant ids
+        let tag;
+        let mentionJid;
+        if (phone) {
+          tag = '@' + phone;
+          mentionJid = phone + '@s.whatsapp.net';
+        } else if (displayName) {
+          tag = '@' + String(displayName).replace(/[@\n]/g, '').trim();
+          mentionJid = p;
+        } else {
+          tag = 'member';
+          mentionJid = p;
+        }
         if (action === 'add' && config.WELCOME) {
           const raw = (config.WELCOME_MSG || 'Welcome @user to *@group*!').replace(/@user/gi, tag).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [...new Set(mentionJids)] });
+          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: phone ? [mentionJid] : [p].filter(Boolean) });
         }
         if ((action === 'remove' || action === 'leave') && config.GOODBYE) {
           const raw = (config.GOODBYE_MSG || 'Goodbye @user from *@group*.').replace(/@user/gi, tag).replace(/@group/gi, gname);
-          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: [...new Set(mentionJids)] });
+          await sock.sendMessage(id, { text: raw + buildFooter(), mentions: phone ? [mentionJid] : [p].filter(Boolean) });
         }
       }
     } catch (e) { console.log('welcome/goodbye:', e.message); }
@@ -2133,23 +2140,29 @@ async function startBot() {
       if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 1 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage || m.message?.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
+            // Ignore bot's own edits (menu loading etc.)
             const key = protoMsg.key || m.message?.editedMessage?.key || m.key;
+            if (key?.fromMe || isMe) return;
             const cached = key?.id ? (msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id)) : null;
+            // skip if cached message was from bot
+            if (cached?.fromMe) return;
             const edited = protoMsg.editedMessage || m.message?.editedMessage?.message || m.message?.protocolMessage?.editedMessage || {};
             const newText = edited.conversation || edited.extendedTextMessage?.text || edited.imageMessage?.caption || edited.videoMessage?.caption || extractText(edited) || '';
             const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached — sent before bot saw it)';
+            // skip empty noise / menu loader
+            if (/Loading menu/i.test(oldText) || /Loading menu/i.test(newText)) return;
             const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
             const ownerJid = getOwnerJid();
             const targets = [...new Set([ownerJid, me].filter(Boolean))];
             if (config.ANTI_EDIT === 'chat' && from) targets.push(from);
-            const who = await whoLabel(key?.participant || sender, m, from, m.pushName);
+            const editSender = key?.participant || key?.participantAlt || cached?.participant || sender;
+            const who = await whoLabel(editSender, { key, pushName: cached?.pushName || m.pushName }, from, cached?.pushName || m.pushName);
             const body =
               '*Anti-Edit (' + config.BOT_NAME + ')*\n' +
               'By: ' + who + '\n' +
               'Chat: ' + (isGroup(from) ? 'Group' : 'DM') + '\n\n' +
               '*Before:*\n' + oldText + '\n\n' +
               '*After:*\n' + (newText || '[media/empty]');
-            // dedupe edit alerts
             const eid = 'edit:' + (key?.id || '') + ':' + String(newText).slice(0, 40);
             if (!global.__editSeen) global.__editSeen = new Set();
             if (global.__editSeen.has(eid)) return;
@@ -3753,19 +3766,23 @@ async function startBot() {
           if (cached?.message) forwardDelete(key, cached);
           continue;
         }
-        // EDIT via update payload
+        // EDIT via update payload — only OTHER people, not bot
+        if (key.fromMe) continue;
         const editedMsg = u.update?.editedMessage || u.update?.message;
         if (editedMsg && (config.ANTI_EDIT && config.ANTI_EDIT !== 'off')) {
           const cached = msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id);
+          if (cached?.fromMe) continue;
           const newText = extractText(editedMsg) || editedMsg.conversation || editedMsg.extendedTextMessage?.text || '';
           const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached)';
+          if (/Loading menu/i.test(String(oldText)) || /Loading menu/i.test(String(newText))) continue;
           if (!newText && !oldText) continue;
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           const ownerJid = getOwnerJid();
           const targets = [...new Set([ownerJid, me].filter(Boolean))];
           const fromJ = key.remoteJid || '';
           if (config.ANTI_EDIT === 'chat' && fromJ) targets.push(fromJ);
-          const who = await whoLabel(key.participant || key.remoteJid, null, fromJ, cached?.pushName);
+          const editSender = key.participant || key.participantAlt || cached?.participant || key.remoteJid;
+          const who = await whoLabel(editSender, { key, pushName: cached?.pushName }, fromJ, cached?.pushName);
           const eid = 'edit2:' + key.id + ':' + String(newText).slice(0, 40);
           if (!global.__editSeen) global.__editSeen = new Set();
           if (global.__editSeen.has(eid)) continue;
@@ -3774,7 +3791,6 @@ async function startBot() {
           for (const t of targets) {
             try { await sock.sendMessage(t, { text: body }); } catch {}
           }
-          // refresh cache text
           if (cached) {
             cached.text = newText || cached.text;
             cached.message = editedMsg;
