@@ -443,17 +443,14 @@ function buildMainMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
   const sb = (t) => applyFont(String(t), 'sans-bold');
-  let m = '';
-  m += '💀 *' + sb(config.BOT_NAME) + '*\n';
+  let m = '💀 *' + (config.BOT_NAME || 'DEADPOOL') + '*\n';
   m += sb('Deadpool is king') + '\n';
   m += sb('Ruling the Weak') + '\n';
   m += sb('Never defeated') + '\n';
   m += sb('Made by Confronter') + '\n\n';
-  m += '👋 Hi ' + (pushName || 'User') + '!\n';
-  m += '👥 Users: ' + (userCount || 0) + '\n';
-  m += '⏳ Active: ' + exp + '\n\n';
+  m += '👋 Hi ' + (pushName || 'User') + '!\n👥 Users: ' + (userCount || 0) + '\n⏳ Active: ' + exp + '\n\n';
   const box = (title, cmds) => {
-    let s = '┌─「 *' + sb(title) + '* 」\n';
+    let s = '┌─「 *' + title + '* 」\n';
     for (const c of cmds) s += '│ ' + p + c + '\n';
     return s + '└────────────\n\n';
   };
@@ -487,7 +484,7 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // ONE message: loading text is edited in-place into the full menu (async combined)
+  // ONE bubble: loading text edited in-place into full menu (async combined)
   let loadingKey = null;
   try {
     const loading = await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') });
@@ -497,7 +494,6 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   full += foot;
-  // Prefer in-place edit so loading + menu are the same bubble
   if (loadingKey) {
     try {
       await sock.sendMessage(jid, { text: full, edit: loadingKey });
@@ -507,7 +503,6 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
       try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {}
     }
   }
-  // Fallback if edit unsupported: optional image menu, else text
   const buffer = await resolveMenuImageBuffer();
   if (buffer) {
     try { await sock.sendMessage(jid, { image: buffer, caption: full }); return; } catch {}
@@ -987,9 +982,10 @@ async function searchYoutube(query) {
 }
 
 async function downloadViaKeith(url, audioOnly = true) {
+  // Proven order from apis.keithsite.lol (SaveTube CDN works; Tokyo often blocked)
   const eps = audioOnly
-    ? ['/download/ytmp3?url=', '/download/audio?url=', '/download/dlmp3?url=', '/download/mp3?url=', '/download/yta?url=']
-    : ['/download/ytmp4?url=', '/download/video?url=', '/download/dlmp4?url=', '/download/mp4?url=', '/download/ytv?url='];
+    ? ['/download/audio?url=', '/download/yta?url=', '/download/ytmp3?url=', '/download/mp3?url=', '/download/dlmp3?url=', '/download/yta2?url=']
+    : ['/download/ytv?url=', '/download/video?url=', '/download/ytmp4?url=', '/download/mp4?url=', '/download/dlmp4?url=', '/download/ytv2?url='];
   for (const ep of eps) {
     try {
       const data = await keithGet(ep + encodeURIComponent(url), 90000);
@@ -999,11 +995,30 @@ async function downloadViaKeith(url, audioOnly = true) {
       const meta = extractMeta(data);
       const title = String(meta.title || data.title || 'Media').slice(0, 120);
       let buf = null;
-      try { buf = await fetchBuffer(String(mediaUrl), 120000); } catch {}
+      // SaveTube / CDN with proper referer
+      try {
+        const r = await axios.get(String(mediaUrl), {
+          responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true, maxRedirects: 8,
+          headers: {
+            'User-Agent': UA,
+            Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,video/*,*/*',
+            Referer: /savetube|savenow/i.test(mediaUrl) ? 'https://savetube.me/' : ( /tokyo/i.test(mediaUrl) ? 'https://123tokyo.xyz/' : 'https://www.youtube.com/'),
+            Origin: /savetube/i.test(mediaUrl) ? 'https://savetube.me' : undefined,
+            'Accept-Encoding': 'identity'
+          }
+        });
+        if (r.status < 400 && r.data) {
+          const b = Buffer.from(r.data);
+          if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) buf = b;
+        }
+      } catch {}
       if (!buf || buf.length < 5000) {
         try { buf = await proxyFetch(mediaUrl, audioOnly); } catch {}
       }
-      return { buffer: (buf && buf.length > 5000) ? buf : null, title, url: String(mediaUrl), meta: { ...meta, title } };
+      if (!buf || buf.length < 5000) {
+        try { buf = await fetchBuffer(String(mediaUrl), 120000); } catch {}
+      }
+      return { buffer: (buf && buf.length > 5000) ? buf : null, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
     } catch (e) { console.log('keith ep', ep, (e.message || '').slice(0, 50)); }
   }
   return null;
@@ -1457,36 +1472,35 @@ async function sendAsMp3(jid, data) {
 }
 async function sendAsVideo(jid, data) {
   if (!data) return false;
-  const title = (data.meta && data.meta.title) || data.title || 'video';
+  // Pure video — no caption, no download links in chat
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) ? data.buffer : null;
   const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
   if (!buf && u) {
-    buf = await proxyFetch(u, false).catch(() => null);
+    try {
+      const r = await axios.get(String(u), {
+        responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true, maxRedirects: 8,
+        headers: {
+          'User-Agent': UA,
+          Accept: 'video/mp4,video/*,*/*',
+          Referer: /savetube/i.test(u) ? 'https://savetube.me/' : 'https://www.youtube.com/',
+          'Accept-Encoding': 'identity'
+        }
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        if (b.length > 5000 && b[0] !== 0x7b) buf = b;
+      }
+    } catch {}
+    if (!buf) buf = await proxyFetch(u, false).catch(() => null);
     if (!buf) { try { buf = await fetchBuffer(u, 150000); } catch {} }
   }
-  if (!buf && u && isYoutubeUrl(u)) {
-    try { const d2 = await downloadViaYtdl(u, false); if (d2?.buffer?.length > 5000) buf = d2.buffer; } catch {}
-  }
-  // Pure video — no caption (same as pure audio)
   if (buf && buf.length > 5000) {
     try {
       await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
       return true;
-    } catch (e) {
-      console.log('video buf:', e.message);
-      try {
-        await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: title.replace(/[^\w\s\-\.]/g, '').slice(0, 40) + '.mp4' });
-        return true;
-      } catch {}
-    }
+    } catch (e) { console.log('video buf:', e.message); }
   }
   if (u) {
-    // force buffer once more before URL
-    let b3 = await proxyFetch(u, false).catch(() => null);
-    if (!b3) { try { b3 = await fetchBuffer(u, 180000); } catch {} }
-    if (b3 && b3.length > 5000) {
-      try { await sock.sendMessage(jid, { video: b3, mimetype: 'video/mp4' }); return true; } catch {}
-    }
     try { await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4' }); return true; }
     catch (e) { console.log('video url:', e.message); }
   }
@@ -2908,18 +2922,30 @@ async function startBot() {
         await reply('Checking for updates...');
         try {
           if (!(await fs.pathExists(path.join(__dirname, '.git')))) {
-            await reply('No git repo found.\nDeploy with git clone, or use Heroku GitHub auto-deploy.\nOptional: REPO_URL env.');
+            const repoUrl = (config.REPO_URL || process.env.REPO_URL || '').trim();
+            if (repoUrl) {
+              await reply('No local .git — cloning from REPO_URL...');
+              try {
+                await execP('git clone --depth 1 "' + repoUrl + '" "' + path.join(__dirname, '_update_tmp') + '"', { timeout: 120000 });
+                await reply('Clone OK. Prefer deploying from git so .update can pull. Restarting...');
+                setTimeout(() => process.exit(1), 1500);
+              } catch (e) {
+                await reply('Clone failed: ' + e.message + '\nSet REPO_URL to your GitHub repo and deploy with git.');
+              }
+              return;
+            }
+            await reply('No git repo found.\nDeploy with git clone, or set REPO_URL in .env.\nHeroku: use GitHub auto-deploy.');
             return;
           }
           const branch = ((await execP('git rev-parse --abbrev-ref HEAD')).stdout || 'main').trim();
-          const repoUrl = (config.REPO_URL || '').trim();
+          const repoUrl = (config.REPO_URL || process.env.REPO_URL || '').trim();
           if (repoUrl) {
-            try { await execP('git remote set-url origin ' + repoUrl, { timeout: 15000 }); } catch {}
+            try { await execP('git remote set-url origin "' + repoUrl + '"', { timeout: 15000 }); } catch {}
           }
           await execP('git fetch origin ' + branch, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
           const local = ((await execP('git rev-parse HEAD')).stdout || '').trim();
           const remote = ((await execP('git rev-parse origin/' + branch)).stdout || '').trim();
-          if (!remote) { await reply('No remote branch origin/' + branch + ' found.'); return; }
+          if (!remote) { await reply('No remote branch origin/' + branch); return; }
           if (local === remote) { await reply('Already up to date (' + branch + ').'); return; }
           await execP('git reset --hard origin/' + branch, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
           try { await execP('npm install --omit=dev', { timeout: 240000, maxBuffer: 50 * 1024 * 1024 }); }
