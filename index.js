@@ -982,28 +982,28 @@ async function searchYoutube(query) {
 }
 
 async function downloadViaKeith(url, audioOnly = true) {
-  // Proven order from apis.keithsite.lol (SaveTube CDN works; Tokyo often blocked)
+  // Fast path only — proven SaveTube endpoints (skip slow/failing ones)
   const eps = audioOnly
-    ? ['/download/audio?url=', '/download/yta?url=', '/download/ytmp3?url=', '/download/mp3?url=', '/download/dlmp3?url=', '/download/yta2?url=']
-    : ['/download/ytv?url=', '/download/video?url=', '/download/ytmp4?url=', '/download/mp4?url=', '/download/dlmp4?url=', '/download/ytv2?url='];
+    ? ['/download/audio?url=', '/download/yta?url=']
+    : ['/download/ytv?url=', '/download/video?url='];
   for (const ep of eps) {
     try {
-      const data = await keithGet(ep + encodeURIComponent(url), 90000);
+      const data = await keithGet(ep + encodeURIComponent(url), 45000);
       if (!data || data.status === false || data.success === false) continue;
       const mediaUrl = extractMediaUrl(data);
       if (!mediaUrl) continue;
       const meta = extractMeta(data);
       const title = String(meta.title || data.title || 'Media').slice(0, 120);
       let buf = null;
-      // SaveTube / CDN with proper referer
       try {
         const r = await axios.get(String(mediaUrl), {
-          responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true, maxRedirects: 8,
+          responseType: 'arraybuffer', timeout: 90000, maxContentLength: 300 * 1024 * 1024,
+          validateStatus: () => true, maxRedirects: 5,
           headers: {
             'User-Agent': UA,
             Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,video/*,*/*',
-            Referer: /savetube|savenow/i.test(mediaUrl) ? 'https://savetube.me/' : ( /tokyo/i.test(mediaUrl) ? 'https://123tokyo.xyz/' : 'https://www.youtube.com/'),
-            Origin: /savetube/i.test(mediaUrl) ? 'https://savetube.me' : undefined,
+            Referer: 'https://savetube.me/',
+            Origin: 'https://savetube.me',
             'Accept-Encoding': 'identity'
           }
         });
@@ -1012,13 +1012,11 @@ async function downloadViaKeith(url, audioOnly = true) {
           if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) buf = b;
         }
       } catch {}
-      if (!buf || buf.length < 5000) {
-        try { buf = await proxyFetch(mediaUrl, audioOnly); } catch {}
+      if (buf && buf.length > 5000) {
+        return { buffer: buf, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
       }
-      if (!buf || buf.length < 5000) {
-        try { buf = await fetchBuffer(String(mediaUrl), 120000); } catch {}
-      }
-      return { buffer: (buf && buf.length > 5000) ? buf : null, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
+      // return URL even without buffer so caller can retry once
+      return { buffer: null, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
     } catch (e) { console.log('keith ep', ep, (e.message || '').slice(0, 50)); }
   }
   return null;
@@ -1200,149 +1198,38 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  let lastUrl = null, lastMeta = null;
-  // 0) DOWNLOAD_SITE + Confronter gateway (site uses both)
-  try {
-    const paths = audioOnly
-      ? [
-          DOWNLOAD_SITE + '/api/yt/mp3?url=',
-          CONFRONTER_API + '/api/download/ytmp3/file?url=',
-          CONFRONTER_API + '/api/gateway/download/ytmp3/file?url=',
-          CONFRONTER_API + '/api/download/ytmp3?url=',
-          CONFRONTER_API + '/api/gateway/download/ytmp3?url='
-        ]
-      : [
-          DOWNLOAD_SITE + '/api/yt/mp4?url=',
-          CONFRONTER_API + '/api/download/ytmp4/file?url=',
-          CONFRONTER_API + '/api/gateway/download/ytmp4/file?url=',
-          CONFRONTER_API + '/api/download/ytmp4?url=',
-          CONFRONTER_API + '/api/gateway/download/ytmp4?url='
-        ];
-    for (const full of paths) {
-      try {
-        // binary file endpoints
-        if (full.includes('/file?')) {
-          const r = await axios.get(full + encodeURIComponent(url), {
-            responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
-            headers: { 'User-Agent': UA, Accept: audioOnly ? 'audio/mpeg,*/*' : 'video/mp4,*/*' }
-          });
-          if (r.status < 400 && r.data) {
-            const b = Buffer.from(r.data);
-            if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) {
-              return { buffer: b, title, url: null, meta: { title } };
-            }
-          }
-          continue;
-        }
-        const r = await dlGet(full + encodeURIComponent(url), { timeout: 120000 });
-        const d = r?.data?.result || r?.data;
-        if (d?.buffer || d?.data) {
-          try {
-            const raw = d.buffer || d.data;
-            const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'base64');
-            if (buf.length > 5000) return { buffer: buf, title: d?.title || title, url: null, meta: d };
-          } catch {}
-        }
-        const mediaUrl = d?.url || d?.download || d?.link || extractMediaUrl(r?.data);
-        if (mediaUrl) {
-          let buf = await proxyFetch(mediaUrl, audioOnly).catch(() => null);
-          if (!buf) buf = await tryFetchMediaUrl(mediaUrl);
-          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: String(mediaUrl), meta: d };
-          lastUrl = String(mediaUrl); lastMeta = d;
-        }
-      } catch (e) { console.log('yt0:', (e.message || '').slice(0, 50)); }
-    }
-  } catch (e) { console.log('yt site0:', (e.message || '').slice(0, 50)); }
-  // 1) local yt-dlp / ytdl-core (buffer on VPS; may fail on slim Heroku)
-  try {
-    const d = await downloadViaYtdl(url, audioOnly);
-    if (d?.buffer && d.buffer.length > 5000) { d.title = d.title || title; return d; }
-  } catch (e) { console.log('ytdl:', (e.message || '').slice(0, 60)); }
-  // 2) Keith API
+  // Fast: Keith SaveTube only (usually < 10s)
   try {
     const d = await downloadViaKeith(url, audioOnly);
-    if (d) {
+    if (d?.buffer && d.buffer.length > 5000) {
       d.title = d.title || title;
-      if (d.buffer && d.buffer.length > 5000) return d;
-      if (d.url) {
-        lastUrl = d.url; lastMeta = d.meta || { title: d.title };
-        let buf = await proxyFetch(d.url, audioOnly).catch(() => null);
-        if (!buf) buf = await tryFetchMediaUrl(d.url);
-        if (buf && buf.length > 5000) return { buffer: buf, title: d.title, url: d.url, meta: d.meta };
-      }
+      return d;
+    }
+    if (d?.url) {
+      // one more direct fetch
+      try {
+        const r = await axios.get(String(d.url), {
+          responseType: 'arraybuffer', timeout: 90000, maxContentLength: 300 * 1024 * 1024,
+          validateStatus: () => true, maxRedirects: 5,
+          headers: { 'User-Agent': UA, Accept: '*/*', Referer: 'https://savetube.me/', 'Accept-Encoding': 'identity' }
+        });
+        if (r.status < 400 && r.data) {
+          const b = Buffer.from(r.data);
+          if (b.length > 5000 && b[0] !== 0x7b) {
+            return { buffer: b, title: d.title || title, url: d.url, meta: d.meta };
+          }
+        }
+      } catch {}
     }
   } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 60)); }
-  // 3) Confronter fallback
+  // Fallback: confronter file binary (skip slow ytdl on cloud)
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const d = await downloadViaConfronter(url, audioOnly);
-      if (!d) continue;
+    const d = await downloadViaConfronter(url, audioOnly);
+    if (d?.buffer && d.buffer.length > 5000) {
       d.title = d.title || title;
-      if (d.buffer && d.buffer.length > 5000) return d;
-      if (d.url) {
-        lastUrl = d.url; lastMeta = d.meta || { title: d.title };
-        let buf = await proxyFetch(d.url, audioOnly).catch(() => null);
-        if (!buf) buf = await tryFetchMediaUrl(d.url);
-        if (buf && buf.length > 5000) return { buffer: buf, title: d.title, url: d.url, meta: d.meta };
-        await delay(400);
-      }
+      return d;
     }
-  } catch (e) { console.log('confronter dl:', (e.message || '').slice(0, 60)); }
-  // DOWNLOAD_SITE yt endpoints (often return usable CDN + better for buffer)
-  try {
-    for (const path of (audioOnly
-      ? ['/api/yt/mp3?url=', '/api/download/ytmp3?url=', '/api/ytdl/mp3?url=']
-      : ['/api/yt/mp4?url=', '/api/download/ytmp4?url=', '/api/ytdl/mp4?url='])) {
-      try {
-        const r = await dlGet(DOWNLOAD_SITE + path + encodeURIComponent(url), { timeout: 120000 });
-        const d = r?.data?.result || r?.data;
-        // binary-like? some sites return buffer base64
-        if (d?.buffer || d?.data) {
-          try {
-            const raw = d.buffer || d.data;
-            const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'base64');
-            if (buf.length > 5000) return { buffer: buf, title: d?.title || title, url: null, meta: d };
-          } catch {}
-        }
-        const mediaUrl = d?.url || d?.download || d?.link || extractMediaUrl(r?.data);
-        if (mediaUrl) {
-          lastUrl = String(mediaUrl); lastMeta = d;
-          let buf = await proxyFetch(mediaUrl, audioOnly).catch(() => null);
-          if (!buf) buf = await tryFetchMediaUrl(mediaUrl);
-          if (buf && buf.length > 5000) return { buffer: buf, title: d?.title || title, url: String(mediaUrl), meta: d };
-        }
-      } catch (e) { console.log('DOWNLOAD_SITE path:', (e.message || '').slice(0, 50)); }
-    }
-  } catch (e) { console.log('DOWNLOAD_SITE:', (e.message || '').slice(0, 60)); }
-  // Hard buffer for Tokyo / CDN — never give up after one fail
-  if (lastUrl) {
-    for (let i = 0; i < 3; i++) {
-      let buf = await proxyFetch(lastUrl, audioOnly).catch(() => null);
-      if (!buf) buf = await tryFetchMediaUrl(lastUrl);
-      if (!buf) {
-        try {
-          const r = await axios.get(String(lastUrl), {
-            responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true,
-            headers: {
-              'User-Agent': UA,
-              Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,*/*',
-              Referer: 'https://123tokyo.xyz/',
-              Origin: 'https://123tokyo.xyz',
-              'Accept-Encoding': 'identity'
-            }
-          });
-          if (r.status < 400 && r.data) {
-            const b = Buffer.from(r.data);
-            if (b.length > 5000 && b[0] !== 0x7b) buf = b;
-          }
-        } catch {}
-      }
-      if (buf && buf.length > 5000) return { buffer: buf, title: (lastMeta && (lastMeta.title || lastMeta.name)) || title, url: lastUrl, meta: lastMeta || { title } };
-      await delay(600);
-    }
-  }
-  // last: still return url so sender can try WA-side fetch, but sender will also re-buffer
-  if (lastUrl) return { buffer: null, url: lastUrl, title: (lastMeta && (lastMeta.title || lastMeta.name)) || title, meta: lastMeta || { title } };
+  } catch (e) { console.log('confronter yt:', (e.message || '').slice(0, 60)); }
   return null;
 }
 
@@ -1385,100 +1272,51 @@ async function sendAsMp3(jid, data) {
   if (!data) return false;
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 3000) ? data.buffer : null;
   const mediaUrl = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
-
-  if (!buf && mediaUrl) buf = await fetchAudioBuffer(mediaUrl);
-  if (!buf && mediaUrl && isYoutubeUrl(mediaUrl)) {
-    try { const again = await downloadViaYtdl(mediaUrl, true); if (again?.buffer?.length > 3000) buf = again.buffer; } catch {}
-  }
-  if (!buf) {
-    const yt = mediaUrl || data.meta?.url || data.pageUrl;
-    if (yt && isYoutubeUrl(String(yt))) {
-      try {
-        const d2 = await downloadViaKeith(String(yt), true);
-        if (d2?.buffer?.length > 3000) buf = d2.buffer;
-        else if (d2?.url) buf = await fetchAudioBuffer(d2.url);
-      } catch {}
-    }
-  }
-
-  if (buf && buf.length > 3000) {
+  if (!buf && mediaUrl) {
     try {
-      const converted = await toMp3(buf);
-      if (converted && converted.length > 1000) buf = converted;
+      const r = await axios.get(String(mediaUrl), {
+        responseType: 'arraybuffer', timeout: 90000, maxContentLength: 80 * 1024 * 1024,
+        validateStatus: () => true, maxRedirects: 5,
+        headers: { 'User-Agent': UA, Accept: 'audio/mpeg,audio/*,*/*', Referer: 'https://savetube.me/', 'Accept-Encoding': 'identity' }
+      });
+      if (r.status < 400 && r.data) {
+        const b = Buffer.from(r.data);
+        if (b.length > 3000 && b[0] !== 0x7b) buf = b;
+      }
     } catch {}
-    // shrink if too big for a WhatsApp audio message (>15MB)
-    const ff = which('ffmpeg');
-    if (ff && buf.length > 15 * 1024 * 1024) {
+  }
+  if (buf && buf.length > 3000) {
+    // skip ffmpeg if already mp3 (ID3 or frame sync) — big speed win
+    const isMp3 = (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0);
+    if (!isMp3) {
       try {
-        const inp = path.join(TMP_DIR, 'big' + Date.now() + '.bin'), outp = inp + '.mp3';
-        await fs.writeFile(inp, buf);
-        await execP('"' + ff + '" -y -i "' + inp + '" -vn -c:a libmp3lame -b:a 64k "' + outp + '"', { timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
-        const out = await fs.readFile(outp);
-        if (out.length > 1000) buf = out;
-        try { await fs.remove(inp); await fs.remove(outp); } catch {}
+        const converted = await toMp3(buf);
+        if (converted && converted.length > 1000) buf = converted;
       } catch {}
     }
-    // pick the mimetype that matches the ACTUAL bytes so WA renders a player, not a document
-    const guessed = guessAudioMime(buf);
-    const mimes = [];
-    if (guessed === 'audio/ogg') mimes.push('audio/ogg; codecs=opus', 'audio/ogg');
-    else if (guessed === 'audio/mp4') mimes.push('audio/mp4', 'audio/mpeg');
-    else if (guessed === 'audio/wav') mimes.push('audio/mpeg', 'audio/mp4');
-    else mimes.push('audio/mpeg', 'audio/mp4', 'audio/ogg; codecs=opus');
-    for (const mime of [...new Set(mimes)]) {
+    try {
+      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false });
+      return true;
+    } catch (e) {
+      console.log('audio send', e.message);
       try {
-        await sock.sendMessage(jid, { audio: buf, mimetype: mime, ptt: false });
+        await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4', ptt: false });
         return true;
-      } catch (e) { console.log('audio send', mime, e.message); }
-    }
-  }
-
-  // Final: re-download via yt APIs then send buffer only (no long CDN links in chat)
-  if (mediaUrl || data.pageUrl) {
-    const yt = (data.pageUrl && isYoutubeUrl(data.pageUrl)) ? data.pageUrl : (isYoutubeUrl(mediaUrl) ? mediaUrl : null);
-    if (yt) {
-      try {
-        const again = await downloadViaYtdl(yt, true);
-        if (again?.buffer?.length > 3000) {
-          let b = again.buffer;
-          try { const c = await toMp3(b); if (c?.length > 1000) b = c; } catch {}
-          try {
-            await sock.sendMessage(jid, { audio: b, mimetype: 'audio/mpeg', ptt: false });
-            return true;
-          } catch {}
-        }
       } catch {}
     }
-    // one more proxy round
-    if (mediaUrl) {
-      const b2 = await fetchAudioBuffer(mediaUrl);
-      if (b2 && b2.length > 3000) {
-        try {
-          await sock.sendMessage(jid, { audio: b2, mimetype: guessAudioMime(b2), ptt: false });
-          return true;
-        } catch {}
-      }
-      for (const mime of ['audio/mpeg', 'audio/mp4']) {
-        try {
-          await sock.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: mime, ptt: false });
-          return true;
-        } catch (e) { console.log('audio url', mime, e.message); }
-      }
-    }
   }
-
-  await sock.sendMessage(jid, { text: 'Could not send playable audio. Try again or use a direct YouTube link.' + buildFooter() }).catch(() => {});
+  await sock.sendMessage(jid, { text: 'Could not send playable audio. Try another song.' + buildFooter() }).catch(() => {});
   return false;
 }
 async function sendAsVideo(jid, data) {
   if (!data) return false;
-  // Pure video — no caption, no download links in chat
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) ? data.buffer : null;
   const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
   if (!buf && u) {
     try {
       const r = await axios.get(String(u), {
-        responseType: 'arraybuffer', timeout: 180000, maxContentLength: 300 * 1024 * 1024, validateStatus: () => true, maxRedirects: 8,
+        responseType: 'arraybuffer', timeout: 120000, maxContentLength: 300 * 1024 * 1024,
+        validateStatus: () => true, maxRedirects: 5,
         headers: {
           'User-Agent': UA,
           Accept: 'video/mp4,video/*,*/*',
@@ -1488,23 +1326,32 @@ async function sendAsVideo(jid, data) {
       });
       if (r.status < 400 && r.data) {
         const b = Buffer.from(r.data);
+        // ftyp = mp4
         if (b.length > 5000 && b[0] !== 0x7b) buf = b;
       }
     } catch {}
-    if (!buf) buf = await proxyFetch(u, false).catch(() => null);
-    if (!buf) { try { buf = await fetchBuffer(u, 150000); } catch {} }
   }
   if (buf && buf.length > 5000) {
+    // ensure looks like video
     try {
-      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4', gifPlayback: false });
       return true;
-    } catch (e) { console.log('video buf:', e.message); }
+    } catch (e1) {
+      console.log('video send1:', e1.message);
+      try {
+        await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+        return true;
+      } catch (e2) {
+        console.log('video send2:', e2.message);
+        // last resort document with video mime (still openable)
+        try {
+          await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
+          return true;
+        } catch (e3) { console.log('video doc:', e3.message); }
+      }
+    }
   }
-  if (u) {
-    try { await sock.sendMessage(jid, { video: { url: u }, mimetype: 'video/mp4' }); return true; }
-    catch (e) { console.log('video url:', e.message); }
-  }
-  await sock.sendMessage(jid, { text: 'Could not send video. Try a direct YouTube link.' + buildFooter() }).catch(() => {});
+  await sock.sendMessage(jid, { text: 'Could not send playable video. Try a shorter clip or direct YouTube link.' + buildFooter() }).catch(() => {});
   return false;
 }
 
@@ -2415,26 +2262,37 @@ async function startBot() {
       // ============ PLAY (auto audio) ============
       if (['play', 'song', 'music'].includes(cmd)) {
         if (!text) { await reply('Usage: ' + prefix + 'play <song name>'); return; }
-        await reply('Searching...');
         const q = text.replace(/\s+/g, ' ').trim();
-        const hit = await searchYoutube(q);
+        // parallel: search meta + download at same time when we already have URL
+        let hit = null;
+        const searchP = isYoutubeUrl(q) ? Promise.resolve({ url: q.trim(), title: q }) : searchYoutube(q);
+        hit = await searchP;
         if (hit?.url) {
+          // fire download immediately (don't wait for thumbnail upload)
+          const dlP = downloadYouTube(hit.url, true);
           const v = hit.views != null ? Number(hit.views) : null;
           const views = v ? (v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : String(v)) : '';
           const caption = '🎵 *' + (hit.title || q) + '*' + (hit.author ? '\n👤 ' + hit.author : '') + (views ? '\n👁 ' + views + ' views' : '') + (hit.duration ? '\n⏱ ' + hit.duration : '') + '\n\nDownloading audio...';
-          try {
-            if (hit.thumbnail) await sock.sendMessage(from, { image: { url: hit.thumbnail }, caption: caption + buildFooter() }, { quoted: m });
-            else await reply(caption);
-          } catch { await reply(caption); }
+          // send card without awaiting full finish before download
+          const cardP = (async () => {
+            try {
+              if (hit.thumbnail) await sock.sendMessage(from, { image: { url: hit.thumbnail }, caption: caption + buildFooter() }, { quoted: m });
+              else await reply(caption);
+            } catch { await reply(caption).catch(() => {}); }
+          })();
+          const data = await dlP;
+          await cardP.catch(() => {});
+          if (!data?.buffer && !data?.url) { await reply('Could not download audio. Try another name.'); return; }
+          data.title = data.title || hit?.title || q;
+          const ok = await sendAsMp3(from, data);
+          if (!ok) await reply('Failed to send audio.');
         } else {
-          await reply('Search unavailable - trying direct download...');
+          await reply('Searching...');
+          const data = await downloadYouTube(q, true);
+          if (!data?.buffer && !data?.url) { await reply('Could not download audio.'); return; }
+          const ok = await sendAsMp3(from, data);
+          if (!ok) await reply('Failed to send audio.');
         }
-        const data = await downloadYouTube(hit?.url || q, true);
-        if (!data?.buffer && !data?.url) { await reply('Could not download audio. Try another name or a direct YouTube link.'); return; }
-        data.title = data.title || hit?.title || q;
-        data.meta = { title: data.title, author: hit?.author || data.author || '', views: hit?.views, thumbnail: hit?.thumbnail };
-        const ok = await sendAsMp3(from, data);
-        if (!ok) await reply('Failed to send audio.');
         return;
       }
 
@@ -2919,39 +2777,39 @@ async function startBot() {
       // ============ UPDATE (real git pull + restart) ============
       if (cmd === 'update') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('Checking for updates...');
+        await reply('Updating / restarting bot...');
         try {
-          if (!(await fs.pathExists(path.join(__dirname, '.git')))) {
-            const repoUrl = (config.REPO_URL || process.env.REPO_URL || '').trim();
-            if (repoUrl) {
-              await reply('No local .git — cloning from REPO_URL...');
-              try {
-                await execP('git clone --depth 1 "' + repoUrl + '" "' + path.join(__dirname, '_update_tmp') + '"', { timeout: 120000 });
-                await reply('Clone OK. Prefer deploying from git so .update can pull. Restarting...');
-                setTimeout(() => process.exit(1), 1500);
-              } catch (e) {
-                await reply('Clone failed: ' + e.message + '\nSet REPO_URL to your GitHub repo and deploy with git.');
-              }
+          // 1) Heroku: restart all dynos (code itself updates via GitHub deploy / Heroku Git)
+          const herokuApp = process.env.HEROKU_APP_NAME || process.env.HEROKU_APP || '';
+          const herokuKey = process.env.HEROKU_API_KEY || process.env.HEROKU_API_TOKEN || '';
+          if (herokuApp && herokuKey) {
+            try {
+              await axios.delete(
+                'https://api.heroku.com/apps/' + encodeURIComponent(herokuApp) + '/dynos',
+                {
+                  headers: {
+                    Authorization: 'Bearer ' + herokuKey,
+                    Accept: 'application/vnd.heroku+json; version=3',
+                    'Content-Type': 'application/json'
+                  },
+                  timeout: 30000,
+                  validateStatus: () => true
+                }
+              );
+              await reply('Heroku restart requested for *' + herokuApp + '*.\nPush new code to the Heroku/GitHub repo so the next boot loads it.');
               return;
+            } catch (e) {
+              await reply('Heroku API error: ' + (e.message || e) + '\nFalling back to process restart...');
             }
-            await reply('No git repo found.\nDeploy with git clone, or set REPO_URL in .env.\nHeroku: use GitHub auto-deploy.');
-            return;
           }
-          const branch = ((await execP('git rev-parse --abbrev-ref HEAD')).stdout || 'main').trim();
+          // 2) Render / generic: just exit — platform restarts the service
+          //    (code updates only when you redeploy from GitHub)
           const repoUrl = (config.REPO_URL || process.env.REPO_URL || '').trim();
-          if (repoUrl) {
-            try { await execP('git remote set-url origin "' + repoUrl + '"', { timeout: 15000 }); } catch {}
-          }
-          await execP('git fetch origin ' + branch, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
-          const local = ((await execP('git rev-parse HEAD')).stdout || '').trim();
-          const remote = ((await execP('git rev-parse origin/' + branch)).stdout || '').trim();
-          if (!remote) { await reply('No remote branch origin/' + branch); return; }
-          if (local === remote) { await reply('Already up to date (' + branch + ').'); return; }
-          await execP('git reset --hard origin/' + branch, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
-          try { await execP('npm install --omit=dev', { timeout: 240000, maxBuffer: 50 * 1024 * 1024 }); }
-          catch (e) { await reply('Code updated but npm install had issues: ' + e.message); }
-          await reply('Updated to latest ' + branch + '.\nRestarting in 2s...');
-          setTimeout(() => process.exit(1), 2000);
+          let msg = 'Restarting now...';
+          if (repoUrl) msg += '\nRepo: ' + repoUrl + '\n(Connect GitHub auto-deploy so new commits go live on restart)';
+          else msg += '\nTip: set HEROKU_APP_NAME + HEROKU_API_KEY for Heroku, or REPO_URL + GitHub auto-deploy on Render.';
+          await reply(msg);
+          setTimeout(() => process.exit(1), 1500);
         } catch (e) { await reply('Update failed: ' + (e.message || e)); }
         return;
       }
