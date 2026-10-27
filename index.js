@@ -482,50 +482,67 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // Async loading text (branding) edited in-place, then full menu with image (no branding in final)
+  // ONE message: bot image + caption edited in-place (no delete, fast)
   const sb = (t) => {
     try { return applyFont(String(t), 'sans-bold'); } catch { return String(t); }
   };
+  const foot = buildFooter();
+  let full = buildMainMenu(pushName, userCount);
+  try { full = styleReplyText(full); } catch {}
+  full += foot;
+
+  const buffer = await resolveMenuImageBuffer();
   const frames = [
     '⏳ ' + sb('Loading menu...'),
     sb('Deadpool is king'),
     sb('Ruling the Weak'),
     sb('Never defeated'),
-    sb('Made by Confronter'),
-    '⏳ ' + sb('Loading menu...')
+    sb('Made by Confronter')
   ];
+
+  if (buffer) {
+    let key = null;
+    try {
+      const sent = await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(frames[0]) });
+      key = sent?.key || null;
+    } catch (e) {
+      console.log('menu img0:', e.message);
+    }
+    if (key) {
+      // very fast caption edits on same image message
+      for (let i = 1; i < frames.length; i++) {
+        try {
+          await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(frames[i]), edit: key });
+        } catch {
+          try { await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: key }); } catch {}
+        }
+        await delay(90);
+      }
+      try {
+        await sock.sendMessage(jid, { image: buffer, caption: full, edit: key });
+        return;
+      } catch {
+        try { await sock.sendMessage(jid, { text: full, edit: key }); return; } catch {}
+      }
+    }
+    // fallback: single image menu
+    try {
+      await sock.sendMessage(jid, { image: buffer, caption: full });
+      return;
+    } catch {}
+  }
+
+  // text-only path: edit same bubble into full menu
   let loadingKey = null;
   try {
     const loading = await sock.sendMessage(jid, { text: styleReplyText(frames[0]) });
     loadingKey = loading?.key || null;
   } catch {}
-  // Fast sequential edits (no long delay)
   if (loadingKey) {
     for (let i = 1; i < frames.length; i++) {
-      try {
-        await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: loadingKey });
-      } catch {}
-      await delay(180);
+      try { await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: loadingKey }); } catch {}
+      await delay(90);
     }
-  }
-  // Build final menu (no branding lines)
-  const foot = buildFooter();
-  let full = buildMainMenu(pushName, userCount);
-  try { full = styleReplyText(full); } catch {}
-  full += foot;
-  const buffer = await resolveMenuImageBuffer();
-  if (buffer) {
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption: full });
-      // remove loading text bubble after menu image is up
-      if (loadingKey) {
-        try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {}
-      }
-      return;
-    } catch (e) { console.log('menu image:', e.message); }
-  }
-  // Text-only: edit loading into full menu (same bubble)
-  if (loadingKey) {
     try {
       await sock.sendMessage(jid, { text: full, edit: loadingKey });
       return;
@@ -1121,7 +1138,17 @@ async function downloadViaKeith(url, audioOnly = true) {
 }
 
 // ============ FFMPEG / YT-DLP ============
-function which(bin) { for (const p of ['/usr/bin/' + bin, '/usr/local/bin/' + bin, './' + bin]) { try { if (fs.existsSync(p)) return p; } catch {} } return null; }
+function which(bin) {
+  for (const p of ['/usr/bin/' + bin, '/usr/local/bin/' + bin, '/bin/' + bin, './' + bin, path.join(__dirname, bin)]) {
+    try { if (fs.existsSync(p)) return p; } catch {}
+  }
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('command -v ' + bin + ' || which ' + bin + ' || true', { timeout: 3000 }).toString().trim().split('\n')[0];
+    if (out && fs.existsSync(out)) return out;
+  } catch {}
+  return null;
+}
 async function toMp3(buf) {
   const ff = which('ffmpeg');
   if (!ff || !buf?.length) return buf;
@@ -1413,7 +1440,7 @@ async function sendAsVideo(jid, data) {
   if (!buf && u) {
     try {
       const r = await axios.get(String(u), {
-        responseType: 'arraybuffer', timeout: 150000, maxContentLength: 300 * 1024 * 1024,
+        responseType: 'arraybuffer', timeout: 150000, maxContentLength: 200 * 1024 * 1024,
         validateStatus: () => true, maxRedirects: 5,
         headers: {
           'User-Agent': UA,
@@ -1432,47 +1459,73 @@ async function sendAsVideo(jid, data) {
     await sock.sendMessage(jid, { text: 'Could not download video.' + buildFooter() }).catch(() => {});
     return false;
   }
-  // Detect if already mp4 (ftyp)
-  const head = buf.slice(0, 64).toString('binary');
-  const isMp4 = head.includes('ftyp');
-  const ff = which('ffmpeg');
-  // Always remux with ffmpeg when available — WhatsApp rejects many progressive downloads
+
+  const ff = which('ffmpeg') || which('ffmpeg.exe');
+  let thumb = null;
+  let duration = 0;
   if (ff) {
-    const inp = path.join(TMP_DIR, 'vin' + Date.now() + (isMp4 ? '.mp4' : '.bin'));
-    const outp = path.join(TMP_DIR, 'vout' + Date.now() + '.mp4');
+    const id = String(Date.now());
+    const inp = path.join(TMP_DIR, 'vin' + id + '.mp4');
+    const outp = path.join(TMP_DIR, 'vout' + id + '.mp4');
+    const thp = path.join(TMP_DIR, 'vth' + id + '.jpg');
     try {
       await fs.writeFile(inp, buf);
-      // Scale max 720p, h264+aac, faststart — WhatsApp-compatible
-      try {
-        await execP(
-          '"' + ff + '" -y -i "' + inp + '" -map 0:v:0 -map 0:a:0? -c:v libx264 -profile:v baseline -level 3.1 -pix_fmt yuv420p -preset ultrafast -crf 26 -vf "scale=min(720\\,iw):-2" -c:a aac -b:a 128k -ac 2 -ar 44100 -movflags +faststart -shortest "' + outp + '"',
-          { timeout: 240000, maxBuffer: 96 * 1024 * 1024 }
-        );
-      } catch {
-        await execP(
-          '"' + ff + '" -y -i "' + inp + '" -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 28 -c:a aac -movflags +faststart "' + outp + '"',
-          { timeout: 240000, maxBuffer: 96 * 1024 * 1024 }
-        );
-      }
+      // Strict WhatsApp-compatible mp4
+      await execP(
+        '"' + ff + '" -y -i "' + inp + '" -f mp4 -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p -preset veryfast -crf 28 -vf "scale=trunc(min(640\\,iw)/2)*2:trunc(ow/a/2)*2" -c:a aac -b:a 96k -ac 2 -ar 44100 -movflags +faststart -max_muxing_queue_size 9999 "' + outp + '"',
+        { timeout: 300000, maxBuffer: 128 * 1024 * 1024 }
+      );
       const out = await fs.readFile(outp);
       if (out && out.length > 5000) buf = out;
+      // thumbnail
+      try {
+        await execP('"' + ff + '" -y -i "' + outp + '" -ss 1 -vframes 1 -q:v 5 -vf "scale=320:-1" "' + thp + '"', { timeout: 30000 });
+        if (fs.existsSync(thp)) {
+          const tb = await fs.readFile(thp);
+          if (tb.length > 500) thumb = tb;
+        }
+      } catch {}
+      // duration
+      try {
+        const { stdout } = await execP('"' + ff + '" -i "' + outp + '" 2>&1 | head -n 40 || true', { timeout: 15000 });
+        const m = String(stdout || '').match(/Duration:\s*(\d+):(\d+):(\d+)/);
+        if (m) duration = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+      } catch {}
     } catch (e) {
-      console.log('ffmpeg video:', (e.message || '').slice(0, 100));
+      console.log('ffmpeg video:', (e.message || '').slice(0, 120));
     } finally {
-      try { await fs.remove(inp); await fs.remove(outp); } catch {}
+      try { await fs.remove(inp); await fs.remove(outp); await fs.remove(thp); } catch {}
     }
   }
-  // Prefer document with video mime if native video fails (still playable in WA)
+
+  // Reject HTML/JSON mistaken as video
+  const sig = buf.slice(0, 12).toString('binary');
+  if (buf[0] === 0x7b || /^\s*</.test(buf.slice(0, 20).toString())) {
+    await sock.sendMessage(jid, { text: 'Bad video data from source.' + buildFooter() }).catch(() => {});
+    return false;
+  }
+
+  const payload = {
+    video: buf,
+    mimetype: 'video/mp4',
+    fileLength: buf.length
+  };
+  if (thumb) payload.jpegThumbnail = thumb;
+  if (duration > 0) payload.seconds = duration;
+
   try {
-    await sock.sendMessage(jid, {
-      video: buf,
-      mimetype: 'video/mp4',
-      fileLength: buf.length
-    });
+    await sock.sendMessage(jid, payload);
     return true;
   } catch (e1) {
-    console.log('video native:', e1.message);
+    console.log('video send1:', e1.message);
   }
+  try {
+    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+    return true;
+  } catch (e2) {
+    console.log('video send2:', e2.message);
+  }
+  // Last resort: as document named .mp4 (user can open)
   try {
     await sock.sendMessage(jid, {
       document: buf,
@@ -1481,10 +1534,10 @@ async function sendAsVideo(jid, data) {
       fileLength: buf.length
     });
     return true;
-  } catch (e2) {
-    console.log('video doc:', e2.message);
+  } catch (e3) {
+    console.log('video doc:', e3.message);
   }
-  await sock.sendMessage(jid, { text: 'Video send failed. Host may need ffmpeg buildpack.' + buildFooter() }).catch(() => {});
+  await sock.sendMessage(jid, { text: 'Video send failed. Confirm ffmpeg buildpack is installed and dyno restarted.' + buildFooter() }).catch(() => {});
   return false;
 }
 
