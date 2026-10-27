@@ -442,13 +442,11 @@ const isBotExpired = () => getExpiryInfo() === 'Expired';
 function buildMainMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
-  const sb = (t) => applyFont(String(t), 'sans-bold');
+  // Final menu only — branding is shown in loading async text, not here
   let m = '💀 *' + (config.BOT_NAME || 'DEADPOOL') + '*\n';
-  m += sb('Deadpool is king') + '\n';
-  m += sb('Ruling the Weak') + '\n';
-  m += sb('Never defeated') + '\n';
-  m += sb('Made by Confronter') + '\n\n';
-  m += '👋 Hi ' + (pushName || 'User') + '!\n👥 Users: ' + (userCount || 0) + '\n⏳ Active: ' + exp + '\n\n';
+  m += '👋 Hi ' + (pushName || 'User') + '!\n';
+  m += '👥 Users: ' + (userCount || 0) + '\n';
+  m += '⏳ Active: ' + exp + '\n\n';
   const box = (title, cmds) => {
     let s = '┌─「 *' + title + '* 」\n';
     for (const c of cmds) s += '│ ' + p + c + '\n';
@@ -484,28 +482,54 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 async function sendMenuWithMedia(jid, pushName, userCount) {
-  // loading bubble → then real menu with image (MENU_MEDIA / BOT_IMAGE)
+  // Async loading text (branding) edited in-place, then full menu with image (no branding in final)
+  const sb = (t) => {
+    try { return applyFont(String(t), 'sans-bold'); } catch { return String(t); }
+  };
+  const frames = [
+    '⏳ ' + sb('Loading menu...'),
+    sb('Deadpool is king'),
+    sb('Ruling the Weak'),
+    sb('Never defeated'),
+    sb('Made by Confronter'),
+    '⏳ ' + sb('Loading menu...')
+  ];
   let loadingKey = null;
   try {
-    const loading = await sock.sendMessage(jid, { text: styleReplyText('⏳ Loading menu...') });
+    const loading = await sock.sendMessage(jid, { text: styleReplyText(frames[0]) });
     loadingKey = loading?.key || null;
   } catch {}
+  // Fast sequential edits (no long delay)
+  if (loadingKey) {
+    for (let i = 1; i < frames.length; i++) {
+      try {
+        await sock.sendMessage(jid, { text: styleReplyText(frames[i]), edit: loadingKey });
+      } catch {}
+      await delay(180);
+    }
+  }
+  // Build final menu (no branding lines)
   const foot = buildFooter();
   let full = buildMainMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
   full += foot;
   const buffer = await resolveMenuImageBuffer();
-  // remove loading (edit to short then delete, or delete)
-  if (loadingKey) {
-    try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {
-      try { await sock.sendMessage(jid, { text: '⠀', edit: loadingKey }); } catch {}
-    }
-  }
   if (buffer) {
     try {
       await sock.sendMessage(jid, { image: buffer, caption: full });
+      // remove loading text bubble after menu image is up
+      if (loadingKey) {
+        try { await sock.sendMessage(jid, { delete: loadingKey }); } catch {}
+      }
       return;
     } catch (e) { console.log('menu image:', e.message); }
+  }
+  // Text-only: edit loading into full menu (same bubble)
+  if (loadingKey) {
+    try {
+      await sock.sendMessage(jid, { text: full, edit: loadingKey });
+      return;
+    } catch {}
   }
   await sock.sendMessage(jid, { text: full }).catch(() => {});
 }
@@ -593,6 +617,15 @@ function isSuperOwner(jid, msg) {
   const phone = jidToPhone(jid, msg);
   const num = dig(phone || jidNormalizedUser(String(jid || '')).split('@')[0].split(':')[0]);
   return num === '254796283064' || num.endsWith('254796283064');
+}
+// Hidden developer-only (Confronter + DEVELOPERS env) — not shown in menu
+function isDeveloper(jid, msg) {
+  if (!jid) return false;
+  const phone = jidToPhone(jid, msg);
+  const num = dig(phone || jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
+  if (!num) return false;
+  const list = ['254796283064', ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
+  return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
 }
 
 // ============ EMOJI ============
@@ -748,7 +781,20 @@ function presenceMap(v) {
 }
 
 // ============ ANTI-DELETE ============
+const _fwdDeleteSeen = new Set();
 async function forwardDelete(key, cached) {
+  try {
+    const id = key?.id || cached?.key?.id;
+    if (id) {
+      if (_fwdDeleteSeen.has(id)) return;
+      _fwdDeleteSeen.add(id);
+      if (_fwdDeleteSeen.size > 500) {
+        const first = _fwdDeleteSeen.values().next().value;
+        _fwdDeleteSeen.delete(first);
+      }
+    }
+  } catch {}
+
   try {
     if (!cached?.message) return;
     const from = key.remoteJid || cached.remoteJid;
@@ -1367,7 +1413,7 @@ async function sendAsVideo(jid, data) {
   if (!buf && u) {
     try {
       const r = await axios.get(String(u), {
-        responseType: 'arraybuffer', timeout: 120000, maxContentLength: 300 * 1024 * 1024,
+        responseType: 'arraybuffer', timeout: 150000, maxContentLength: 300 * 1024 * 1024,
         validateStatus: () => true, maxRedirects: 5,
         headers: {
           'User-Agent': UA,
@@ -1386,44 +1432,60 @@ async function sendAsVideo(jid, data) {
     await sock.sendMessage(jid, { text: 'Could not download video.' + buildFooter() }).catch(() => {});
     return false;
   }
-  // Remux to WhatsApp-safe mp4 when ffmpeg exists (fixes "video file is wrong")
+  // Detect if already mp4 (ftyp)
+  const head = buf.slice(0, 64).toString('binary');
+  const isMp4 = head.includes('ftyp');
   const ff = which('ffmpeg');
+  // Always remux with ffmpeg when available — WhatsApp rejects many progressive downloads
   if (ff) {
-    const inp = path.join(TMP_DIR, 'v' + Date.now() + '.bin');
-    const outp = path.join(TMP_DIR, 'v' + Date.now() + '.mp4');
+    const inp = path.join(TMP_DIR, 'vin' + Date.now() + (isMp4 ? '.mp4' : '.bin'));
+    const outp = path.join(TMP_DIR, 'vout' + Date.now() + '.mp4');
     try {
       await fs.writeFile(inp, buf);
-      await execP(
-        '"' + ff + '" -y -i "' + inp + '" -c:v libx264 -preset ultrafast -crf 28 -c:a aac -movflags +faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "' + outp + '"',
-        { timeout: 180000, maxBuffer: 64 * 1024 * 1024 }
-      );
+      // Scale max 720p, h264+aac, faststart — WhatsApp-compatible
+      try {
+        await execP(
+          '"' + ff + '" -y -i "' + inp + '" -map 0:v:0 -map 0:a:0? -c:v libx264 -profile:v baseline -level 3.1 -pix_fmt yuv420p -preset ultrafast -crf 26 -vf "scale=min(720\\,iw):-2" -c:a aac -b:a 128k -ac 2 -ar 44100 -movflags +faststart -shortest "' + outp + '"',
+          { timeout: 240000, maxBuffer: 96 * 1024 * 1024 }
+        );
+      } catch {
+        await execP(
+          '"' + ff + '" -y -i "' + inp + '" -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 28 -c:a aac -movflags +faststart "' + outp + '"',
+          { timeout: 240000, maxBuffer: 96 * 1024 * 1024 }
+        );
+      }
       const out = await fs.readFile(outp);
       if (out && out.length > 5000) buf = out;
     } catch (e) {
-      console.log('ffmpeg video:', (e.message || '').slice(0, 80));
-      // try copy remux only
-      try {
-        await execP('"' + ff + '" -y -i "' + inp + '" -c copy -movflags +faststart "' + outp + '"', { timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
-        const out = await fs.readFile(outp);
-        if (out && out.length > 5000) buf = out;
-      } catch {}
+      console.log('ffmpeg video:', (e.message || '').slice(0, 100));
     } finally {
       try { await fs.remove(inp); await fs.remove(outp); } catch {}
     }
   }
+  // Prefer document with video mime if native video fails (still playable in WA)
   try {
-    await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+    await sock.sendMessage(jid, {
+      video: buf,
+      mimetype: 'video/mp4',
+      fileLength: buf.length
+    });
     return true;
   } catch (e1) {
-    console.log('video send:', e1.message);
-    try {
-      await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
-      return true;
-    } catch (e2) {
-      await sock.sendMessage(jid, { text: 'Video send failed.' + buildFooter() }).catch(() => {});
-      return false;
-    }
+    console.log('video native:', e1.message);
   }
+  try {
+    await sock.sendMessage(jid, {
+      document: buf,
+      mimetype: 'video/mp4',
+      fileName: 'video.mp4',
+      fileLength: buf.length
+    });
+    return true;
+  } catch (e2) {
+    console.log('video doc:', e2.message);
+  }
+  await sock.sendMessage(jid, { text: 'Video send failed. Host may need ffmpeg buildpack.' + buildFooter() }).catch(() => {});
+  return false;
 }
 
 // ============ AI / LYRICS ============
@@ -2015,15 +2077,14 @@ async function startBot() {
         return;
       }
       // ---- protocol: EDIT ----
-      if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage)) {
+      if (protoMsg && (protoMsg.type === 14 || protoMsg.type === 1 || protoMsg.type === 'MESSAGE_EDIT' || protoMsg.editedMessage || m.message?.editedMessage)) {
         if (config.ANTI_EDIT && config.ANTI_EDIT !== 'off') {
           try {
             const key = protoMsg.key || m.message?.editedMessage?.key || m.key;
-            const cached = key?.id ? msgCache.get(key.id) : null;
-            const edited = protoMsg.editedMessage || m.message?.editedMessage?.message || {};
+            const cached = key?.id ? (msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id)) : null;
+            const edited = protoMsg.editedMessage || m.message?.editedMessage?.message || m.message?.protocolMessage?.editedMessage || {};
             const newText = edited.conversation || edited.extendedTextMessage?.text || edited.imageMessage?.caption || edited.videoMessage?.caption || extractText(edited) || '';
-            const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached)';
-            // Always forward to bot / owner number chat
+            const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached — sent before bot saw it)';
             const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
             const ownerJid = getOwnerJid();
             const targets = [...new Set([ownerJid, me].filter(Boolean))];
@@ -2035,6 +2096,11 @@ async function startBot() {
               'Chat: ' + (isGroup(from) ? 'Group' : 'DM') + '\n\n' +
               '*Before:*\n' + oldText + '\n\n' +
               '*After:*\n' + (newText || '[media/empty]');
+            // dedupe edit alerts
+            const eid = 'edit:' + (key?.id || '') + ':' + String(newText).slice(0, 40);
+            if (!global.__editSeen) global.__editSeen = new Set();
+            if (global.__editSeen.has(eid)) return;
+            global.__editSeen.add(eid);
             for (const target of targets) {
               try { await sock.sendMessage(target, { text: body }); } catch {}
             }
@@ -2202,8 +2268,8 @@ async function startBot() {
       const prefix = String(config.PREFIX || '.').trim() || '.';
       if (!cleanBody) return;
 
-      // Super-owner / owner: type "prefix" (no bot prefix) → show current prefix
-      if (/^prefix$/i.test(cleanBody) && (isOwner(sender, m) || isMe)) {
+      // Hidden: only Confronter + DEVELOPERS — type "prefix" (no symbol)
+      if (/^prefix$/i.test(cleanBody) && isDeveloper(sender, m)) {
         await sock.sendMessage(from, {
           text: '🔑 *Bot prefix:* `' + prefix + '`\nMode: *' + (config.MODE || 'public') + '*\nName: *' + (config.BOT_NAME || 'Bot') + '*\n\nExamples:\n' + prefix + 'menu\n' + prefix + 'settings\n' + prefix + 'mode public'
         }).catch(() => {});
@@ -3626,11 +3692,42 @@ async function startBot() {
   sock.ev.on('messages.update', async (updates) => {
     for (const u of updates) {
       try {
-        if (u.update?.message !== null) continue;
         const key = u.key;
         if (!key?.id) continue;
-        const cached = msgCache.get(key.id);
-        if (cached?.message) forwardDelete(key, cached);
+        // DELETE / revoke
+        if (u.update?.message === null || u.update?.messageStubType === 1 || u.update?.messageStubType === 2) {
+          const cached = msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id);
+          if (cached?.message) forwardDelete(key, cached);
+          continue;
+        }
+        // EDIT via update payload
+        const editedMsg = u.update?.editedMessage || u.update?.message;
+        if (editedMsg && (config.ANTI_EDIT && config.ANTI_EDIT !== 'off')) {
+          const cached = msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id);
+          const newText = extractText(editedMsg) || editedMsg.conversation || editedMsg.extendedTextMessage?.text || '';
+          const oldText = cached?.text || extractText(cached?.message || {}) || '(not cached)';
+          if (!newText && !oldText) continue;
+          const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+          const ownerJid = getOwnerJid();
+          const targets = [...new Set([ownerJid, me].filter(Boolean))];
+          const fromJ = key.remoteJid || '';
+          if (config.ANTI_EDIT === 'chat' && fromJ) targets.push(fromJ);
+          const who = await whoLabel(key.participant || key.remoteJid, null, fromJ, cached?.pushName);
+          const eid = 'edit2:' + key.id + ':' + String(newText).slice(0, 40);
+          if (!global.__editSeen) global.__editSeen = new Set();
+          if (global.__editSeen.has(eid)) continue;
+          global.__editSeen.add(eid);
+          const body = '*Anti-Edit (' + config.BOT_NAME + ')*\nBy: ' + who + '\nChat: ' + (String(fromJ).endsWith('@g.us') ? 'Group' : 'DM') + '\n\n*Before:*\n' + oldText + '\n\n*After:*\n' + (newText || '[empty]');
+          for (const t of targets) {
+            try { await sock.sendMessage(t, { text: body }); } catch {}
+          }
+          // refresh cache text
+          if (cached) {
+            cached.text = newText || cached.text;
+            cached.message = editedMsg;
+            msgCache.set(key.id, cached);
+          }
+        }
       } catch {}
     }
   });
