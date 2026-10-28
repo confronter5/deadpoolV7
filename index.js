@@ -1099,54 +1099,39 @@ async function searchYoutube(query) {
 }
 
 async function downloadViaKeith(url, audioOnly = true) {
-  // Race proven Keith endpoints — first good buffer wins (faster)
-  const eps = audioOnly
-    ? ['/download/audio?url=', '/download/ytmp3?url=', '/download/yta?url=', '/download/mp3?url=']
-    : ['/download/ytmp4?url=', '/download/video?url=', '/download/ytv?url=', '/download/mp4?url='];
-  const tryEp = async (ep) => {
-    const data = await keithGet(ep + encodeURIComponent(url), 28000);
+  // ONE endpoint — no race (race was slowing Heroku bandwidth)
+  const ep = audioOnly ? '/download/audio?url=' : '/download/ytmp4?url=';
+  try {
+    const data = await keithGet(ep + encodeURIComponent(url), 25000);
     if (!data || data.status === false || data.success === false) return null;
     const mediaUrl = extractMediaUrl(data);
     if (!mediaUrl) return null;
     const meta = extractMeta(data);
     const title = String(meta.title || data.title || 'Media').slice(0, 120);
-    try {
-      const r = await axios.get(String(mediaUrl), {
-        responseType: 'arraybuffer', timeout: 60000, maxContentLength: 200 * 1024 * 1024,
-        validateStatus: () => true, maxRedirects: 5,
-        headers: {
-          'User-Agent': UA,
-          Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,video/*,*/*',
-          Referer: 'https://savetube.me/',
-          Origin: 'https://savetube.me',
-          'Accept-Encoding': 'identity'
-        }
-      });
-      if (r.status < 400 && r.data) {
-        const b = Buffer.from(r.data);
-        if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) {
-          return { buffer: b, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
-        }
+    const r = await axios.get(String(mediaUrl), {
+      responseType: 'arraybuffer',
+      timeout: 50000,
+      maxContentLength: 120 * 1024 * 1024,
+      validateStatus: () => true,
+      maxRedirects: 5,
+      headers: {
+        'User-Agent': UA,
+        Accept: audioOnly ? 'audio/mpeg,audio/*,*/*' : 'video/mp4,video/*,*/*',
+        Referer: 'https://savetube.me/',
+        'Accept-Encoding': 'identity'
       }
-    } catch {}
+    });
+    if (r.status < 400 && r.data) {
+      const b = Buffer.from(r.data);
+      if (b.length > 5000 && b[0] !== 0x7b) {
+        return { buffer: b, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
+      }
+    }
     return { buffer: null, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
-  };
-  try {
-    const result = await Promise.any(eps.map(ep => tryEp(ep).then(r => {
-      if (r && r.buffer && r.buffer.length > 5000) return r;
-      return Promise.reject(new Error('no buffer'));
-    })));
-    if (result?.buffer) return result;
-  } catch {}
-  // sequential fallback (URL-only ok)
-  for (const ep of eps.slice(0, 2)) {
-    try {
-      const r = await tryEp(ep);
-      if (r?.buffer && r.buffer.length > 5000) return r;
-      if (r?.url) return r;
-    } catch {}
+  } catch (e) {
+    console.log('keith:', (e.message || '').slice(0, 60));
+    return null;
   }
-  return null;
 }
 
 // ============ FFMPEG / YT-DLP ============
@@ -1335,25 +1320,11 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  try {
-    const d = await downloadViaKeith(url, audioOnly);
-    if (d?.buffer && d.buffer.length > 5000) {
-      d.title = d.title || title;
-      return d;
-    }
-    if (d?.url && !d.buffer) {
-      // URL only — let sendAs* fetch once (avoid double work here)
-      d.title = d.title || title;
-      return d;
-    }
-  } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 50)); }
-  try {
-    const d = await downloadViaConfronter(url, audioOnly);
-    if (d?.buffer && d.buffer.length > 5000) {
-      d.title = d.title || title;
-      return d;
-    }
-  } catch {}
+  const d = await downloadViaKeith(url, audioOnly);
+  if (d) {
+    d.title = d.title || title;
+    return d;
+  }
   return null;
 }
 
@@ -1395,48 +1366,40 @@ async function fetchAudioBuffer(url) {
 async function sendAsMp3(jid, data) {
   if (!data) return false;
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 3000) ? data.buffer : null;
-  const mediaUrl = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
-  if (!buf && mediaUrl) {
+  if (!buf && data.url) {
     try {
-      const r = await axios.get(String(mediaUrl), {
-        responseType: 'arraybuffer', timeout: 70000, maxContentLength: 80 * 1024 * 1024,
+      const r = await axios.get(String(data.url), {
+        responseType: 'arraybuffer', timeout: 50000, maxContentLength: 80 * 1024 * 1024,
         validateStatus: () => true, maxRedirects: 5,
         headers: { 'User-Agent': UA, Accept: 'audio/mpeg,audio/*,*/*', Referer: 'https://savetube.me/', 'Accept-Encoding': 'identity' }
       });
       if (r.status < 400 && r.data) {
         const b = Buffer.from(r.data);
-        if (b.length > 3000 && b[0] !== 0x7b) buf = b;
+        if (b.length > 3000) buf = b;
       }
     } catch {}
   }
-  if (buf && buf.length > 3000) {
-    try {
-      await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false });
-      return true;
-    } catch {
-      try {
-        await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mp4', ptt: false });
-        return true;
-      } catch (e) { console.log('audio', e.message); }
-    }
+  if (!buf) {
+    await sock.sendMessage(jid, { text: 'Could not send audio.' + buildFooter() }).catch(() => {});
+    return false;
   }
-  await sock.sendMessage(jid, { text: 'Could not send audio.' + buildFooter() }).catch(() => {});
-  return false;
+  try {
+    await sock.sendMessage(jid, { audio: buf, mimetype: 'audio/mpeg', ptt: false });
+    return true;
+  } catch (e) {
+    console.log('audio send:', e.message);
+    return false;
+  }
 }
 async function sendAsVideo(jid, data) {
   if (!data) return false;
   let buf = (data.buffer && Buffer.isBuffer(data.buffer) && data.buffer.length > 5000) ? data.buffer : null;
-  const u = (typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) ? data.url : null;
-  if (!buf && u) {
+  if (!buf && data.url) {
     try {
-      const r = await axios.get(String(u), {
-        responseType: 'arraybuffer', timeout: 100000, maxContentLength: 200 * 1024 * 1024,
+      const r = await axios.get(String(data.url), {
+        responseType: 'arraybuffer', timeout: 70000, maxContentLength: 120 * 1024 * 1024,
         validateStatus: () => true, maxRedirects: 5,
-        headers: {
-          'User-Agent': UA, Accept: 'video/mp4,video/*,*/*',
-          Referer: /savetube/i.test(u) ? 'https://savetube.me/' : 'https://www.youtube.com/',
-          'Accept-Encoding': 'identity'
-        }
+        headers: { 'User-Agent': UA, Accept: 'video/mp4,video/*,*/*', Referer: 'https://savetube.me/', 'Accept-Encoding': 'identity' }
       });
       if (r.status < 400 && r.data) {
         const b = Buffer.from(r.data);
@@ -1444,48 +1407,23 @@ async function sendAsVideo(jid, data) {
       }
     } catch {}
   }
-  if (!buf || buf.length < 5000) {
+  if (!buf) {
     await sock.sendMessage(jid, { text: 'Could not download video.' + buildFooter() }).catch(() => {});
     return false;
   }
-  if (buf[0] === 0x7b || /^\s*</.test(buf.slice(0, 20).toString())) {
-    await sock.sendMessage(jid, { text: 'Bad video data.' + buildFooter() }).catch(() => {});
-    return false;
-  }
-  // FAST PATH: try send as-is first (no ffmpeg delay)
   try {
     await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
     return true;
   } catch (e1) {
-    console.log('video fast fail:', e1.message);
-  }
-  // SLOW PATH: remux only when direct send failed
-  const ff = which('ffmpeg') || which('ffmpeg.exe');
-  if (ff) {
-    const id = String(Date.now());
-    const inp = path.join(TMP_DIR, 'vin' + id + '.mp4');
-    const outp = path.join(TMP_DIR, 'vout' + id + '.mp4');
     try {
-      await fs.writeFile(inp, buf);
-      await execP(
-        '"' + ff + '" -y -i "' + inp + '" -f mp4 -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p -preset ultrafast -crf 30 -vf "scale=trunc(min(640\\,iw)/2)*2:-2" -c:a aac -b:a 96k -ac 2 -ar 44100 -movflags +faststart "' + outp + '"',
-        { timeout: 180000, maxBuffer: 96 * 1024 * 1024 }
-      );
-      const out = await fs.readFile(outp);
-      if (out && out.length > 5000) buf = out;
-    } catch (e) { console.log('ffmpeg:', (e.message || '').slice(0, 80)); }
-    finally { try { await fs.remove(inp); await fs.remove(outp); } catch {} }
-    try {
-      await sock.sendMessage(jid, { video: buf, mimetype: 'video/mp4' });
+      await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
       return true;
-    } catch {}
+    } catch (e2) {
+      console.log('video:', e1.message, e2.message);
+      await sock.sendMessage(jid, { text: 'Video send failed.' + buildFooter() }).catch(() => {});
+      return false;
+    }
   }
-  try {
-    await sock.sendMessage(jid, { document: buf, mimetype: 'video/mp4', fileName: 'video.mp4' });
-    return true;
-  } catch {}
-  await sock.sendMessage(jid, { text: 'Video send failed.' + buildFooter() }).catch(() => {});
-  return false;
 }
 
 // ============ AI / LYRICS ============
@@ -2522,19 +2460,9 @@ async function startBot() {
       if (['play', 'song', 'music'].includes(cmd)) {
         if (!text) { await reply('Usage: ' + prefix + 'play <song name>'); return; }
         const q = text.replace(/\s+/g, ' ').trim();
-        // Start download ASAP
-        let url = isYoutubeUrl(q) ? q.trim() : null;
-        let title = q;
-        if (!url) {
-          const found = await searchYoutube(q);
-          if (!found?.url) { await reply('No results.'); return; }
-          url = found.url;
-          title = found.title || q;
-        }
-        await reply('🎵 *' + title + '*\nDownloading...').catch(() => {});
-        const data = await downloadYouTube(url, true);
-        if (!data?.buffer && !data?.url) { await reply('Could not download audio.'); return; }
-        data.title = data.title || title;
+        await reply('Downloading...').catch(() => {});
+        const data = await downloadYouTube(q, true);
+        if (!data?.buffer && !data?.url) { await reply('Could not download.'); return; }
         const ok = await sendAsMp3(from, data);
         if (!ok) await reply('Failed to send audio.');
         return;
@@ -2555,18 +2483,9 @@ async function startBot() {
       if (['yt', 'youtube', 'ytmp4', 'video', 'ytv', 'mp4'].includes(cmd)) {
         if (!text) { await reply('Usage: ' + prefix + 'video <name or url>'); return; }
         const q = text.replace(/\s+/g, ' ').trim();
-        let url = isYoutubeUrl(q) ? q.trim() : null;
-        let title = q;
-        if (!url) {
-          const found = await searchYoutube(q);
-          if (!found?.url) { await reply('No results.'); return; }
-          url = found.url;
-          title = found.title || q;
-        }
-        await reply('🎬 *' + title + '*\nDownloading video...').catch(() => {});
-        const data = await downloadYouTube(url, false);
-        if (!data?.buffer && !data?.url) { await reply('Could not download video.'); return; }
-        data.title = data.title || title;
+        await reply('Downloading video...').catch(() => {});
+        const data = await downloadYouTube(q, false);
+        if (!data?.buffer && !data?.url) { await reply('Could not download.'); return; }
         const ok = await sendAsVideo(from, data);
         if (!ok) await reply('Failed to send video.');
         return;
