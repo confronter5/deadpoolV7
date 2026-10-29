@@ -460,28 +460,28 @@ function buildThreeColumnMenu(pushName, userCount) {
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
 
-  // SHORT header only — image carries branding, no long scroll
   let h = '💀 *' + name + '*\n';
   h += '👋 Hi *' + (pushName || 'User') + '*\n';
   h += '👥 Users: *' + (userCount || 0) + '*  ·  ⏳ *' + exp + '*\n';
   h += '🔖 `' + p + '`  ·  ' + (config.MODE || 'public') + '\n\n';
 
-  // Three horizontal columns (same row categories)
-  const left = ['play', 'song', 'video', 'tiktok', 'ig', 'apk', 'lyrics', 'spotify'];
-  const mid  = ['close', 'open', 'mute', 'unmute', 'tagall', 'kick', 'promote', 'hidetag'];
-  const right = ['groupjid', 'newsletter', 'ping', 'alive', 'weather', 'calc', 'settings', 'owner'];
-  const W = 11;
-  let cols = '*Download*     *Group*       *Tools*\n';
-  cols += '──────────   ──────────   ──────────\n';
-  const rows = Math.max(left.length, mid.length, right.length);
-  for (let i = 0; i < rows; i++) {
-    const a = left[i]  ? (p + left[i])  : '';
-    const b = mid[i]   ? (p + mid[i])   : '';
-    const c = right[i] ? (p + right[i]) : '';
-    cols += padCmd(a, W) + '  ' + padCmd(b, W) + '  ' + padCmd(c, W) + '\n';
-  }
-  cols += '\n_Swipe pages:_ `' + p + 'menu download` · `group` · `tools` · `ai` · `owner` · `fun`';
-  return (h + cols).trim();
+  const box = (title, cmds) => {
+    let s = '┌─「 *' + title + '* 」\n';
+    for (const c of cmds) s += '│ ' + p + c + '\n';
+    return s + '└────────────\n';
+  };
+
+  h += box('DOWNLOAD', ['play <song>', 'song <name>', 'audio <name|url>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'fb <url>', 'lyrics <song>', 'apk <name>', 'spotify <q|url>', 'xvideos <q|url>', 'xnxx <q|url>', 'shazam <url>']);
+  h += '\n' + box('GROUP / ADMIN', ['promote @user', 'demote @user', 'kick @user', 'warn @user', 'mute', 'unmute', 'open 2m', 'close', 'tagall', 'hidetag <text>', 'tagadmins', 'antilink on/off', 'antibot on/off', 'antitoxic on/off', 'antiword on/off', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus']);
+  h += '\n' + box('TOOLS', ['ping', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'getpp @user', 'profile @user', 'groupjid <link>', 'newsletter <link>', 'save', 'vv', 'settings']);
+  h += '\n' + box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off', 'imagine <prompt>', 'flux <prompt>']);
+  h += '\n' + box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
+  h += '\n' + box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard', 'dice', '8ball', 'coinflip']);
+  h += '\n' + box('OWNER', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antideletestatus on/off', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'setbotname', 'setpp', 'setmenu <url>', 'reaction <emoji>', 'pair <number>', 'restart', 'update']);
+  h += '\n' + box('FUN & TEXTMAKER', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'news', 'livescore', 'epl', 'bible <verse>', 'neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
+  h += '\n' + box('PANEL', ['panel', '1gb user,number', '2gb ...', 'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist']);
+  h += '\n_Swipe the floating cards · or_ `' + p + 'menu download|group|tools|ai|sticker|games|owner|fun|panel`';
+  return h.trim();
 }
 
 function buildMainMenu(pushName, userCount) {
@@ -571,109 +571,281 @@ async function resolveMenuImageBuffer() {
 }
 
 async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
-  const p = config.PREFIX || '.';
+  const p = String(config.PREFIX || '.').trim() || '.';
   const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
   const headerText =
     '💀 *' + (config.BOT_NAME || 'DEADPOOL') + '*\n' +
     '👋 Hi *' + (pushName || 'User') + '*\n' +
     '👥 *' + (userCount || 0) + '* users  ·  ⏳ *' + getExpiryInfo() + '*\n' +
-    '🔖 prefix `' + p + '`  ·  ' + (config.MODE || 'public');
+    '🔖 `' + p + '`  ·  ' + (config.MODE || 'public');
+
+  const links = getMenuLinkButtons();
+  const groupBtn = links.find(b => /group/i.test(b.text)) || links[0];
+  const devBtn = links.find(b => /dev/i.test(b.text)) || links[1];
+  const chBtn = links.find(b => /channel/i.test(b.text)) || links[2];
 
   const cardsData = [
     {
       title: '📥 Download',
-      body: [p + 'play', p + 'song', p + 'video', p + 'tiktok', p + 'ig', p + 'apk', p + 'lyrics', p + 'spotify'].join('\n'),
-      btnId: p + 'menu download',
-      btnText: 'More Download'
+      body: [
+        p + 'play <song>', p + 'song <name>', p + 'audio <name|url>', p + 'video <url/name>',
+        p + 'yt <url/name>', p + 'tiktok <url>', p + 'ig <url>', p + 'fb <url>',
+        p + 'lyrics <song>', p + 'apk <name>', p + 'spotify <q|url>', p + 'xvideos <q|url>',
+        p + 'xnxx <q|url>', p + 'shazam <url>'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Download', id: p + 'menu download' }) },
+        groupBtn?.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Group ↗', url: groupBtn.url, merchant_url: groupBtn.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Group', id: p + 'menu group' }) }
+      ]
     },
     {
-      title: '👥 Group',
-      body: [p + 'close', p + 'open', p + 'mute', p + 'unmute', p + 'tagall', p + 'kick', p + 'promote', p + 'hidetag'].join('\n'),
-      btnId: p + 'menu group',
-      btnText: 'More Group'
+      title: '👥 Group / Admin',
+      body: [
+        p + 'promote @user', p + 'demote @user', p + 'kick @user', p + 'warn @user',
+        p + 'mute', p + 'unmute', p + 'open 2m', p + 'close',
+        p + 'tagall', p + 'hidetag <text>', p + 'tagadmins',
+        p + 'antilink on/off/warn/delete/kick', p + 'antibot on/off',
+        p + 'antitoxic on/off', p + 'antiword on/off', p + 'antigroupmention on/off',
+        p + 'grouplink', p + 'groupinfo', p + 'approve', p + 'left', p + 'togcstatus'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Group', id: p + 'menu group' }) },
+        devBtn?.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Developer ↗', url: devBtn.url, merchant_url: devBtn.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Developer', id: p + 'menu owner' }) }
+      ]
     },
     {
       title: '🛠 Tools',
-      body: [p + 'groupjid', p + 'newsletter', p + 'ping', p + 'alive', p + 'weather', p + 'calc', p + 'settings', p + 'owner'].join('\n'),
-      btnId: p + 'menu tools',
-      btnText: 'More Tools'
+      body: [
+        p + 'ping', p + 'p', p + 'alive', p + 'calc <expr>', p + 'weather <city>',
+        p + 'owner', p + 'delete', p + 'clear', p + 'getpp @user', p + 'profile @user',
+        p + 'groupjid <link>', p + 'newsletter <link>', p + 'save', p + 'vv', p + 'settings'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Tools', id: p + 'menu tools' }) },
+        chBtn?.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Channel ↗', url: chBtn.url, merchant_url: chBtn.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Channel', id: p + 'menu tools' }) }
+      ]
+    },
+    {
+      title: '🤖 AI',
+      body: [
+        p + 'gpt <question>', p + 'ai <question>', p + 'ask <question>',
+        p + 'chatbot on/off', p + 'imagine <prompt>', p + 'flux <prompt>'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'AI', id: p + 'menu ai' }) },
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Fun', id: p + 'menu fun' }) }
+      ]
+    },
+    {
+      title: '🎨 Sticker',
+      body: [
+        p + 'sticker', p + 's', p + 'toimg', p + 'qc <text>',
+        p + 'qcstick <text>', p + 'vv', p + 'save'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Sticker', id: p + 'menu sticker' }) },
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Games', id: p + 'menu games' }) }
+      ]
+    },
+    {
+      title: '🎮 Games',
+      body: [
+        p + 'family100', p + 'tebak gambar|kata|kalimat|lirik|lontong',
+        p + 'math easy|medium|hard', p + 'dice', p + '8ball', p + 'coinflip'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Games', id: p + 'menu games' }) },
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Owner', id: p + 'menu owner' }) }
+      ]
+    },
+    {
+      title: '👑 Owner',
+      body: [
+        p + 'mode public/private', p + 'prefix <symbol>', p + 'settings', p + 'users',
+        p + 'broadcast <text>', p + 'block @user', p + 'unblock @user',
+        p + 'autoview on/off', p + 'autolike on/off', p + 'autoreact on/off', p + 'autoread on/off',
+        p + 'antidelete off/dm/chat', p + 'antideletestatus on/off',
+        p + 'antiedit off/dm/chat', p + 'antiviewonce off/dm/chat', p + 'anticall on/off',
+        p + 'welcome on/off', p + 'goodbye on/off', p + 'font <style>', p + 'presence <type>',
+        p + 'alwaysonline on/off', p + 'setbotname <name>', p + 'setpp', p + 'setmenu <url>',
+        p + 'reaction <emoji>', p + 'pair <number>', p + 'restart', p + 'update'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Owner', id: p + 'menu owner' }) },
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Panel', id: p + 'menu panel' }) }
+      ]
+    },
+    {
+      title: '🎉 Fun & Textmaker',
+      body: [
+        p + 'joke', p + 'meme', p + 'fact', p + 'quote', p + 'truth', p + 'dare',
+        p + 'news', p + 'livescore', p + 'epl', p + 'bible <verse>',
+        p + 'neon', p + 'fire', p + 'glitch', p + 'ice', p + 'matrix', p + 'thunder',
+        p + 'hacker', p + 'luxury', p + 'blackpink', p + 'metallic', p + 'devil',
+        p + 'sand', p + 'light', p + 'naruto'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Fun', id: p + 'menu fun' }) },
+        groupBtn?.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Group ↗', url: groupBtn.url, merchant_url: groupBtn.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Menu', id: p + 'menu' }) }
+      ]
+    },
+    {
+      title: '🖥 Panel',
+      body: [
+        p + 'panel', p + '1gb user,number', p + '2gb user,number', p + '3gb user,number',
+        p + '4gb user,number', p + '5gb user,number', p + 'unli user,number',
+        p + 'listsrv', p + 'listusr', p + 'delsrv <id>', p + 'delusr <id>', p + 'ramlist'
+      ].join('\n'),
+      btns: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Panel', id: p + 'menu panel' }) },
+        devBtn?.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Developer ↗', url: devBtn.url, merchant_url: devBtn.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Owner', id: p + 'menu owner' }) }
+      ]
     }
   ];
 
-  // Try native carousel (swipe left/right between 3 boxes)
   try {
-    const { generateWAMessageFromContent, proto } = require('@whiskeysockets/baileys');
-    let imgMsg = null;
-    if (imageBuf) {
+    const baileys = require('@whiskeysockets/baileys');
+    const { generateWAMessageFromContent, generateWAMessageContent, proto } = baileys;
+
+    // Upload one image for all card headers (floating cards look best with media)
+    let imageMessage = null;
+    if (imageBuf && imageBuf.length > 800) {
       try {
-        const up = await sock.prepareMessage(jid, { image: imageBuf });
-        imgMsg = up?.message?.imageMessage || null;
-      } catch {}
-    }
-    const cards = cardsData.map((c) => {
-      const card = {
-        body: proto.Message.InteractiveMessage.Body.fromObject({ text: '*' + c.title + '*\n\n' + c.body }),
-        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer }),
-        header: proto.Message.InteractiveMessage.Header.fromObject(
-          imgMsg
-            ? { title: c.title, hasMediaAttachment: true, imageMessage: imgMsg }
-            : { title: c.title, hasMediaAttachment: false }
-        ),
-        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-          buttons: [
-            {
-              name: 'quick_reply',
-              buttonParamsJson: JSON.stringify({ display_text: c.btnText, id: c.btnId })
-            }
-          ]
-        })
-      };
-      return proto.Message.InteractiveMessage.CarouselCard.fromObject
-        ? proto.Message.InteractiveMessage.CarouselCard.fromObject(card)
-        : card;
-    });
-
-    const links = getMenuLinkButtons();
-    const bottomBtns = links.map((b) => {
-      if (b.url) {
-        return {
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url })
-        };
-      }
-      return {
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id })
-      };
-    });
-
-    const msg = generateWAMessageFromContent(jid, {
-      viewOnceMessage: {
-        message: {
-          interactiveMessage: proto.Message.InteractiveMessage.fromObject({
-            body: proto.Message.InteractiveMessage.Body.fromObject({ text: headerText }),
-            footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer }),
-            header: proto.Message.InteractiveMessage.Header.fromObject(
-              imgMsg
-                ? { title: config.BOT_NAME || 'Menu', hasMediaAttachment: true, imageMessage: imgMsg }
-                : { title: config.BOT_NAME || 'Menu', hasMediaAttachment: false }
-            ),
-            carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.fromObject({
-              cards,
-              messageVersion: 1
-            }),
-            nativeFlowMessage: bottomBtns.length
-              ? proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({ buttons: bottomBtns })
-              : undefined
-          })
+        if (typeof generateWAMessageContent === 'function' && sock.waUploadToServer) {
+          const imgContent = await generateWAMessageContent(
+            { image: imageBuf },
+            { upload: sock.waUploadToServer }
+          );
+          imageMessage = imgContent?.imageMessage || null;
         }
+      } catch (e) { console.log('carousel img upload:', (e.message || '').slice(0, 80)); }
+      if (!imageMessage) {
+        try {
+          if (typeof sock.prepareMessage === 'function') {
+            const up = await sock.prepareMessage(jid, { image: imageBuf });
+            imageMessage = up?.message?.imageMessage || null;
+          }
+        } catch {}
       }
-    }, {});
+    }
+
+    const IM = proto.Message.InteractiveMessage;
+    const cards = cardsData.map((c) => {
+      const headerObj = imageMessage
+        ? { title: c.title, hasMediaAttachment: true, imageMessage }
+        : { title: c.title, hasMediaAttachment: false };
+      const cardObj = {
+        body: IM.Body.create({ text: '*' + c.title + '*\n\n' + c.body }),
+        footer: IM.Footer.create({ text: footer }),
+        header: IM.Header.create(headerObj),
+        nativeFlowMessage: IM.NativeFlowMessage.create({ buttons: c.btns })
+      };
+      // Some Baileys builds want InteractiveMessage per card
+      try {
+        return IM.create(cardObj);
+      } catch {
+        return cardObj;
+      }
+    });
+
+    const interactive = IM.create({
+      body: IM.Body.create({ text: headerText }),
+      footer: IM.Footer.create({ text: footer }),
+      header: IM.Header.create({
+        title: config.BOT_NAME || 'Menu',
+        hasMediaAttachment: false
+      }),
+      carouselMessage: IM.CarouselMessage.create({
+        cards,
+        messageVersion: 1
+      })
+    });
+
+    const msg = generateWAMessageFromContent(
+      jid,
+      {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2
+            },
+            interactiveMessage: interactive
+          }
+        }
+      },
+      {}
+    );
 
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
     return true;
   } catch (e) {
-    console.log('carousel menu:', (e.message || '').slice(0, 120));
+    console.log('carousel menu:', (e.message || e.stack || '').toString().slice(0, 160));
+  }
+
+  // Fallback path: single interactive with 3 floating CTA + quick replies (still "button cards" feel)
+  try {
+    const interactiveButtons = [];
+    for (const b of links) {
+      if (b.url) {
+        interactiveButtons.push({
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url })
+        });
+      } else {
+        interactiveButtons.push({
+          name: 'quick_reply',
+          buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id })
+        });
+      }
+    }
+    interactiveButtons.push(
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '📥 Download', id: p + 'menu download' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '👥 Group', id: p + 'menu group' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🛠 Tools', id: p + 'menu tools' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🤖 AI', id: p + 'menu ai' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🎨 Sticker', id: p + 'menu sticker' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🎮 Games', id: p + 'menu games' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '👑 Owner', id: p + 'menu owner' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🎉 Fun', id: p + 'menu fun' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🖥 Panel', id: p + 'menu panel' }) }
+    );
+
+    const caption =
+      headerText + '\n\n' +
+      '┌ *Download* ─┐  ┌ *Group* ─┐  ┌ *Tools* ─┐\n' +
+      '│ ' + p + 'play     │  │ ' + p + 'close  │  │ ' + p + 'groupjid│\n' +
+      '│ ' + p + 'song     │  │ ' + p + 'open   │  │ ' + p + 'newsletter│\n' +
+      '│ ' + p + 'video    │  │ ' + p + 'mute   │  │ ' + p + 'ping   │\n' +
+      '│ ' + p + 'tiktok   │  │ ' + p + 'tagall │  │ ' + p + 'alive  │\n' +
+      '└──────────┘  └────────┘  └────────┘\n\n' +
+      '_Swipe / tap the floating buttons below_';
+
+    if (imageBuf) {
+      try {
+        await sock.sendMessage(jid, {
+          image: imageBuf,
+          caption,
+          footer,
+          interactiveButtons
+        });
+        return true;
+      } catch (e) { console.log('float img buttons:', (e.message || '').slice(0, 80)); }
+    }
+    await sock.sendMessage(jid, { text: caption, footer, interactiveButtons });
+    return true;
+  } catch (e) {
+    console.log('float buttons fallback:', (e.message || '').slice(0, 80));
   }
   return false;
 }
@@ -731,39 +903,39 @@ async function sendInteractiveMenu(jid, caption, quoted) {
 async function sendMenuWithMedia(jid, pushName, userCount, page) {
   const buffer = await resolveMenuImageBuffer();
 
-  // Sub-page: compact single category box (no long mega-menu)
+  // Sub-page: one category box only
   if (page) {
     let full = buildMenuPage(page, pushName);
     try { full = styleReplyText(full); } catch {}
-    if (buffer) {
-      try {
-        await sock.sendMessage(jid, { image: buffer, caption: full + '\n\n' + (config.POWERED_BY || '') });
+    const p = String(config.PREFIX || '.').trim() || '.';
+    const links = getMenuLinkButtons();
+    try {
+      const interactiveButtons = links.map((b) => b.url
+        ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url }) }
+        : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }) }
+      );
+      interactiveButtons.push({ name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🏠 Menu', id: p + 'menu' }) });
+      if (buffer) {
+        await sock.sendMessage(jid, { image: buffer, caption: full, footer: config.POWERED_BY || '', interactiveButtons });
         return;
-      } catch {}
+      }
+      await sock.sendMessage(jid, { text: full, footer: config.POWERED_BY || '', interactiveButtons });
+      return;
+    } catch {}
+    if (buffer) {
+      try { await sock.sendMessage(jid, { image: buffer, caption: full + '\n\n' + (config.POWERED_BY || '') }); return; } catch {}
     }
     await sendInteractiveMenu(jid, full);
     return;
   }
 
-  // MAIN MENU: try swipeable 3-card carousel first
-  const okCarousel = await sendCarouselMenu(jid, pushName, userCount, buffer);
-  if (okCarousel) return;
+  // MAIN: floating swipe carousel (3 cards) + floating Group/Dev/Channel buttons
+  const ok = await sendCarouselMenu(jid, pushName, userCount, buffer);
+  if (ok) return;
 
-  // Fallback: image header + 3-column compact text + Group/Dev/Channel buttons
+  // Last resort: compact 3-column + interactive buttons in ONE message
   let full = buildThreeColumnMenu(pushName, userCount);
   try { full = styleReplyText(full); } catch {}
-  if (buffer) {
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption: full });
-      // send link buttons as a small follow-up so Group / Dev / Channel show
-      const links = getMenuLinkButtons();
-      const line = links.map(b => (b.url ? ('• *' + b.text + '*\n' + b.url) : ('• ' + b.text + ' → ' + b.id))).join('\n');
-      try {
-        await sendInteractiveMenu(jid, '🔗 *Quick links*\n' + line);
-      } catch {}
-      return;
-    } catch (e) { console.log('menu img:', e.message); }
-  }
   await sendInteractiveMenu(jid, full);
 }
 
