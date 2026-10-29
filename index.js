@@ -459,17 +459,22 @@ function buildThreeColumnMenu(pushName, userCount) {
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
+  const download = ['play', 'song', 'audio', 'video', 'yt', 'tiktok', 'ig', 'fb', 'lyrics', 'apk', 'spotify', 'xvideos', 'xnxx', 'shazam'];
+  const group = ['close', 'open', 'mute', 'unmute', 'tagall', 'hidetag', 'kick', 'promote', 'demote', 'warn', 'antilink', 'antibot', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus'];
+  const tools = ['groupjid', 'newsletter', 'getpp', 'profile', 'ping', 'alive', 'weather', 'calc', 'save', 'vv', 'settings', 'owner', 'delete', 'clear'];
+  const owner = ['mode', 'prefix', 'settings', 'users', 'broadcast', 'block', 'unblock', 'autoview', 'autolike', 'autoreact', 'autoread', 'antidelete', 'antideletestatus', 'antiedit', 'antiviewonce', 'anticall', 'welcome', 'goodbye', 'font', 'setpp', 'setmenu', 'pair', 'restart', 'update'];
+  const extra = ['gpt', 'ai', 'ask', 'chatbot', 'imagine', 'flux', 'sticker', 's', 'toimg', 'qc', 'family100', 'tebak', 'math', 'dice', 'joke', 'meme', 'neon', 'fire', 'panel', '1gb', 'listsrv'];
+  const total = download.length + group.length + tools.length + owner.length + extra.length;
   let m = '💀 *' + name + '*\n';
   m += '👋 Hi *' + (pushName || 'User') + '*\n';
   m += '👥 Users: *' + (userCount || 0) + '*  ·  ⏳ *' + exp + '*\n';
-  m += '🔖 `' + p + '`  ·  *' + (config.MODE || 'public') + '*\n\n';
-  m += '*📥 Download*\n';
-  for (const c of ['play', 'song', 'audio', 'video', 'yt', 'tiktok', 'ig', 'fb', 'lyrics', 'apk', 'spotify', 'xvideos', 'xnxx', 'shazam']) m += '• ' + p + c + '\n';
-  m += '\n*👥 Group*\n';
-  for (const c of ['close', 'open', 'mute', 'unmute', 'tagall', 'hidetag', 'kick', 'promote', 'demote', 'warn', 'antilink', 'antibot', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus']) m += '• ' + p + c + '\n';
-  m += '\n*🛠 Tools*\n';
-  for (const c of ['groupjid', 'newsletter', 'getpp', 'profile', 'ping', 'alive', 'weather', 'calc', 'save', 'vv', 'settings', 'owner', 'delete', 'clear']) m += '• ' + p + c + '\n';
-  m += '\n_More:_ `' + p + 'menu ai` · `owner` · `fun` · `sticker` · `games` · `panel`';
+  m += '🔖 `' + p + '`  ·  *' + (config.MODE || 'public') + '*\n';
+  m += '📋 *' + total + '* total commands\n\n';
+  m += '*📥 Download*\n' + download.map(c => '• ' + p + c).join('\n') + '\n\n';
+  m += '*👥 Group*\n' + group.map(c => '• ' + p + c).join('\n') + '\n\n';
+  m += '*🛠 Tools*\n' + tools.map(c => '• ' + p + c).join('\n') + '\n\n';
+  m += '*👑 Owner*\n' + owner.map(c => '• ' + p + c).join('\n') + '\n\n';
+  m += '_More:_ `' + p + 'menu ai` · `sticker` · `games` · `fun` · `panel`';
   return m.trim();
 }
 
@@ -559,239 +564,160 @@ async function resolveMenuImageBuffer() {
   return null;
 }
 
+function getMenuCategories(prefix) {
+  const p = String(prefix || config.PREFIX || '.').trim() || '.';
+  return [
+    { key: 'download', title: 'DOWNLOAD', cmds: [
+      'play <song>', 'song <name>', 'audio <name|url>', 'video <url/name>',
+      'yt <url/name>', 'tiktok <url>', 'ig <url>', 'fb <url>',
+      'lyrics <song>', 'apk <name>', 'spotify <q|url>',
+      'xvideos <q|url>', 'xnxx <q|url>', 'shazam <url>'
+    ]},
+    { key: 'group', title: 'GROUP', cmds: [
+      'close', 'open', 'mute', 'unmute',
+      'tagall', 'hidetag <text>', 'kick @user', 'promote @user',
+      'demote @user', 'warn @user',
+      'antilink on/off/warn/delete/kick', 'antibot on/off',
+      'antitoxic on/off', 'antiword on/off', 'antigroupmention on/off',
+      'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus'
+    ]},
+    { key: 'tools', title: 'TOOLS', cmds: [
+      'groupjid <link>', 'newsletter <link>', 'getpp @user', 'profile @user',
+      'ping', 'p', 'alive', 'weather <city>', 'calc <expr>',
+      'save', 'vv', 'settings', 'owner', 'delete', 'clear'
+    ]},
+    { key: 'owner', title: 'OWNER', cmds: [
+      'mode public/private', 'prefix <symbol>', 'settings', 'users',
+      'broadcast <text>', 'block @user', 'unblock @user',
+      'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off',
+      'antidelete off/dm/chat', 'antideletestatus on/off',
+      'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off',
+      'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>',
+      'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>',
+      'reaction <emoji>', 'pair <number>', 'restart', 'update'
+    ]},
+    { key: 'ai', title: 'AI', cmds: [
+      'gpt <question>', 'ai <question>', 'ask <question>',
+      'chatbot on/off', 'imagine <prompt>', 'flux <prompt>'
+    ]},
+    { key: 'sticker', title: 'STICKER', cmds: [
+      'sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save'
+    ]},
+    { key: 'games', title: 'GAMES', cmds: [
+      'family100', 'tebak gambar|kata|kalimat|lirik|lontong',
+      'math easy|medium|hard', 'dice', '8ball', 'coinflip'
+    ]},
+    { key: 'fun', title: 'FUN & TEXTMAKER', cmds: [
+      'joke', 'meme', 'fact', 'quote', 'truth', 'dare',
+      'news', 'livescore', 'epl', 'bible <verse>',
+      'neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder',
+      'hacker', 'luxury', 'blackpink', 'metallic', 'devil',
+      'sand', 'light', 'naruto'
+    ]},
+    { key: 'panel', title: 'PANEL', cmds: [
+      'panel', '1gb user,number', '2gb user,number', '3gb user,number',
+      '4gb user,number', '5gb user,number', 'unli user,number',
+      'listsrv', 'listusr', 'delsrv <id>', 'delusr <id>', 'ramlist'
+    ]}
+  ];
+}
+
+function formatMenuCategoryBox(cat, prefix) {
+  const p = String(prefix || config.PREFIX || '.').trim() || '.';
+  let s = '┌─「 *' + cat.title + '* 」\n';
+  for (const c of cat.cmds) s += '│ ' + p + c + '\n';
+  s += '└────────────';
+  return s;
+}
+
+async function sendMenuCategory(jid, indexOrKey, pushName) {
+  const p = String(config.PREFIX || '.').trim() || '.';
+  const cats = getMenuCategories(p);
+  let cat = null;
+  if (typeof indexOrKey === 'number') cat = cats[indexOrKey - 1];
+  else {
+    const k = String(indexOrKey || '').toLowerCase();
+    cat = cats.find(c => c.key === k || c.title.toLowerCase() === k);
+  }
+  if (!cat) return false;
+  let text = formatMenuCategoryBox(cat, p);
+  try { text = styleReplyText(text); } catch {}
+  await sock.sendMessage(jid, { text });
+  return true;
+}
+
 async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
-  // 3 separate horizontal card BUBBLES (carousel): Download | Group | Tools
-  // Looks like 3 cards side-by-side (swipe), not one long text message.
+  // Numbered category menu — user replies 1 / 2 / 3 … to open that category
   const p = String(config.PREFIX || '.').trim() || '.';
   const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
   const links = getMenuLinkButtons();
-  const groupBtn = links.find(b => /group/i.test(b.text));
-  const devBtn = links.find(b => /dev/i.test(b.text));
-  const chBtn = links.find(b => /channel/i.test(b.text));
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
+  const cats = getMenuCategories(p);
+  const totalCmds = cats.reduce((n, c) => n + c.cmds.length, 0);
 
-  const headerText =
+  const headerCap =
     '💀 *' + name + '*\n' +
     '👋 Hi *' + (pushName || 'User') + '*\n' +
-    '👥 *' + (userCount || 0) + '* · ⏳ *' + exp + '*\n' +
-    '🔖 `' + p + '` · *' + (config.MODE || 'public') + '*';
+    '👥 Users: *' + (userCount || 0) + '*\n' +
+    '⏳ Active: *' + exp + '*\n' +
+    '🔖 Prefix: *' + p + '*  ·  *' + (config.MODE || 'public') + '*\n' +
+    '📋 *' + totalCmds + '* total commands';
 
-  // Swipe cards — each bubble is one category; swipe sideways for all commands
-  const cardsSpec = [
-    {
-      title: '📥 Download',
-      body: [p+'play', p+'song', p+'audio', p+'video', p+'yt', p+'tiktok', p+'ig', p+'fb', p+'lyrics', p+'apk', p+'spotify', p+'xvideos', p+'xnxx', p+'shazam'].join('\n'),
-      button: groupBtn?.url
-        ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Group ↗', url: groupBtn.url, merchant_url: groupBtn.url }) }
-        : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Group ↗', id: p + 'menu group' }) }
-    },
-    {
-      title: '👥 Group',
-      body: [p+'close', p+'open', p+'mute', p+'unmute', p+'tagall', p+'hidetag', p+'kick', p+'promote', p+'demote', p+'warn', p+'antilink', p+'antibot', p+'grouplink', p+'groupinfo', p+'approve', p+'left', p+'togcstatus'].join('\n'),
-      button: devBtn?.url
-        ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Dev ↗', url: devBtn.url, merchant_url: devBtn.url }) }
-        : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Dev ↗', id: p + 'menu owner' }) }
-    },
-    {
-      title: '🛠 Tools',
-      body: [p+'groupjid', p+'newsletter', p+'getpp', p+'profile', p+'ping', p+'alive', p+'weather', p+'calc', p+'save', p+'vv', p+'settings', p+'owner', p+'delete', p+'clear'].join('\n'),
-      button: chBtn?.url
-        ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: 'Channel ↗', url: chBtn.url, merchant_url: chBtn.url }) }
-        : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Channel ↗', id: p + 'menu tools' }) }
-    },
-    {
-      title: '🤖 AI',
-      body: [p+'gpt', p+'ai', p+'ask', p+'chatbot on/off', p+'imagine', p+'flux'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'AI page', id: p + 'menu ai' }) }
-    },
-    {
-      title: '🎨 Sticker',
-      body: [p+'sticker', p+'s', p+'toimg', p+'qc', p+'qcstick', p+'vv', p+'save'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Sticker page', id: p + 'menu sticker' }) }
-    },
-    {
-      title: '🎮 Games',
-      body: [p+'family100', p+'tebak', p+'math', p+'dice', p+'8ball', p+'coinflip'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Games page', id: p + 'menu games' }) }
-    },
-    {
-      title: '👑 Owner',
-      body: [p+'mode', p+'prefix', p+'settings', p+'users', p+'broadcast', p+'block', p+'unblock', p+'autoview', p+'autolike', p+'autoreact', p+'autoread', p+'antidelete', p+'antideletestatus', p+'antiedit', p+'antiviewonce', p+'anticall', p+'welcome', p+'goodbye', p+'font', p+'setpp', p+'setmenu', p+'pair', p+'restart', p+'update'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Owner page', id: p + 'menu owner' }) }
-    },
-    {
-      title: '🎉 Fun',
-      body: [p+'joke', p+'meme', p+'fact', p+'quote', p+'truth', p+'dare', p+'news', p+'livescore', p+'epl', p+'bible', p+'neon', p+'fire', p+'glitch', p+'ice', p+'matrix', p+'thunder', p+'hacker', p+'luxury', p+'blackpink', p+'metallic', p+'devil', p+'sand', p+'light', p+'naruto'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Fun page', id: p + 'menu fun' }) }
-    },
-    {
-      title: '🖥 Panel',
-      body: [p+'panel', p+'1gb', p+'2gb', p+'3gb', p+'4gb', p+'5gb', p+'unli', p+'listsrv', p+'listusr', p+'delsrv', p+'delusr', p+'ramlist'].join('\n'),
-      button: { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: 'Panel page', id: p + 'menu panel' }) }
-    }
-  ];
+  let list = '*📋 MENU CATEGORIES*\n';
+  list += '_Reply with a number to open that category_\n\n';
+  cats.forEach((c, i) => {
+    list += '*' + (i + 1) + '.* ' + c.title + '\n';
+  });
+  list += '\n_Example: reply_ `1` _or_ `' + p + '1` _for Download_';
+  list += '\n_Or:_ `' + p + 'menu download` · `group` · `owner` …';
+
+  const linkLines = links.map(b => {
+    if (b.url) return '• *' + b.text + '*\n' + b.url;
+    return '• *' + b.text + '* → `' + b.id + '`';
+  }).join('\n');
+  const tail = '🔗 *Group · Dev · Channel*\n' + linkLines + (footer ? '\n\n' + footer : '');
+
+  const style = (t) => { try { return styleReplyText(t); } catch { return t; } };
+
+  // Store menu pick state for this chat (number replies)
+  try {
+    if (!global.__menuCache) global.__menuCache = new Map();
+    global.__menuCache.set(jid, { cats, at: Date.now() });
+    // also store by sender-less key for DMs
+  } catch {}
 
   try {
-    const baileys = require('@whiskeysockets/baileys');
-    const {
-      generateWAMessageFromContent,
-      generateWAMessageContent,
-      prepareWAMessageMedia,
-      proto
-    } = baileys;
-
-    // Upload media for card headers (one buffer → imageMessage)
-    let imageMessage = null;
     if (imageBuf && imageBuf.length > 800) {
-      try {
-        if (typeof prepareWAMessageMedia === 'function' && sock.waUploadToServer) {
-          const media = await prepareWAMessageMedia(
-            { image: imageBuf },
-            { upload: sock.waUploadToServer }
-          );
-          imageMessage = media?.imageMessage || null;
-        }
-      } catch (e) { console.log('prepareWAMessageMedia:', (e.message || '').slice(0, 80)); }
-      if (!imageMessage) {
-        try {
-          const img = await generateWAMessageContent(
-            { image: imageBuf },
-            { upload: sock.waUploadToServer }
-          );
-          imageMessage = img?.imageMessage || null;
-        } catch (e) { console.log('generateWAMessageContent img:', (e.message || '').slice(0, 80)); }
-      }
-    }
-
-    const IM = proto.Message.InteractiveMessage;
-
-    // Build 3 card objects — deep-clone imageMessage so each card has its own copy
-    const cards = cardsSpec.map((spec) => {
-      let header;
-      if (imageMessage) {
-        const imgClone = JSON.parse(JSON.stringify(imageMessage));
-        header = IM.Header.create({
-          title: spec.title,
-          hasMediaAttachment: true,
-          imageMessage: imgClone
-        });
-      } else {
-        header = IM.Header.create({
-          title: spec.title,
-          hasMediaAttachment: false
-        });
-      }
-      return IM.create({
-        body: IM.Body.create({ text: '*' + spec.title + '*\n\n' + spec.body }),
-        footer: IM.Footer.create({ text: footer }),
-        header,
-        nativeFlowMessage: IM.NativeFlowMessage.create({
-          buttons: [spec.button]
-        })
-      });
-    });
-
-    const interactivePayload = {
-      body: IM.Body.create({ text: headerText }),
-      footer: IM.Footer.create({ text: footer }),
-      header: IM.Header.create({
-        title: name,
-        subtitle: 'Menu',
-        hasMediaAttachment: false
-      }),
-      carouselMessage: IM.CarouselMessage.create({
-        cards,
-        messageVersion: 1
-      })
-    };
-
-    // Preferred: plain interactiveMessage (3 card bubbles)
-    let msg;
-    try {
-      msg = generateWAMessageFromContent(
-        jid,
-        { interactiveMessage: IM.create(interactivePayload) },
-        { userJid: sock.user?.id }
-      );
-    } catch {
-      // Some Baileys builds want viewOnce wrapper for carousel
-      msg = generateWAMessageFromContent(
-        jid,
-        {
-          viewOnceMessage: {
-            message: {
-              messageContextInfo: {
-                deviceListMetadata: {},
-                deviceListMetadataVersion: 2
-              },
-              interactiveMessage: IM.create(interactivePayload)
-            }
-          }
-        },
-        { userJid: sock.user?.id }
-      );
-    }
-
-    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-
-    // Cache for getMessage retries so cards don't show "Waiting for this message"
-    try {
-      const cacheEntry = {
-        message: msg.message,
-        rawMessage: msg.message,
-        type: 'carousel-menu',
-        timestamp: Date.now()
-      };
-      msgCache.set(msg.key.id, cacheEntry);
-      msgCache.set(jid + ':' + msg.key.id, cacheEntry);
-    } catch {}
-
-    return true;
-  } catch (e) {
-    console.log('3-card carousel failed:', (e.message || e.stack || '').toString().slice(0, 160));
-  }
-
-  // Fallback still tries to look like 3 cards in ONE message (side by side text)
-  // rather than 3 messages going down.
-  try {
-    const style = (t) => { try { return styleReplyText(t); } catch { return t; } };
-    if (imageBuf && imageBuf.length > 800) {
-      await sock.sendMessage(jid, { image: imageBuf, caption: style(headerText) });
+      await sock.sendMessage(jid, { image: imageBuf, caption: style(headerCap) });
     } else {
-      await sock.sendMessage(jid, { text: style(headerText) });
+      await sock.sendMessage(jid, { text: style(headerCap) });
     }
-    // Send as interactive with 3 quick-reply "card" buttons so user taps into each
-    const interactiveButtons = cardsSpec.map((spec) => ({
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({
-        display_text: spec.title,
-        id: p + 'menu ' + (spec.title.includes('Download') ? 'download' : spec.title.includes('Group') ? 'group' : 'tools')
-      })
-    }));
-    for (const b of links) {
-      if (b.url) {
-        interactiveButtons.push({
-          name: 'cta_url',
-          buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url })
-        });
-      }
-    }
-    const preview =
-      '┏━ *📥 Download* ━\n' + cardsSpec[0].body + '\n┗━━━━━━\n\n' +
-      '┏━ *👥 Group* ━\n' + cardsSpec[1].body + '\n┗━━━━━━\n\n' +
-      '┏━ *🛠 Tools* ━\n' + cardsSpec[2].body + '\n┗━━━━━━\n\n' +
-      '_Tap buttons below for each box_';
-    await sock.sendMessage(jid, {
-      text: preview,
-      footer,
-      interactiveButtons
-    });
-    return true;
-  } catch (e) {
-    console.log('menu fallback:', (e.message || '').slice(0, 80));
+  } catch {
+    try { await sock.sendMessage(jid, { text: headerCap }); } catch { return false; }
   }
-  return false;
+
+  try {
+    await sock.sendMessage(jid, { text: style(list) });
+  } catch {
+    try { await sock.sendMessage(jid, { text: list }); } catch { return false; }
+  }
+
+  try {
+    await sock.sendMessage(jid, {
+      text: tail,
+      footer,
+      buttons: links.slice(0, 3).map(b => ({
+        buttonId: b.id,
+        buttonText: { displayText: String(b.text).replace(/↗/g, '').trim().slice(0, 20) },
+        type: 1
+      })),
+      headerType: 1
+    });
+  } catch {
+    try { await sock.sendMessage(jid, { text: tail }); } catch {}
+  }
+  return true;
 }
 
 async function sendInteractiveMenu(jid, caption, quoted) {
@@ -2850,10 +2776,18 @@ async function startBot() {
         }
       }
 
-      // ---- numeric reply picks for APK / XVideos / XNXX (quote-aware) ----
+      // ---- numeric reply: menu category OR APK / XVideos / XNXX ----
       if (!isMe && /^\d{1,2}$/.test(cleanBody)) {
         const n = parseInt(cleanBody, 10);
         if (n >= 1 && n <= 20) {
+          // Menu category pick (from .menu numbered list)
+          try {
+            const menuEntry = global.__menuCache && global.__menuCache.get(from);
+            if (menuEntry?.cats?.[n - 1] && (Date.now() - (menuEntry.at || 0)) < 30 * 60 * 1000) {
+              await sendMenuCategory(from, n, m.pushName);
+              return;
+            }
+          } catch {}
           const pick = resolvePickList(m, from);
           if (pick?.list?.[n - 1]) {
             if (pick.type === 'apk') await downloadAndSendApk(from, m, pick.list[n - 1], reply);
@@ -2861,7 +2795,6 @@ async function startBot() {
             return;
           }
         }
-        // no matching cache → ignore bare number (don't fall through as command)
         return;
       }
 
@@ -2893,6 +2826,18 @@ async function startBot() {
       // ---- numeric command variants: .apk 1 / .xvideos 2 / .1 / .2 (quote-aware) ----
       if (/^\d{1,2}$/.test(cmd)) {
         const n = parseInt(cmd, 10);
+        try {
+          const menuEntry = global.__menuCache && global.__menuCache.get(from);
+          if (menuEntry?.cats?.[n - 1] && (Date.now() - (menuEntry.at || 0)) < 30 * 60 * 1000) {
+            await sendMenuCategory(from, n, m.pushName);
+            return;
+          }
+        } catch {}
+        // allow .1 .2 even without prior menu if in range of known categories
+        if (n >= 1 && n <= 9) {
+          const ok = await sendMenuCategory(from, n, m.pushName);
+          if (ok) return;
+        }
         const pick = resolvePickList(m, from);
         if (pick?.list?.[n - 1]) {
           if (pick.type === 'apk') await downloadAndSendApk(from, m, pick.list[n - 1], reply);
@@ -2913,6 +2858,15 @@ async function startBot() {
           setTimeout(() => react(from, m.key, menuEmojis[i]), i * 280);
         }
         const page = (text || args[0] || '').trim().toLowerCase();
+        // .menu 1  /  .menu download  → open that category only
+        if (page) {
+          if (/^\d{1,2}$/.test(page)) {
+            const ok = await sendMenuCategory(from, parseInt(page, 10), m.pushName);
+            if (ok) return;
+          }
+          const ok2 = await sendMenuCategory(from, page, m.pushName);
+          if (ok2) return;
+        }
         await sendMenuWithMedia(from, m.pushName, userCount, page || null);
         return;
       }
