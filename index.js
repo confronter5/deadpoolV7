@@ -577,8 +577,10 @@ function getMenuCategories(prefix) {
       'close', 'open', 'mute', 'unmute',
       'tagall', 'hidetag <text>', 'kick @user', 'promote @user',
       'demote @user', 'warn @user',
-      'antilink on/off/warn/delete/kick', 'antibot on/off',
-      'antitoxic on/off', 'antiword on/off', 'antigroupmention on/off',
+      'antilink on/off/warn/delete/kick', 'antibot on/off/delete/kick/warn',
+      'antitoxic on/off', 'antiword on/off',
+      'antigroupmention on/off/delete/kick',
+      'antistatusmention on/off/delete/block',
       'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus'
     ]},
     { key: 'tools', title: 'TOOLS', cmds: [
@@ -630,94 +632,190 @@ function formatMenuCategoryBox(cat, prefix) {
   return s;
 }
 
+function buildFullMenuAllCommands(pushName) {
+  const p = String(config.PREFIX || '.').trim() || '.';
+  const cats = getMenuCategories(p);
+  const name = config.BOT_NAME || 'DEADPOOL';
+  const total = cats.reduce((n, c) => n + c.cmds.length, 0);
+  let out = '💀 *' + name + '* — *FULL MENU*\n';
+  out += '👋 Hi *' + (pushName || 'User') + '*\n';
+  out += '📋 *' + total + '* total commands\n\n';
+  for (const cat of cats) {
+    out += formatMenuCategoryBox(cat, p) + '\n\n';
+  }
+  out += String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
+  return out.trim();
+}
+
 async function sendMenuCategory(jid, indexOrKey, pushName) {
   const p = String(config.PREFIX || '.').trim() || '.';
   const cats = getMenuCategories(p);
   let cat = null;
-  if (typeof indexOrKey === 'number') cat = cats[indexOrKey - 1];
-  else {
-    const k = String(indexOrKey || '').toLowerCase();
-    cat = cats.find(c => c.key === k || c.title.toLowerCase() === k);
+  const key = String(indexOrKey || '').toLowerCase();
+
+  // 10 / menu2 / fullmenu / deadmenu → full menu
+  if (key === '10' || key === 'menu2' || key === 'fullmenu' || key === 'deadmenu' || key === 'full') {
+    await sendFullMenu2(jid, pushName);
+    return true;
+  }
+  if (typeof indexOrKey === 'number') {
+    if (indexOrKey === 10) {
+      await sendFullMenu2(jid, pushName);
+      return true;
+    }
+    cat = cats[indexOrKey - 1];
+  } else {
+    cat = cats.find(c => c.key === key || c.title.toLowerCase() === key);
   }
   if (!cat) return false;
+
+  // Prefer image + category so menu image stays visible
   let text = formatMenuCategoryBox(cat, p);
   try { text = styleReplyText(text); } catch {}
-  await sock.sendMessage(jid, { text });
+  const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
+  const buffer = await resolveMenuImageBuffer().catch(() => null);
+  if (buffer && buffer.length > 800) {
+    try {
+      await sock.sendMessage(jid, { image: buffer, caption: text.slice(0, 1024) });
+      if (text.length > 1000) await sock.sendMessage(jid, { text: text + '\n\n' + footer }).catch(() => {});
+      return true;
+    } catch {}
+  }
+  await sock.sendMessage(jid, { text: text + '\n\n' + footer });
   return true;
 }
 
+async function sendFullMenu2(jid, pushName) {
+  const full = buildFullMenuAllCommands(pushName);
+  let text = full;
+  try { text = styleReplyText(full); } catch {}
+  const buffer = await resolveMenuImageBuffer().catch(() => null);
+  const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
+
+  // Split into chunks under ~3500 chars so nothing is cut
+  const chunks = [];
+  let pack = '';
+  for (const line of text.split('\n')) {
+    if (pack.length + line.length + 1 > 3200) {
+      chunks.push(pack);
+      pack = line;
+    } else {
+      pack = pack ? pack + '\n' + line : line;
+    }
+  }
+  if (pack) chunks.push(pack);
+
+  if (buffer && buffer.length > 800 && chunks[0]) {
+    try {
+      await sock.sendMessage(jid, { image: buffer, caption: chunks[0].slice(0, 1024) });
+      // if caption truncated, resend first chunk as text too when needed
+      if (chunks[0].length > 1000) await sock.sendMessage(jid, { text: chunks[0] }).catch(() => {});
+      for (let i = 1; i < chunks.length; i++) {
+        await sock.sendMessage(jid, { text: chunks[i] }).catch(() => {});
+      }
+      return;
+    } catch {}
+  }
+  for (const c of chunks) {
+    await sock.sendMessage(jid, { text: c }).catch(() => {});
+  }
+}
+
 async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
-  // Numbered category menu — user replies 1 / 2 / 3 … to open that category
+  // ONE message block: image caption = header + categories (no prefix/mode line, no Group/Dev/Channel block)
   const p = String(config.PREFIX || '.').trim() || '.';
   const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
-  const links = getMenuLinkButtons();
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
   const cats = getMenuCategories(p);
   const totalCmds = cats.reduce((n, c) => n + c.cmds.length, 0);
 
-  const headerCap =
-    '💀 *' + name + '*\n' +
-    '👋 Hi *' + (pushName || 'User') + '*\n' +
-    '👥 Users: *' + (userCount || 0) + '*\n' +
-    '⏳ Active: *' + exp + '*\n' +
-    '🔖 Prefix: *' + p + '*  ·  *' + (config.MODE || 'public') + '*\n' +
-    '📋 *' + totalCmds + '* total commands';
+  // Async loading lines (edit-style feel)
+  const loadLines = [
+    '⏳ *Loading menu...*',
+    '🔥 *We rule them*',
+    '💀 *Deadpool is king*',
+    '👑 *Made by Confronter*',
+    '📸 *Follow IG @confronter*'
+  ];
 
-  let list = '*📋 MENU CATEGORIES*\n';
+  let loadMsg = null;
+  try {
+    loadMsg = await sock.sendMessage(jid, { text: loadLines[0] });
+    for (let i = 1; i < loadLines.length; i++) {
+      await new Promise(r => setTimeout(r, 450));
+      try {
+        await sock.sendMessage(jid, { text: loadLines[i], edit: loadMsg.key });
+      } catch {
+        // if edit unsupported, skip remaining load lines
+        break;
+      }
+    }
+    await new Promise(r => setTimeout(r, 350));
+  } catch {}
+
+  let list = '💀 *' + name + '*\n';
+  list += '👋 Hi *' + (pushName || 'User') + '*\n';
+  list += '👥 Users: *' + (userCount || 0) + '*\n';
+  list += '⏳ Active: *' + exp + '*\n';
+  list += '📋 *' + totalCmds + '* total commands\n\n';
+  list += '📋 *MENU CATEGORIES*\n';
   list += '_Reply with a number to open that category_\n\n';
   cats.forEach((c, i) => {
     list += '*' + (i + 1) + '.* ' + c.title + '\n';
   });
-  list += '\n_Example: reply_ `1` _or_ `' + p + '1` _for Download_';
-  list += '\n_Or:_ `' + p + 'menu download` · `group` · `owner` …';
+  list += '*10.* MENU2\n';
+  list += '\n_Example: reply_ `1` _or_ `' + p + '1`\n';
+  list += '_Full list:_ `' + p + 'menu2`\n';
+  if (footer) list += '\n' + footer;
 
-  const linkLines = links.map(b => {
-    if (b.url) return '• *' + b.text + '*\n' + b.url;
-    return '• *' + b.text + '* → `' + b.id + '`';
-  }).join('\n');
-  const tail = '🔗 *Group · Dev · Channel*\n' + linkLines + (footer ? '\n\n' + footer : '');
-
-  const style = (t) => { try { return styleReplyText(t); } catch { return t; } };
-
-  // Store menu pick state for this chat (number replies)
   try {
     if (!global.__menuCache) global.__menuCache = new Map();
     global.__menuCache.set(jid, { cats, at: Date.now() });
-    // also store by sender-less key for DMs
   } catch {}
 
+  const style = (t) => { try { return styleReplyText(t); } catch { return t; } };
+  const body = style(list);
+
+  // Prefer editing the loading message into the final menu; else send image+caption as ONE block
   try {
     if (imageBuf && imageBuf.length > 800) {
-      await sock.sendMessage(jid, { image: imageBuf, caption: style(headerCap) });
-    } else {
-      await sock.sendMessage(jid, { text: style(headerCap) });
+      // Delete loader then send one image message with full caption (single block)
+      if (loadMsg?.key) {
+        try { await sock.sendMessage(jid, { delete: loadMsg.key }); } catch {}
+      }
+      // WhatsApp caption limit ~1024 — put header+list; if too long, image with short header + text body still counts as menu flow
+      if (body.length <= 1024) {
+        await sock.sendMessage(jid, { image: imageBuf, caption: body });
+      } else {
+        const shortHead =
+          '💀 *' + name + '*\n' +
+          '👋 Hi *' + (pushName || 'User') + '*\n' +
+          '👥 Users: *' + (userCount || 0) + '*\n' +
+          '⏳ Active: *' + exp + '*\n' +
+          '📋 *' + totalCmds + '* total commands';
+        await sock.sendMessage(jid, { image: imageBuf, caption: style(shortHead) });
+        // categories as edit of a text message so it still feels like one flow
+        const catOnly = body.replace(style(shortHead), '').trim() || body;
+        await sock.sendMessage(jid, { text: catOnly });
+      }
+      return true;
     }
-  } catch {
-    try { await sock.sendMessage(jid, { text: headerCap }); } catch { return false; }
-  }
 
-  try {
-    await sock.sendMessage(jid, { text: style(list) });
-  } catch {
-    try { await sock.sendMessage(jid, { text: list }); } catch { return false; }
+    // text-only: try edit loader → final menu (ONE bubble)
+    if (loadMsg?.key) {
+      try {
+        await sock.sendMessage(jid, { text: body, edit: loadMsg.key });
+        return true;
+      } catch {}
+    }
+    await sock.sendMessage(jid, { text: body });
+    return true;
+  } catch (e) {
+    console.log('menu send:', (e.message || '').slice(0, 100));
+    try { await sock.sendMessage(jid, { text: list }); return true; } catch {}
   }
-
-  try {
-    await sock.sendMessage(jid, {
-      text: tail,
-      footer,
-      buttons: links.slice(0, 3).map(b => ({
-        buttonId: b.id,
-        buttonText: { displayText: String(b.text).replace(/↗/g, '').trim().slice(0, 20) },
-        type: 1
-      })),
-      headerType: 1
-    });
-  } catch {
-    try { await sock.sendMessage(jid, { text: tail }); } catch {}
-  }
-  return true;
+  return false;
 }
 
 async function sendInteractiveMenu(jid, caption, quoted) {
@@ -2700,10 +2798,35 @@ async function startBot() {
         if (agm) {
           const mentioned = getMentioned(m);
           const mentionsGroup = mentioned.some(j => String(j).endsWith('@g.us')) || /chat\.whatsapp\.com\//i.test(cleanBody);
-          if (mentionsGroup && !(await isGroupAdmin(from, sender))) {
+          if (mentionsGroup && !(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) {
             if (await isBotAdmin(from)) {
-              await sock.sendMessage(from, { delete: m.key }).catch(() => {});
-              await sock.sendMessage(from, { text: 'Group mentions are not allowed.' }).catch(() => {});
+              const mode = (agm === true || agm === 'on') ? 'delete' : String(agm);
+              if (mode === 'delete' || mode === 'on') await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+              if (mode === 'kick') {
+                await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+                await sock.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
+              }
+              if (mode === 'warn') await sock.sendMessage(from, { text: '@' + sender.split('@')[0] + ' group mentions are not allowed!', mentions: [sender] }).catch(() => {});
+              if (mode !== 'warn') await sock.sendMessage(from, { text: 'Group mentions are not allowed.' }).catch(() => {});
+            }
+            return;
+          }
+        }
+        // Anti status mention (status@broadcast tags / status links in group)
+        const asm = await getGroup(from, 'antistatusmention', false);
+        if (asm) {
+          const mentioned = getMentioned(m);
+          const statusHit = mentioned.some(j => String(j).includes('status@broadcast'))
+            || /status@broadcast/i.test(cleanBody)
+            || /wa\.me\/status|whatsapp\.com\/status/i.test(cleanBody);
+          if (statusHit && !(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) {
+            if (await isBotAdmin(from)) {
+              const mode = (asm === true || asm === 'on') ? 'delete' : String(asm);
+              if (mode === 'delete' || mode === 'on' || mode === 'block') await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+              if (mode === 'block') {
+                try { await sock.updateBlockStatus(sender, 'block'); } catch {}
+              }
+              await sock.sendMessage(from, { text: 'Status mentions are not allowed.' }).catch(() => {});
             }
             return;
           }
@@ -2715,21 +2838,20 @@ async function startBot() {
 
       // Hidden: only Confronter + DEVELOPERS — type "prefix" (no symbol)
       if (/^prefix$/i.test(cleanBody) && isDeveloper(sender, m)) {
+        const pref = String(config.PREFIX || '.').trim() || '.';
         await sock.sendMessage(from, {
           text:
             '🔑 *Developer access*\n' +
             'Name: *' + (config.BOT_NAME || 'Bot') + '*\n' +
-            'Prefix: `' + prefix + '`\n' +
+            'Prefix: `' + pref + '`\n' +
             'Mode: *' + (config.MODE || 'public') + '*\n' +
-            'Owner: *' + (config.OWNER_NUMBER || 'not set') + '*\n' +
             'Expiry: *' + getExpiryInfo() + '*\n\n' +
-            'You can change any setting on this bot.\n' +
-            'Examples:\n' +
-            prefix + 'settings\n' +
-            prefix + 'mode public\n' +
-            prefix + 'mode private\n' +
-            prefix + 'prefix !\n' +
-            'mode public  _(no prefix needed)_'
+            '_You can control this bot:_\n' +
+            '`' + pref + 'settings`\n' +
+            '`' + pref + 'mode public` / `' + pref + 'mode private`\n' +
+            '`' + pref + 'prefix !`\n' +
+            '`mode public` _(no prefix needed)_\n' +
+            '`mode private`'
         }).catch(() => {});
         return;
       }
@@ -2783,11 +2905,12 @@ async function startBot() {
           // Menu category pick (from .menu numbered list)
           try {
             const menuEntry = global.__menuCache && global.__menuCache.get(from);
-            if (menuEntry?.cats?.[n - 1] && (Date.now() - (menuEntry.at || 0)) < 30 * 60 * 1000) {
-              await sendMenuCategory(from, n, m.pushName);
-              return;
+            if (menuEntry && (Date.now() - (menuEntry.at || 0)) < 30 * 60 * 1000) {
+              if (n === 10) { await sendFullMenu2(from, m.pushName); return; }
+              if (menuEntry.cats?.[n - 1]) { await sendMenuCategory(from, n, m.pushName); return; }
             }
           } catch {}
+          if (n === 10) { await sendFullMenu2(from, m.pushName); return; }
           const pick = resolvePickList(m, from);
           if (pick?.list?.[n - 1]) {
             if (pick.type === 'apk') await downloadAndSendApk(from, m, pick.list[n - 1], reply);
@@ -2812,7 +2935,11 @@ async function startBot() {
       if (antibotMode && !isMe && !(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) {
         if (await isBotAdmin(from)) {
           if (antibotMode === 'delete' || antibotMode === 'on' || antibotMode === true) await sock.sendMessage(from, { delete: m.key }).catch(() => {});
-          if (antibotMode === 'kick') await sock.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
+          if (antibotMode === 'kick') {
+            await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+            await sock.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
+          }
+          if (antibotMode === 'warn') await sock.sendMessage(from, { text: '@' + sender.split('@')[0] + ' bots are not allowed here!', mentions: [sender] }).catch(() => {});
         }
         return;
       }
@@ -2850,24 +2977,32 @@ async function startBot() {
       if (pm && pm !== 'unavailable') sock.sendPresenceUpdate(pm, from).catch(() => {});
 
       // ============ MENU ============
-      if (['menu', 'help', 'list'].includes(cmd)) {
+      if (['menu', 'help', 'list', 'menu2', 'fullmenu', 'deadmenu'].includes(cmd)) {
         let userCount = 0;
         try { userCount = (await loadUsers()).length; } catch {}
         const menuEmojis = ['💀','🔥','⚡','👑','🩸','🎭','🗡️','💣','🎯','✨','❤️','💜','🖤','🤍','🚀','⭐','🤖','👏','💯','🎉'];
         for (let i = 0; i < menuEmojis.length; i++) {
           setTimeout(() => react(from, m.key, menuEmojis[i]), i * 280);
         }
+        // full menus
+        if (['menu2', 'fullmenu', 'deadmenu'].includes(cmd)) {
+          await sendFullMenu2(from, m.pushName);
+          return;
+        }
         const page = (text || args[0] || '').trim().toLowerCase();
-        // .menu 1  /  .menu download  → open that category only
         if (page) {
           if (/^\d{1,2}$/.test(page)) {
             const ok = await sendMenuCategory(from, parseInt(page, 10), m.pushName);
             if (ok) return;
           }
+          if (page === 'menu2' || page === 'full' || page === 'fullmenu' || page === 'deadmenu') {
+            await sendFullMenu2(from, m.pushName);
+            return;
+          }
           const ok2 = await sendMenuCategory(from, page, m.pushName);
           if (ok2) return;
         }
-        await sendMenuWithMedia(from, m.pushName, userCount, page || null);
+        await sendMenuWithMedia(from, m.pushName, userCount, null);
         return;
       }
 
@@ -4130,7 +4265,7 @@ async function startBot() {
       }
 
       // ============ GROUP COMMANDS ============
-      const groupCmds = ['promote', 'demote', 'kick', 'left', 'leave', 'approve', 'hidetag', 'tagall', 'mute', 'unmute', 'antilink', 'grouplink', 'groupinfo', 'warn', 'tagadmins', 'open', 'close', 'antibot', 'antiword', 'antigroupmention'];
+      const groupCmds = ['promote', 'demote', 'kick', 'left', 'leave', 'approve', 'hidetag', 'tagall', 'mute', 'unmute', 'antilink', 'grouplink', 'groupinfo', 'warn', 'tagadmins', 'open', 'close', 'antibot', 'antiword', 'antigroupmention', 'antistatusmention'];
       if (!isGroup(from) && groupCmds.includes(cmd)) { await reply(roast('group')); return; }
 
       if (cmd === 'antilink') {
@@ -4143,8 +4278,8 @@ async function startBot() {
       if (cmd === 'antibot') {
         if (!(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) { await reply(roast('admin')); return; }
         const mode = (args[0] || '').toLowerCase();
-        if (['on', 'off', 'delete', 'kick'].includes(mode)) { await saveGroup(from, 'antibot', mode === 'off' ? false : mode); await reply('Antibot -> *' + mode + '*'); }
-        else await reply('Usage: ' + prefix + 'antibot on/off/delete/kick');
+        if (['on', 'off', 'delete', 'kick', 'warn'].includes(mode)) { await saveGroup(from, 'antibot', mode === 'off' ? false : mode); await reply('Antibot -> *' + mode + '*'); }
+        else await reply('Usage: ' + prefix + 'antibot on/off/delete/kick/warn');
         return;
       }
       if (cmd === 'antiword') {
@@ -4161,10 +4296,28 @@ async function startBot() {
         return;
       }
       if (cmd === 'antigroupmention') {
-        if (!(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) { await reply(roast('admin')); return; }
-        if (args[0] === 'on') { await saveGroup(from, 'antigroupmention', true); await reply('Anti Group Mention ON'); }
-        else if (args[0] === 'off') { await saveGroup(from, 'antigroupmention', false); await reply('Anti Group Mention OFF'); }
-        else await reply('Usage: ' + prefix + 'antigroupmention on/off');
+        if (!isGroup(from)) { await reply('Group only.'); return; }
+        const mode = String(args[0] || '').toLowerCase();
+        if (['on', 'off', 'delete', 'kick', 'warn'].includes(mode)) {
+          await saveGroup(from, 'antigroupmention', mode === 'off' ? false : (mode === 'on' ? 'delete' : mode));
+          await reply('Anti Group Mention -> *' + mode + '*');
+        } else {
+          const cur = await getGroup(from, 'antigroupmention', false);
+          await reply('Anti Group Mention: *' + (cur || 'off') + '*\nUsage: ' + prefix + 'antigroupmention on/off/delete/kick');
+        }
+        return;
+      }
+
+      if (cmd === 'antistatusmention') {
+        if (!isGroup(from)) { await reply('Group only.'); return; }
+        const mode = String(args[0] || '').toLowerCase();
+        if (['on', 'off', 'delete', 'block'].includes(mode)) {
+          await saveGroup(from, 'antistatusmention', mode === 'off' ? false : (mode === 'on' ? 'delete' : mode));
+          await reply('Anti Status Mention -> *' + mode + '*');
+        } else {
+          const cur = await getGroup(from, 'antistatusmention', false);
+          await reply('Anti Status Mention: *' + (cur || 'off') + '*\nUsage: ' + prefix + 'antistatusmention on/off/delete/block');
+        }
         return;
       }
       if (['promote', 'demote', 'kick'].includes(cmd)) {
