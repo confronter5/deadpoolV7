@@ -506,7 +506,7 @@ function buildMenuPage(page, pushName) {
     return box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
   }
   if (['games', 'game'].includes(pg)) {
-    return box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard']);
+    return box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard', 'dice', '8ball', 'coinflip', 'epl', 'livescore']);
   }
   if (['owner', 'dev', 'developer'].includes(pg)) {
     return box('OWNER / DEV', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antideletestatus on/off', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>', 'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>', 'reaction <emoji>', 'pair <number>', 'restart', 'update']);
@@ -607,7 +607,8 @@ function getMenuCategories(prefix) {
     ]},
     { key: 'games', title: 'GAMES', cmds: [
       'family100', 'tebak gambar|kata|kalimat|lirik|lontong',
-      'math easy|medium|hard', 'dice', '8ball', 'coinflip'
+      'math easy|medium|hard', 'dice', '8ball', 'coinflip',
+      'epl', 'livescore'
     ]},
     { key: 'fun', title: 'FUN & TEXTMAKER', cmds: [
       'joke', 'meme', 'fact', 'quote', 'truth', 'dare',
@@ -626,9 +627,10 @@ function getMenuCategories(prefix) {
 
 function formatMenuCategoryBox(cat, prefix) {
   const p = String(prefix || config.PREFIX || '.').trim() || '.';
-  let s = '┌─「 *' + cat.title + '* 」\n';
-  for (const c of cat.cmds) s += '│ ' + p + c + '\n';
-  s += '└────────────';
+  const line = '▬▬▬▬▬▬▬▬▬▬▬▬';
+  let s = line + '\n│➤ *' + cat.title + '*\n' + line + '\n';
+  for (const c of cat.cmds) s += '│➤ ' + p + c + '\n';
+  s += line;
   return s;
 }
 
@@ -722,98 +724,188 @@ async function sendFullMenu2(jid, pushName) {
 }
 
 async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
-  // ONE message block: image caption = header + categories (no prefix/mode line, no Group/Dev/Channel block)
+  // Image message with caption edited in-place (async lines → final menu).
+  // Style matches Telegram-style ▬▬ / │➤ lines.
   const p = String(config.PREFIX || '.').trim() || '.';
   const footer = String(config.POWERED_BY || 'Powered by Confronter').replace(/^\s*>\s*/, '');
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
   const cats = getMenuCategories(p);
   const totalCmds = cats.reduce((n, c) => n + c.cmds.length, 0);
+  const user = pushName || 'User';
 
-  // Async loading lines (edit-style feel)
-  const loadLines = [
-    '⏳ *Loading menu...*',
-    '🔥 *We rule them*',
-    '💀 *Deadpool is king*',
-    '👑 *Made by Confronter*',
-    '📸 *Follow IG @confronter*'
+  const line = '▬▬▬▬▬▬▬▬▬▬▬▬';
+  // Exact calendar day + time in EAT (Africa/Nairobi)
+  function formatMenuCalendar(d) {
+    try {
+      const tz = 'Africa/Nairobi';
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
+      const day = d.toLocaleDateString('en-GB', { day: '2-digit', timeZone: tz });
+      const month = d.toLocaleDateString('en-US', { month: 'long', timeZone: tz });
+      const year = d.toLocaleDateString('en-US', { year: 'numeric', timeZone: tz });
+      const time = d.toLocaleTimeString('en-US', {
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz
+      });
+      // e.g. Thursday, 30 October 2026\n06:48 PM EAT
+      return weekday + ', ' + day + ' ' + month + ' ' + year + '\n' + time + ' EAT';
+    } catch {
+      return d.toUTCString();
+    }
+  }
+  const dateStr = formatMenuCalendar(new Date());
+  const powered = (footer || 'Powered by Confronter').replace(/^\s*>\s*/, '').replace(/\*/g, '').trim();
+
+  const loadCaptions = [
+    line + '\n│➤ ⏳ *Loading menu...*\n' + line,
+    line + '\n│➤ 🔥 *We rule them*\n' + line,
+    line + '\n│➤ 💀 *Deadpool is king*\n' + line,
+    line + '\n│➤ 👑 *Made by Confronter*\n' + line,
+    line + '\n│➤ 📸 *Follow IG @confronter*\n' + line
   ];
 
-  let loadMsg = null;
-  try {
-    loadMsg = await sock.sendMessage(jid, { text: loadLines[0] });
-    for (let i = 1; i < loadLines.length; i++) {
-      await new Promise(r => setTimeout(r, 450));
-      try {
-        await sock.sendMessage(jid, { text: loadLines[i], edit: loadMsg.key });
-      } catch {
-        // if edit unsupported, skip remaining load lines
-        break;
-      }
-    }
-    await new Promise(r => setTimeout(r, 350));
-  } catch {}
-
-  let list = '💀 *' + name + '*\n';
-  list += '👋 Hi *' + (pushName || 'User') + '*\n';
-  list += '👥 Users: *' + (userCount || 0) + '*\n';
-  list += '⏳ Active: *' + exp + '*\n';
-  list += '📋 *' + totalCmds + '* total commands\n\n';
-  list += '📋 *MENU CATEGORIES*\n';
-  list += '_Reply with a number to open that category_\n\n';
+  let catLines = '';
   cats.forEach((c, i) => {
-    list += '*' + (i + 1) + '.* ' + c.title + '\n';
+    catLines += '│➤ *' + (i + 1) + '.* ' + c.title + '\n';
   });
-  list += '*10.* MENU2\n';
-  list += '\n_Example: reply_ `1` _or_ `' + p + '1`\n';
-  list += '_Full list:_ `' + p + 'menu2`\n';
-  if (footer) list += '\n' + footer;
+  catLines += '│➤ *10.* MENU2\n';
+
+  const finalCaption =
+    line + '\n' +
+    '│➤ 💀 *' + name + '*\n' +
+    '│➤ 👋 Hi *' + user + '*!\n' +
+    '│➤ 👥 Users: *' + (userCount || 0) + '*\n' +
+    '│➤ ⏳ Active: *' + exp + '*\n' +
+    '│➤ 📋 *' + totalCmds + '* total commands\n' +
+    line + '\n\n' +
+    '📋 *MENU CATEGORIES*\n' +
+    '_Reply with a number to open that category_\n\n' +
+    catLines + '\n' +
+    '_Example: reply_ `1` _or_ `' + p + '1`\n' +
+    '_Full list:_ `' + p + 'menu2`\n\n' +
+    '┃✦ ' + powered + ' ✦\n' +
+    '📅 ' + dateStr;
 
   try {
     if (!global.__menuCache) global.__menuCache = new Map();
     global.__menuCache.set(jid, { cats, at: Date.now() });
   } catch {}
 
-  const style = (t) => { try { return styleReplyText(t); } catch { return t; } };
-  const body = style(list);
+  const style = (t) => {
+    try { return styleReplyText(t); } catch { return t; }
+  };
 
-  // Prefer editing the loading message into the final menu; else send image+caption as ONE block
-  try {
-    if (imageBuf && imageBuf.length > 800) {
-      // Delete loader then send one image message with full caption (single block)
-      if (loadMsg?.key) {
-        try { await sock.sendMessage(jid, { delete: loadMsg.key }); } catch {}
+  // --- Path A: image + edit caption through async lines (no delete) ---
+  if (imageBuf && imageBuf.length > 800) {
+    try {
+      const firstCap = style(loadCaptions[0]).slice(0, 1024);
+      const sent = await sock.sendMessage(jid, { image: imageBuf, caption: firstCap });
+      const key = sent?.key;
+
+      if (key) {
+        for (let i = 1; i < loadCaptions.length; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const cap = style(loadCaptions[i]).slice(0, 1024);
+          try {
+            // Edit same message caption in place
+            await sock.sendMessage(jid, { image: imageBuf, caption: cap, edit: key });
+          } catch {
+            try {
+              await sock.sendMessage(jid, { caption: cap, edit: key });
+            } catch {
+              // edit not supported — stop animating, still finish with final
+              break;
+            }
+          }
+        }
+        await new Promise(r => setTimeout(r, 400));
+        const finalCap = style(finalCaption);
+        // Final menu on same bubble if it fits; else edit short + send rest as text
+        if (finalCap.length <= 1024) {
+          try {
+            await sock.sendMessage(jid, { image: imageBuf, caption: finalCap, edit: key });
+            return true;
+          } catch {
+            try {
+              await sock.sendMessage(jid, { caption: finalCap, edit: key });
+              return true;
+            } catch {}
+          }
+        }
+        // Caption too long for one edit: put header on image, categories styled below (still no delete of image)
+        const shortFinal =
+          line + '\n' +
+          '│➤ 💀 *' + name + '*\n' +
+          '│➤ 👋 Hi *' + user + '*!\n' +
+          '│➤ 👥 Users: *' + (userCount || 0) + '*\n' +
+          '│➤ ⏳ Active: *' + exp + '*\n' +
+          '│➤ 📋 *' + totalCmds + '* total commands\n' +
+          line;
+        try {
+          await sock.sendMessage(jid, { image: imageBuf, caption: style(shortFinal).slice(0, 1024), edit: key });
+        } catch {}
+        const rest =
+          '📋 *MENU CATEGORIES*\n' +
+          '_Reply with a number to open that category_\n\n' +
+          catLines + '\n' +
+          '_Example: reply_ `1` _or_ `' + p + '1`\n' +
+          '_Full list:_ `' + p + 'menu2`\n\n' +
+          '┃✦ ' + powered + ' ✦\n' +
+          '📅 ' + dateStr;
+        await sock.sendMessage(jid, { text: style(rest) }).catch(() => {});
+        return true;
       }
-      // WhatsApp caption limit ~1024 — put header+list; if too long, image with short header + text body still counts as menu flow
-      if (body.length <= 1024) {
-        await sock.sendMessage(jid, { image: imageBuf, caption: body });
-      } else {
-        const shortHead =
-          '💀 *' + name + '*\n' +
-          '👋 Hi *' + (pushName || 'User') + '*\n' +
-          '👥 Users: *' + (userCount || 0) + '*\n' +
-          '⏳ Active: *' + exp + '*\n' +
-          '📋 *' + totalCmds + '* total commands';
-        await sock.sendMessage(jid, { image: imageBuf, caption: style(shortHead) });
-        // categories as edit of a text message so it still feels like one flow
-        const catOnly = body.replace(style(shortHead), '').trim() || body;
-        await sock.sendMessage(jid, { text: catOnly });
-      }
-      return true;
+    } catch (e) {
+      console.log('menu image edit path:', (e.message || '').slice(0, 100));
     }
 
-    // text-only: try edit loader → final menu (ONE bubble)
-    if (loadMsg?.key) {
+    // Fallback: one image with final caption (no async if send/edit failed)
+    try {
+      const cap = style(finalCaption);
+      if (cap.length <= 1024) {
+        await sock.sendMessage(jid, { image: imageBuf, caption: cap });
+      } else {
+        const shortFinal =
+          line + '\n' +
+          '│➤ 💀 *' + name + '*\n' +
+          '│➤ 👋 Hi *' + user + '*!\n' +
+          '│➤ 👥 Users: *' + (userCount || 0) + '*\n' +
+          '│➤ ⏳ Active: *' + exp + '*\n' +
+          '│➤ 📋 *' + totalCmds + '* total commands\n' +
+          line;
+        await sock.sendMessage(jid, { image: imageBuf, caption: style(shortFinal) });
+        const rest =
+          '📋 *MENU CATEGORIES*\n' +
+          '_Reply with a number_\n\n' + catLines + '\n' +
+          '┃✦ ' + powered + ' ✦\n📅 ' + dateStr;
+        await sock.sendMessage(jid, { text: style(rest) }).catch(() => {});
+      }
+      return true;
+    } catch (e) {
+      console.log('menu image final:', (e.message || '').slice(0, 80));
+    }
+  }
+
+  // --- Path B: text-only — edit same bubble through load lines → final ---
+  try {
+    const sent = await sock.sendMessage(jid, { text: style(loadCaptions[0]) });
+    const key = sent?.key;
+    if (key) {
+      for (let i = 1; i < loadCaptions.length; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          await sock.sendMessage(jid, { text: style(loadCaptions[i]), edit: key });
+        } catch { break; }
+      }
+      await new Promise(r => setTimeout(r, 400));
       try {
-        await sock.sendMessage(jid, { text: body, edit: loadMsg.key });
+        await sock.sendMessage(jid, { text: style(finalCaption), edit: key });
         return true;
       } catch {}
     }
-    await sock.sendMessage(jid, { text: body });
+    await sock.sendMessage(jid, { text: style(finalCaption) });
     return true;
   } catch (e) {
-    console.log('menu send:', (e.message || '').slice(0, 100));
-    try { await sock.sendMessage(jid, { text: list }); return true; } catch {}
+    console.log('menu text path:', (e.message || '').slice(0, 80));
   }
   return false;
 }
