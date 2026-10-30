@@ -20,11 +20,7 @@
       "description": "Owner number with country code (no +)",
       "required": true,
       "value": ""
-    },
-    "CONFRONTER_API": {
-      "description": "Your APIs base URL",
-      "required": false,
-      "value": "https://apis.techwizardx.top"
+    
     },
     "BOT_EXPIRY_DAYS": {
       "description": "Bot active days until expiry. Example 7, 30. Use 0 for unlimited",
