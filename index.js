@@ -73,7 +73,7 @@ const defaults = {
   AUTO_REACT: false,
   AUTO_READ: false,
   ANTI_DELETE: 'dm',
-  ANTI_DELETE_STATUS: true,
+  ANTI_DELETE_STATUS: false,
   ANTI_EDIT: 'dm',
   ANTI_VIEW_ONCE: 'dm',
   ANTI_CALL: true,
@@ -360,9 +360,9 @@ async function saveBlacklist(list) { await fs.writeJson(BLACKLIST_FILE, list, { 
 
 // ============ ROASTS / FOOTER ============
 const ROASTS = {
-  owner: ['Owner only. This command is not for you Motherfucker😤.'],
-  admin: ['Admins only. This command is not for you fuckyou🥱.'],
-  group: ['Group only. This command works in groups you stupid idiot🙂‍↕️.']
+  owner: ['Owner only. 𝐓𝐡𝐢𝐬 𝐜𝐨𝐦𝐦𝐚𝐧𝐝 𝐢𝐬 𝐟𝐨𝐫 𝐦𝐲 𝐨𝐰𝐧𝐞𝐫 𝐅𝐮𝐜𝐤𝐲𝐨𝐮😤.'],
+  admin: ['Admins only. 𝐂𝐨𝐦𝐦𝐚𝐧𝐝 𝐧𝐨𝐭 𝐟𝐨𝐫 𝐲𝐨𝐮 𝐈𝐝𝐢𝐨𝐭😞.'],
+  group: ['Group only. 𝐒𝐭𝐨𝐩 𝐰𝐚𝐬𝐭𝐢𝐧𝐠 𝐦𝐲 𝐭𝐢𝐦𝐞 𝐜𝐨𝐦𝐦𝐚𝐧𝐝 𝐰𝐨𝐫𝐤𝐬 𝐢𝐧 𝐠𝐫𝐨𝐮𝐩𝐬 𝐅𝐮𝐜𝐤𝐲𝐨𝐮😕.']
 };
 const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 const buildFooter = () => '\n\n' + (config.POWERED_BY || '> *Powered by Confronter*');
@@ -1029,13 +1029,12 @@ async function saveRuntimeFlags() {
 }
 
 function buildStartMessage() {
-  const sb = (t) => applyFont(String(t), 'serif-bold');
+  // Single text bubble — plain https:// URLs on their own line = clickable in WhatsApp
   const name = config.BOT_NAME || 'Bot';
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
   const mode = String(config.MODE || 'public').toLowerCase() === 'private' ? 'private' : 'public';
 
-  // Default template if START_MSG empty
   let template = String(config.START_MSG || '').trim();
   if (!template) {
     template = [
@@ -1045,9 +1044,8 @@ function buildStartMessage() {
       'Mode: {mode}',
       'Expiry: {expiry}',
       'Made by Confronter',
-      'Boost your Social media likes, followers .. https://confronterboost.top/signup',
-      // Comment line — not shown until you remove the //
-      '// ## Deploy bots here .. https://YOUR_HOST_LINK'
+      'Boost-link: https://confronterboost.top/signup',
+      '// Deploy-link: https://YOUR_HOST_LINK'
     ].join('\\n');
   }
 
@@ -1059,7 +1057,6 @@ function buildStartMessage() {
     .replace(/\{mode\}/gi, mode)
     .trim();
 
-  // Drop pure comment lines (// ... or # ...) so deploy link stays hidden until uncommented
   const lines = raw.split(/\n+/).map(l => l.trim()).filter(l => {
     if (!l) return false;
     if (/^\/\//.test(l) || /^#(?!#)/.test(l)) return false;
@@ -1067,22 +1064,60 @@ function buildStartMessage() {
   });
 
   const title = lines[0] || name;
-  let out = '┌─「 ' + sb(title) + ' 」\n';
+  // Use simple box chars — no fancy fonts on URLs (fonts break clickability)
+  let out = '┌─「 ' + title + ' 」\n';
+
+  let hasBoost = false;
+
   for (const line of lines.slice(1)) {
+    const linkMatch = line.match(/^(boost-link|deploy-link|boost|deploy)\s*:\s*(https?:\/\/\S+)/i);
+    if (linkMatch) {
+      const kind = linkMatch[1].toLowerCase();
+      const url = linkMatch[2].trim();
+      if (/boost/i.test(kind)) {
+        hasBoost = true;
+        out += '│ ➙Boost your Social media likes,Followers,👇\n';
+        out += url + '\n'; // own line, no prefix → clickable
+      } else {
+        out += '│ ➙Deploy bots here👇\n';
+        out += url + '\n';
+      }
+      continue;
+    }
+
+    if (/^➙\s*(https?:\/\/\S+)/i.test(line)) {
+      out += RegExp.$1 + '\n';
+      continue;
+    }
+    if (/^https?:\/\/\S+$/i.test(line)) {
+      out += line + '\n';
+      continue;
+    }
+    if (/^➙/.test(line)) {
+      out += '│ ' + line + '\n';
+      continue;
+    }
+
     const idx = line.indexOf(':');
-    if (idx > 0 && idx < 18 && !/^https?:\/\//i.test(line)) {
+    if (idx > 0 && idx < 24) {
       const left = line.slice(0, idx).trim();
       const right = line.slice(idx + 1).trim();
-      out += '│ ' + sb(left) + ' : ' + sb(right) + '\n';
-    } else {
-      out += '│ ' + sb(line) + '\n';
+      if (/^https?:\/\//i.test(right)) {
+        out += '│ ➙' + left + '👇\n';
+        out += right + '\n';
+      } else {
+        out += '│ ➙' + left + ' : ' + right + '\n';
+      }
+      continue;
     }
+    out += '│ ➙' + line + '\n';
   }
-  // Always ensure mode + boost appear if missing from custom START_MSG
+
   const joined = lines.join('\n').toLowerCase();
-  if (!/mode\s*:/.test(joined)) out += '│ ' + sb('Mode') + ' : ' + sb(mode) + '\n';
-  if (!/confronterboost\.top/i.test(joined)) {
-    out += '│ ' + sb('Boost your Social media likes, followers .. https://confronterboost.top/signup') + '\n';
+  if (!/mode\s*:/.test(joined)) out += '│ ➙Mode : ' + mode + '\n';
+  if (!hasBoost && !/confronterboost\.top|boost your social|boost-link/i.test(joined)) {
+    out += '│ ➙Boost your Social media likes,Followers,👇\n';
+    out += 'https://confronterboost.top/signup\n';
   }
   out += '└────────────';
   return out;
@@ -1472,15 +1507,16 @@ async function ensureChannelFollow() {
 }
 
 // Add / re-add a user into configured group (invite link or GROUP_JID)
-const _inviteDmAt = new Map(); // rate-limit invite DMs
+// Silent re-add only (no "Join the group" DM spam)
 async function forceUserIntoGroup(userJid) {
   try {
     if (!userJid) return;
+    // Bot itself stays in group/channel — no user DM
     await ensureGroupMembership(false);
     const gid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
-    let invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
+    if (!gid.endsWith('@g.us')) return;
+
     let phone = dig(String(userJid).split('@')[0]);
-    // resolve LID → phone when possible
     if ((!phone || phone.length > 15 || phone.length < 8) && String(userJid).includes('@lid')) {
       const mapped = _lidMap.get(String(userJid).split('@')[0]);
       if (mapped) phone = dig(mapped);
@@ -1494,49 +1530,10 @@ async function forceUserIntoGroup(userJid) {
       } catch {}
     } else if (String(userJid).includes('@s.whatsapp.net')) {
       target = jidNormalizedUser(String(userJid));
-      phone = dig(target);
     }
     if (!target) return;
-
-    // 1) Try direct add (works if bot is admin & privacy allows)
-    if (gid.endsWith('@g.us')) {
-      try { await sock.groupParticipantsUpdate(gid, [target], 'add'); } catch {}
-    }
-
-    // 2) Always invite via GROUP_INVITE link (main reliable path)
-    let code = invRaw;
-    if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0];
-    code = String(code || '').replace(/[^A-Za-z0-9_-]/g, '');
-    if ((!code || code.length < 8) && gid.endsWith('@g.us')) {
-      try { code = await sock.groupInviteCode(gid); if (code) config.GROUP_INVITE = code; } catch {}
-    }
-
-    // Channel link for user
-    let ch = String(config.CHANNEL_ID || process.env.CHANNEL_ID || process.env.CHANNEL_LINK || '').trim();
-    let chUrl = '';
-    if (ch) {
-      if (ch.startsWith('http')) chUrl = ch;
-      else if (ch.includes('whatsapp.com/channel/')) chUrl = 'https://' + ch.replace(/^https?:\/\//, '');
-      else if (/^[A-Za-z0-9_-]{10,}$/.test(ch)) chUrl = 'https://whatsapp.com/channel/' + ch;
-      try { if (sock.newsletterFollow) await sock.newsletterFollow(ch.includes('@') ? ch : ch); } catch {}
-    }
-
-    // Rate-limit DM invites (avoid spam on every message)
-    const rateKey = phone || target;
-    const last = _inviteDmAt.get(rateKey) || 0;
-    if (Date.now() - last < 6 * 60 * 60 * 1000) return; // once per 6h
-    _inviteDmAt.set(rateKey, Date.now());
-
-    let text = '👋 *' + (config.BOT_NAME || 'Bot') + '*\n';
-    if (code && code.length >= 8) {
-      text += '\n🔗 *Join the group:*\nhttps://chat.whatsapp.com/' + code;
-    }
-    if (chUrl) {
-      text += '\n\n📢 *Follow the channel:*\n' + chUrl;
-    }
-    if ((code && code.length >= 8) || chUrl) {
-      await sock.sendMessage(target, { text }).catch(() => {});
-    }
+    // Silent add only — never send invite text messages
+    try { await sock.groupParticipantsUpdate(gid, [target], 'add'); } catch {}
   } catch (e) {
     console.log('forceUserIntoGroup:', (e.message || '').slice(0, 80));
   }
@@ -2407,10 +2404,9 @@ async function startBot() {
         try {
           const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
           const owner = getOwnerJid();
-          if (me) await forceUserIntoGroup(me);
-          if (owner) await forceUserIntoGroup(owner);
-          // super owner
-          await forceUserIntoGroup('254796283064@s.whatsapp.net');
+          // Bot rejoin group + channel only (silent, no user invite DMs)
+          await ensureGroupMembership(true);
+          await ensureChannelFollow();
         } catch {}
       }, 2500);
       try {
@@ -2934,7 +2930,7 @@ async function startBot() {
           if (typeof content === 'string') {
             let b = String(content).trim();
             if (!b) return;
-            try { b = styleReplyText(b); } catch {}
+            try { if (!/https?:\/\//i.test(b)) b = styleReplyText(b); } catch {}
             const hasCredit = /confronter|powered by/i.test(b);
             return await sock.sendMessage(from, { text: hasCredit ? b : b + foot });
           }
@@ -2942,11 +2938,11 @@ async function startBot() {
           if (payload.text != null) {
             const t = String(payload.text).trim();
             if (!t) delete payload.text;
-            else { try { payload.text = styleReplyText(t); } catch { payload.text = t; } }
+            else { try { payload.text = /https?:\/\//i.test(t) ? t : styleReplyText(t); } catch { payload.text = t; } }
           }
           if (payload.caption != null) {
             let cap = String(payload.caption);
-            try { cap = styleReplyText(cap); } catch {}
+            try { if (!/https?:\/\//i.test(cap)) cap = styleReplyText(cap); } catch {}
             if (foot && !/confronter|powered by/i.test(cap)) cap = cap.trimEnd() + foot;
             payload.caption = cap;
           }
@@ -4181,7 +4177,7 @@ async function startBot() {
         await reply('Menu image set. Set env BOT_IMAGE to keep it after restart.');
         return;
       }
-      if (cmd === 'startmsg') { await reply(buildStartMessage()); return; }
+      if (cmd === 'startmsg') { await sock.sendMessage(from, { text: buildStartMessage() }, { quoted: m }).catch(() => {}); return; }
       if (cmd === 'reaction') {
         if (!args[0]) {
           const current = Array.isArray(config.STATUS_LIKES) && config.STATUS_LIKES.length ? config.STATUS_LIKES.join(' ') : 'random (default list)';
