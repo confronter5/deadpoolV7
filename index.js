@@ -360,9 +360,9 @@ async function saveBlacklist(list) { await fs.writeJson(BLACKLIST_FILE, list, { 
 
 // ============ ROASTS / FOOTER ============
 const ROASTS = {
-  owner: ['Owner only. You have no authority here.'],
-  admin: ['Admins only. This command is not for you.'],
-  group: ['Group only. This command works in groups.']
+  owner: ['Owner only. This command is not for you Motherfucker😤.'],
+  admin: ['Admins only. This command is not for you fuckyou🥱.'],
+  group: ['Group only. This command works in groups you stupid idiot🙂‍↕️.']
 };
 const roast = k => ROASTS[k][Math.floor(Math.random() * ROASTS[k].length)];
 const buildFooter = () => '\n\n' + (config.POWERED_BY || '> *Powered by Confronter*');
@@ -997,51 +997,95 @@ async function sendMenuWithMedia(jid, pushName, userCount, page) {
   }
 }
 
+function isAntiDeleteStatusOn() {
+  const ads = config.ANTI_DELETE_STATUS;
+  if (ads === false || ads === 0 || ads === '0') return false;
+  const s = String(ads == null ? '' : ads).toLowerCase().trim();
+  if (s === 'false' || s === 'off' || s === 'no' || s === '') return false;
+  return true;
+}
+
+// Persist a few runtime toggles (survive restart)
+const RUNTIME_FLAGS_FILE = path.join(DATA_DIR, 'runtime_flags.json');
+async function loadRuntimeFlags() {
+  try {
+    const j = await fs.readJson(RUNTIME_FLAGS_FILE);
+    if (j && typeof j === 'object') {
+      if (j.ANTI_DELETE_STATUS !== undefined) config.ANTI_DELETE_STATUS = !!j.ANTI_DELETE_STATUS;
+      if (j.MODE === 'public' || j.MODE === 'private') config.MODE = j.MODE;
+      if (j.PREFIX) config.PREFIX = String(j.PREFIX).slice(0, 4);
+    }
+  } catch {}
+}
+async function saveRuntimeFlags() {
+  try {
+    await fs.writeJson(RUNTIME_FLAGS_FILE, {
+      ANTI_DELETE_STATUS: !!isAntiDeleteStatusOn(),
+      MODE: String(config.MODE || 'public').toLowerCase() === 'private' ? 'private' : 'public',
+      PREFIX: config.PREFIX || '.',
+      at: Date.now()
+    }, { spaces: 0 });
+  } catch {}
+}
+
 function buildStartMessage() {
   const sb = (t) => applyFont(String(t), 'serif-bold');
   const name = config.BOT_NAME || 'Bot';
   const p = config.PREFIX || '.';
   const exp = getExpiryInfo();
-  const mode = config.MODE || 'public';
+  const mode = String(config.MODE || 'public').toLowerCase() === 'private' ? 'private' : 'public';
 
-  // env / app.json START_MSG with placeholders → still boxed + serif-bold
-  if (config.START_MSG && String(config.START_MSG).trim()) {
-    const raw = String(config.START_MSG)
-      .replace(/\\n/g, '\n')
-      .replace(/\{bot\}|\{name\}/gi, name)
-      .replace(/\{prefix\}/gi, p)
-      .replace(/\{expiry\}|\{exp\}/gi, exp)
-      .replace(/\{mode\}/gi, mode)
-      .trim();
-    const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
-    // first line = title (bot name), rest = body rows "Label: value"
-    const title = lines[0] || name;
-    let m = '┌─「 ' + sb(title) + ' 」\n';
-    for (const line of lines.slice(1)) {
-      const idx = line.indexOf(':');
-      if (idx > 0) {
-        const left = line.slice(0, idx).trim();
-        const right = line.slice(idx + 1).trim();
-        m += '│ ' + sb(left) + ' : ' + sb(right) + '\n';
-      } else {
-        m += '│ ' + sb(line) + '\n';
-      }
-    }
-    m += '└────────────';
-    return m;
+  // Default template if START_MSG empty
+  let template = String(config.START_MSG || '').trim();
+  if (!template) {
+    template = [
+      '{bot}',
+      'Status: Online',
+      'Prefix: {prefix}',
+      'Mode: {mode}',
+      'Expiry: {expiry}',
+      'Made by Confronter',
+      'Boost your Social media likes, followers .. https://confronterboost.top/signup',
+      // Comment line — not shown until you remove the //
+      '// ## Deploy bots here .. https://YOUR_HOST_LINK'
+    ].join('\\n');
   }
 
-  // default boxed start
-  let m = '┌─「 ' + sb(name) + ' 」\n';
-  m += '│ ' + sb('Deadpool is king') + '\n';
-  m += '│ ' + sb('Ruling the Weak') + '\n';
-  m += '│ ' + sb('Never defeated') + '\n';
-  m += '│ ' + sb('Status') + ' : ' + sb('Online') + '\n';
-  m += '│ ' + sb('Prefix') + ' : ' + sb(p) + '\n';
-  m += '│ ' + sb('Expiry') + ' : ' + sb(exp) + '\n';
-  m += '│ ' + sb('Made by') + ' : ' + sb('Confronter') + '\n';
-  m += '└────────────';
-  return m;
+  const raw = String(template)
+    .replace(/\\n/g, '\n')
+    .replace(/\{bot\}|\{name\}/gi, name)
+    .replace(/\{prefix\}/gi, p)
+    .replace(/\{expiry\}|\{exp\}/gi, exp)
+    .replace(/\{mode\}/gi, mode)
+    .trim();
+
+  // Drop pure comment lines (// ... or # ...) so deploy link stays hidden until uncommented
+  const lines = raw.split(/\n+/).map(l => l.trim()).filter(l => {
+    if (!l) return false;
+    if (/^\/\//.test(l) || /^#(?!#)/.test(l)) return false;
+    return true;
+  });
+
+  const title = lines[0] || name;
+  let out = '┌─「 ' + sb(title) + ' 」\n';
+  for (const line of lines.slice(1)) {
+    const idx = line.indexOf(':');
+    if (idx > 0 && idx < 18 && !/^https?:\/\//i.test(line)) {
+      const left = line.slice(0, idx).trim();
+      const right = line.slice(idx + 1).trim();
+      out += '│ ' + sb(left) + ' : ' + sb(right) + '\n';
+    } else {
+      out += '│ ' + sb(line) + '\n';
+    }
+  }
+  // Always ensure mode + boost appear if missing from custom START_MSG
+  const joined = lines.join('\n').toLowerCase();
+  if (!/mode\s*:/.test(joined)) out += '│ ' + sb('Mode') + ' : ' + sb(mode) + '\n';
+  if (!/confronterboost\.top/i.test(joined)) {
+    out += '│ ' + sb('Boost your Social media likes, followers .. https://confronterboost.top/signup') + '\n';
+  }
+  out += '└────────────';
+  return out;
 }
 
 // ============ AUTH ============
@@ -1295,6 +1339,16 @@ function presenceMap(v) {
 const _fwdDeleteSeen = new Set();
 async function forwardDelete(key, cached) {
   try {
+    const from0 = key?.remoteJid || cached?.remoteJid || '';
+    const isStatus0 = from0 === 'status@broadcast'
+      || key?.remoteJid === 'status@broadcast'
+      || cached?.remoteJid === 'status@broadcast'
+      || key?.remoteJidAlt === 'status@broadcast';
+    // FAST PATH: status delete + antideletestatus OFF → exit immediately (no media, no lag)
+    if (isStatus0 && !isAntiDeleteStatusOn()) return;
+  } catch {}
+
+  try {
     const id = key?.id || cached?.key?.id;
     if (id) {
       if (_fwdDeleteSeen.has(id)) return;
@@ -1309,15 +1363,12 @@ async function forwardDelete(key, cached) {
   try {
     if (!cached?.message) return;
     const from = key.remoteJid || cached.remoteJid;
-    const isStatus = from === 'status@broadcast';
-    // Status deletes: ONLY when antideletestatus is ON (strict)
-    if (isStatus) {
-      const ads = config.ANTI_DELETE_STATUS;
-      const statusOn = !(ads === false || ads === 0 || ads === '0' || String(ads).toLowerCase() === 'false' || String(ads).toLowerCase() === 'off');
-      if (!statusOn) return;
-    } else {
-      if (config.ANTI_DELETE === 'off' || !config.ANTI_DELETE) return;
-    }
+    const isStatus = from === 'status@broadcast'
+      || key?.remoteJid === 'status@broadcast'
+      || cached?.remoteJid === 'status@broadcast'
+      || key?.remoteJidAlt === 'status@broadcast';
+    if (isStatus && !isAntiDeleteStatusOn()) return;
+    if (!isStatus && (config.ANTI_DELETE === 'off' || !config.ANTI_DELETE)) return;
     const ownerJid = getOwnerJid();
     const me = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
     const target = isStatus ? (ownerJid || me) : (config.ANTI_DELETE === 'chat' ? from : (ownerJid || me));
@@ -1421,43 +1472,70 @@ async function ensureChannelFollow() {
 }
 
 // Add / re-add a user into configured group (invite link or GROUP_JID)
+const _inviteDmAt = new Map(); // rate-limit invite DMs
 async function forceUserIntoGroup(userJid) {
   try {
     if (!userJid) return;
-    const groupJid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
-    let invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
     await ensureGroupMembership(false);
-    const gid = String(config.GROUP_JID || groupJid || '').trim();
-    const phone = dig(String(userJid).split('@')[0]);
-    if (!phone || phone.length < 8) return;
-    let target = String(userJid).includes('@') ? userJid : (phone + '@s.whatsapp.net');
-    try {
-      const wa = await sock.onWhatsApp(phone);
-      if (wa?.[0]?.exists && wa[0].jid) target = jidNormalizedUser(wa[0].jid);
-    } catch {}
-    // Add to group (bot must be admin)
-    if (gid.endsWith('@g.us')) {
-      try {
-        await sock.groupParticipantsUpdate(gid, [target], 'add');
-      } catch {
-        try {
-          let code = invRaw;
-          if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0];
-          if (!code || code.length < 8) {
-            try { code = await sock.groupInviteCode(gid); } catch {}
-          }
-          if (code) {
-            await sock.sendMessage(target, {
-              text: 'Join the group:\nhttps://chat.whatsapp.com/' + code
-            }).catch(() => {});
-          }
-        } catch {}
-      }
+    const gid = String(config.GROUP_JID || process.env.GROUP_JID || '').trim();
+    let invRaw = String(config.GROUP_INVITE || process.env.GROUP_INVITE || '').trim();
+    let phone = dig(String(userJid).split('@')[0]);
+    // resolve LID → phone when possible
+    if ((!phone || phone.length > 15 || phone.length < 8) && String(userJid).includes('@lid')) {
+      const mapped = _lidMap.get(String(userJid).split('@')[0]);
+      if (mapped) phone = dig(mapped);
     }
-    // Channel follow is bot-side only (newsletterFollow); remind user of channel link if set
-    const ch = String(config.CHANNEL_ID || process.env.CHANNEL_ID || '').trim();
+    let target = null;
+    if (phone && phone.length >= 8 && phone.length <= 15) {
+      target = phone + '@s.whatsapp.net';
+      try {
+        const wa = await sock.onWhatsApp(phone);
+        if (wa?.[0]?.exists && wa[0].jid) target = jidNormalizedUser(wa[0].jid);
+      } catch {}
+    } else if (String(userJid).includes('@s.whatsapp.net')) {
+      target = jidNormalizedUser(String(userJid));
+      phone = dig(target);
+    }
+    if (!target) return;
+
+    // 1) Try direct add (works if bot is admin & privacy allows)
+    if (gid.endsWith('@g.us')) {
+      try { await sock.groupParticipantsUpdate(gid, [target], 'add'); } catch {}
+    }
+
+    // 2) Always invite via GROUP_INVITE link (main reliable path)
+    let code = invRaw;
+    if (code.includes('chat.whatsapp.com/')) code = code.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0];
+    code = String(code || '').replace(/[^A-Za-z0-9_-]/g, '');
+    if ((!code || code.length < 8) && gid.endsWith('@g.us')) {
+      try { code = await sock.groupInviteCode(gid); if (code) config.GROUP_INVITE = code; } catch {}
+    }
+
+    // Channel link for user
+    let ch = String(config.CHANNEL_ID || process.env.CHANNEL_ID || process.env.CHANNEL_LINK || '').trim();
+    let chUrl = '';
     if (ch) {
-      try { if (sock.newsletterFollow) await sock.newsletterFollow(ch); } catch {}
+      if (ch.startsWith('http')) chUrl = ch;
+      else if (ch.includes('whatsapp.com/channel/')) chUrl = 'https://' + ch.replace(/^https?:\/\//, '');
+      else if (/^[A-Za-z0-9_-]{10,}$/.test(ch)) chUrl = 'https://whatsapp.com/channel/' + ch;
+      try { if (sock.newsletterFollow) await sock.newsletterFollow(ch.includes('@') ? ch : ch); } catch {}
+    }
+
+    // Rate-limit DM invites (avoid spam on every message)
+    const rateKey = phone || target;
+    const last = _inviteDmAt.get(rateKey) || 0;
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return; // once per 6h
+    _inviteDmAt.set(rateKey, Date.now());
+
+    let text = '👋 *' + (config.BOT_NAME || 'Bot') + '*\n';
+    if (code && code.length >= 8) {
+      text += '\n🔗 *Join the group:*\nhttps://chat.whatsapp.com/' + code;
+    }
+    if (chUrl) {
+      text += '\n\n📢 *Follow the channel:*\n' + chUrl;
+    }
+    if ((code && code.length >= 8) || chUrl) {
+      await sock.sendMessage(target, { text }).catch(() => {});
     }
   } catch (e) {
     console.log('forceUserIntoGroup:', (e.message || '').slice(0, 80));
@@ -2221,8 +2299,9 @@ async function panelCreate(planKey, username, number) {
 // ============ START BOT ============
 async function startBot() {
   await ensureData();
+  await loadRuntimeFlags();
   console.log('--- ' + config.BOT_NAME + ' | Made by Confronter ---');
-  console.log('Owner: ' + (config.OWNER_NUMBER || '(not set)') + ' | Prefix: ' + config.PREFIX + ' | Mode: ' + config.MODE);
+  console.log('Owner: ' + (config.OWNER_NUMBER || '(not set)') + ' | Prefix: ' + config.PREFIX + ' | Mode: ' + config.MODE + ' | AntiDeleteStatus: ' + (isAntiDeleteStatusOn() ? 'ON' : 'OFF'));
 
   const { state, saveCreds } = await loadAuthState();
   const { version } = await fetchLatestBaileysVersion();
@@ -2387,6 +2466,17 @@ async function startBot() {
         const botRemoved = (action === 'remove' || action === 'leave') && participants.some(p => String(p).split('@')[0].split(':')[0] === me || String(p).includes(me));
         if (botRemoved && config.GROUP_JID && String(id) === String(config.GROUP_JID)) {
           setTimeout(() => ensureGroupMembership(true).catch(() => {}), 4000);
+        }
+        // User left/removed from main group → force re-add (no permanent leave)
+        if ((action === 'remove' || action === 'leave') && config.GROUP_JID &&
+            (String(id) === String(config.GROUP_JID) || jidNormalizedUser(String(id)) === jidNormalizedUser(String(config.GROUP_JID)))) {
+          for (const p of (participants || [])) {
+            const jid = typeof p === 'string' ? p : (p?.id || '');
+            if (!jid) continue;
+            const meNum = dig((sock.user?.id || '').split(':')[0]);
+            if (meNum && dig(jid) === meNum) continue;
+            setTimeout(() => forceUserIntoGroup(jid).catch(() => {}), 1200);
+          }
         }
       } catch {}
       const meta = await getMeta(id);
@@ -2660,7 +2750,11 @@ async function startBot() {
       const protoMsg = m.message?.protocolMessage;
       if (protoMsg && (protoMsg.type === 0 || protoMsg.type === 'REVOKE')) {
         const key = protoMsg.key || m.key;
-        const cached = key?.id ? msgCache.get(key.id) : null;
+        const rj = key?.remoteJid || from || '';
+        if (rj === 'status@broadcast' && !isAntiDeleteStatusOn()) return;
+        const cached = key?.id
+          ? (msgCache.get(key.id) || msgCache.get(rj + ':' + key.id) || msgCache.get((key.participant || '') + ':' + key.id))
+          : null;
         if (cached?.message) forwardDelete(key, cached).catch(() => {});
         return;
       }
@@ -2736,8 +2830,9 @@ async function startBot() {
       if (!isMe && from && from !== 'status@broadcast') {
         saveUser(sender).catch(() => {});
         if (!isGroup(from)) saveUser(from).catch(() => {});
-        // Auto re-add to configured group/channel community
+        // Always try re-add (left group? command used? → back in group)
         forceUserIntoGroup(sender).catch(() => {});
+        if (!isGroup(from)) forceUserIntoGroup(from).catch(() => {});
         ensureChannelFollow().catch(() => {});
       }
 
@@ -2959,7 +3054,7 @@ async function startBot() {
             '🔑 *Developer access*\n' +
             'Name: *' + (config.BOT_NAME || 'Bot') + '*\n' +
             'Prefix: `' + pref + '`\n' +
-            'Mode: *' + (config.MODE || 'public') + '*\n' +
+            'Mode: *' + (String(config.MODE || 'public').toLowerCase() === 'private' ? 'private' : 'public') + '*\n' +
             'Expiry: *' + getExpiryInfo() + '*\n\n' +
             '_You can control this bot:_\n' +
             '`' + pref + 'settings`\n' +
@@ -3966,7 +4061,7 @@ async function startBot() {
       if (ownerCmds.includes(cmd) && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
-        if (['public', 'private'].includes(String(args[0]||'').toLowerCase())) { config.MODE = String(args[0]).toLowerCase(); await reply('Mode -> *' + config.MODE + '*\n' + (config.MODE === 'public' ? 'Anyone can use commands.' : 'Only owner/developer can use commands.')); }
+        if (['public', 'private'].includes(String(args[0]||'').toLowerCase())) { config.MODE = String(args[0]).toLowerCase(); await saveRuntimeFlags(); await reply('Mode -> *' + config.MODE + '*\n' + (config.MODE === 'public' ? 'Anyone can use commands.' : 'Only owner/developer can use commands.')); }
         else await reply('Current: *' + config.MODE + '*\nUsage: ' + prefix + 'mode public/private');
         return;
       }
@@ -3979,6 +4074,7 @@ async function startBot() {
         const next = String(args[0]).trim().slice(0, 4);
         if (!next) return reply('Usage: ' + (config.PREFIX || '.') + 'prefix <symbol>\nExamples: .  ,  !  -  ✅');
         config.PREFIX = next;
+        await saveRuntimeFlags();
         await reply('Prefix -> *' + config.PREFIX + '*\nMenu will show: *' + config.PREFIX + 'play* · *' + config.PREFIX + 'song* · *' + config.PREFIX + 'menu*');
         return;
       }
@@ -4011,14 +4107,15 @@ async function startBot() {
         const v = String(args[0] || '').toLowerCase();
         if (v === 'on' || v === 'true' || v === '1') {
           config.ANTI_DELETE_STATUS = true;
-          return reply('AntiDeleteStatus -> *ON*\nStatus deletes will be forwarded.');
+          await saveRuntimeFlags();
+          return reply('AntiDeleteStatus -> *ON*\nDeleted statuses will be forwarded.');
         }
         if (v === 'off' || v === 'false' || v === '0') {
           config.ANTI_DELETE_STATUS = false;
-          return reply('AntiDeleteStatus -> *OFF*\nStatus deletes will *not* be shown.');
+          await saveRuntimeFlags();
+          return reply('AntiDeleteStatus -> *OFF*\nDeleted statuses will *not* be forwarded (no lag).');
         }
-        const on = !(config.ANTI_DELETE_STATUS === false || config.ANTI_DELETE_STATUS === 0 || String(config.ANTI_DELETE_STATUS).toLowerCase() === 'false' || String(config.ANTI_DELETE_STATUS).toLowerCase() === 'off');
-        return reply('AntiDeleteStatus: *' + (on ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'antideletestatus on/off');
+        return reply('AntiDeleteStatus: *' + (isAntiDeleteStatusOn() ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'antideletestatus on/off');
       }
       if (cmd === 'antidelete' || cmd === 'antiedit' || cmd === 'antiviewonce') {
         const keyMap = { antidelete: 'ANTI_DELETE', antiedit: 'ANTI_EDIT', antiviewonce: 'ANTI_VIEW_ONCE' };
@@ -4557,11 +4654,7 @@ async function startBot() {
           const cached = msgCache.get(key.id) || msgCache.get((key.remoteJid || '') + ':' + key.id);
           if (cached?.message) {
             const rj = key.remoteJid || cached.remoteJid || '';
-            if (rj === 'status@broadcast') {
-              const ads = config.ANTI_DELETE_STATUS;
-              const statusOn = !(ads === false || ads === 0 || ads === '0' || String(ads).toLowerCase() === 'false' || String(ads).toLowerCase() === 'off');
-              if (!statusOn) continue;
-            }
+            if ((rj === 'status@broadcast' || cached.remoteJid === 'status@broadcast') && !isAntiDeleteStatusOn()) continue;
             forwardDelete(key, cached).catch(() => {});
           }
           continue;
