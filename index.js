@@ -460,10 +460,10 @@ function buildThreeColumnMenu(pushName, userCount) {
   const exp = getExpiryInfo();
   const name = config.BOT_NAME || 'DEADPOOL';
   const download = ['play', 'song', 'audio', 'video', 'yt', 'tiktok', 'ig', 'fb', 'lyrics', 'apk', 'spotify', 'xvideos', 'xnxx', 'shazam'];
-  const group = ['close', 'open', 'mute', 'unmute', 'tagall', 'hidetag', 'kick', 'promote', 'demote', 'warn', 'antilink', 'antibot', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus'];
-  const tools = ['groupjid', 'newsletter', 'getpp', 'profile', 'ping', 'alive', 'weather', 'calc', 'save', 'vv', 'settings', 'owner', 'delete', 'clear'];
+  const group = ['close', 'open', 'mute', 'unmute', 'tagall', 'hidetag', 'kick', 'add', 'promote', 'demote', 'warn', 'antilink', 'antibot', 'grouplink', 'groupinfo', 'approve', 'join', 'left', 'togcstatus'];
+  const tools = ['groupjid', 'newsletter', 'getpp', 'profile', 'ping', 'alive', 'weather', 'calc', 'save', 'vv', 'tourl', 'toaudio', 'shorturl', 'toimg', 'foreignnumber', 'heroku', 'repo', 'settings', 'owner', 'delete', 'clear'];
   const owner = ['mode', 'prefix', 'settings', 'users', 'broadcast', 'block', 'unblock', 'autoview', 'autolike', 'autoreact', 'autoread', 'antidelete', 'antideletestatus', 'antiedit', 'antiviewonce', 'anticall', 'welcome', 'goodbye', 'font', 'setpp', 'setmenu', 'pair', 'restart', 'update'];
-  const extra = ['gpt', 'ai', 'ask', 'chatbot', 'imagine', 'flux', 'sticker', 's', 'toimg', 'qc', 'family100', 'tebak', 'math', 'dice', 'joke', 'meme', 'neon', 'fire', 'panel', '1gb', 'listsrv'];
+  const extra = ['gpt', 'ai', 'ask', 'chatbot', 'imagine', 'flux', 'sticker', 's', 'toimg', 'tourl', 'toaudio', 'shorturl', 'repo', 'sc', 'foreignnumber', 'heroku', 'qc', 'family100', 'tebak', 'math', 'dice', 'joke', 'meme', 'neon', 'fire', 'panel', '1gb', 'listsrv'];
   const total = download.length + group.length + tools.length + owner.length + extra.length;
   let m = '💀 *' + name + '*\n';
   m += '👋 Hi *' + (pushName || 'User') + '*\n';
@@ -494,16 +494,16 @@ function buildMenuPage(page, pushName) {
     return box('DOWNLOADS', ['play <song>', 'song <name>', 'audio <name|url>', 'video <url/name>', 'yt <url/name>', 'tiktok <url>', 'ig <url>', 'fb <url>', 'lyrics <song>', 'apk <name>', 'spotify <q|url>', 'xvideos <q|url>', 'xnxx <q|url>', 'shazam <url>']);
   }
   if (['group', 'admin', 'grp'].includes(pg)) {
-    return box('GROUP / ADMIN', ['promote @user', 'demote @user', 'kick @user', 'warn @user', 'mute', 'unmute', 'open 2m', 'close', 'tagall', 'hidetag <text>', 'tagadmins', 'antilink on/off/warn/delete/kick', 'antigroupmention on/off', 'antibot on/off/delete/kick', 'antitoxic on/off', 'antiword on/off + words', 'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus']);
+    return box('GROUP / ADMIN', ['promote @user', 'demote @user', 'kick @user', 'add 2547..|@user', 'warn @user', 'mute', 'unmute', 'open 2m', 'close', 'tagall', 'hidetag <text>', 'tagadmins', 'antilink on/off/warn/delete/kick', 'antigroupmention on/off', 'antibot on/off/delete/kick', 'antitoxic on/off', 'antiword on/off + words', 'grouplink', 'groupinfo', 'approve', 'join <link>', 'left', 'togcstatus']);
   }
   if (['tools', 'utility', 'util'].includes(pg)) {
-    return box('TOOLS', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'settings']);
+    return box('TOOLS', ['ping', 'p', 'alive', 'calc <expr>', 'weather <city>', 'owner', 'delete', 'clear', 'groupjid <link>', 'newsletter <link>', 'tourl', 'toaudio', 'shorturl <url>', 'toimage <url>', 'settings']);
   }
   if (['ai', 'gpt'].includes(pg)) {
     return box('AI', ['gpt <question>', 'ai <question>', 'ask <question>', 'chatbot on/off', 'imagine <prompt>', 'flux <prompt>']);
   }
   if (['sticker', 'stickers'].includes(pg)) {
-    return box('STICKER', ['sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
+    return box('STICKER', ['sticker', 's', 'toimg', 'toimage <url>', 'tourl', 'toaudio', 'qc <text>', 'qcstick <text>', 'vv', 'save']);
   }
   if (['games', 'game'].includes(pg)) {
     return box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard', 'dice', '8ball', 'coinflip', 'epl', 'livescore']);
@@ -575,18 +575,20 @@ function getMenuCategories(prefix) {
     ]},
     { key: 'group', title: 'GROUP', cmds: [
       'close', 'open', 'mute', 'unmute',
-      'tagall', 'hidetag <text>', 'kick @user', 'promote @user',
+      'tagall', 'hidetag <text>', 'kick @user', 'add 2547..|@user', 'promote @user',
       'demote @user', 'warn @user',
       'antilink on/off/warn/delete/kick', 'antibot on/off/delete/kick/warn',
       'antitoxic on/off', 'antiword on/off',
       'antigroupmention on/off/delete/kick',
       'antistatusmention on/off/delete/block',
-      'grouplink', 'groupinfo', 'approve', 'left', 'togcstatus'
+      'grouplink', 'groupinfo', 'approve', 'join <link>', 'left', 'togcstatus'
     ]},
     { key: 'tools', title: 'TOOLS', cmds: [
       'groupjid <link>', 'newsletter <link>', 'getpp @user', 'profile @user',
       'ping', 'p', 'alive', 'weather <city>', 'calc <expr>',
-      'save', 'vv', 'settings', 'owner', 'delete', 'clear'
+      'save', 'vv', 'tourl', 'toaudio', 'shorturl <url>', 'toimage <url>',
+      'foreignnumber', 'heroku', 'repo', 'sc', 'script',
+      'settings', 'owner', 'delete', 'clear'
     ]},
     { key: 'owner', title: 'OWNER', cmds: [
       'mode public/private', 'prefix <symbol>', 'settings', 'users',
@@ -603,7 +605,7 @@ function getMenuCategories(prefix) {
       'chatbot on/off', 'imagine <prompt>', 'flux <prompt>'
     ]},
     { key: 'sticker', title: 'STICKER', cmds: [
-      'sticker', 's', 'toimg', 'qc <text>', 'qcstick <text>', 'vv', 'save'
+      'sticker', 's', 'toimg', 'toimage <url>', 'tourl', 'toaudio', 'qc <text>', 'qcstick <text>', 'vv', 'save'
     ]},
     { key: 'games', title: 'GAMES', cmds: [
       'family100', 'tebak gambar|kata|kalimat|lirik|lontong',
@@ -2231,6 +2233,84 @@ async function generateAiImage(prompt) {
   return { buffer: buf, url };
 }
 
+// ============ UPLOAD / SHORTURL HELPERS ============
+async function uploadToCatbox(buf, filename = 'file.bin', mime = 'application/octet-stream') {
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 50) return null;
+  // 1) Catbox
+  try {
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', new Blob([buf], { type: mime }), filename);
+    const r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: form });
+    const t = (await r.text()).trim();
+    if (t.startsWith('https://') && /catbox\.moe/i.test(t)) return t;
+  } catch (e) { console.log('catbox:', (e.message || '').slice(0, 60)); }
+  // 2) litterbox (temporary fallback, 24h)
+  try {
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('time', '24h');
+    form.append('fileToUpload', new Blob([buf], { type: mime }), filename);
+    const r = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: form });
+    const t = (await r.text()).trim();
+    if (t.startsWith('https://')) return t;
+  } catch (e) { console.log('litterbox:', (e.message || '').slice(0, 60)); }
+  // 3) 0x0.st
+  try {
+    const form = new FormData();
+    form.append('file', new Blob([buf], { type: mime }), filename);
+    const r = await fetch('https://0x0.st', { method: 'POST', body: form });
+    const t = (await r.text()).trim();
+    if (t.startsWith('https://')) return t;
+  } catch (e) { console.log('0x0:', (e.message || '').slice(0, 60)); }
+  return null;
+}
+
+async function shortenUrl(longUrl) {
+  const u = String(longUrl || '').trim();
+  if (!/^https?:\/\//i.test(u)) return null;
+  // 1) is.gd
+  try {
+    const r = await axios.get('https://is.gd/create.php', {
+      params: { format: 'simple', url: u },
+      timeout: 15000,
+      validateStatus: () => true,
+      headers: { 'User-Agent': UA }
+    });
+    const t = String(r.data || '').trim();
+    if (r.status < 400 && /^https?:\/\/is\.gd\//i.test(t) && !/error/i.test(t)) return t;
+  } catch {}
+  // 2) tinyurl
+  try {
+    const r = await axios.get('https://tinyurl.com/api-create.php', {
+      params: { url: u },
+      timeout: 15000,
+      validateStatus: () => true,
+      headers: { 'User-Agent': UA }
+    });
+    const t = String(r.data || '').trim();
+    if (r.status < 400 && /^https?:\/\/tinyurl\.com\//i.test(t)) return t;
+  } catch {}
+  // 3) v.gd
+  try {
+    const r = await axios.get('https://v.gd/create.php', {
+      params: { format: 'simple', url: u },
+      timeout: 15000,
+      validateStatus: () => true,
+      headers: { 'User-Agent': UA }
+    });
+    const t = String(r.data || '').trim();
+    if (r.status < 400 && /^https?:\/\/v\.gd\//i.test(t) && !/error/i.test(t)) return t;
+  } catch {}
+  return null;
+}
+
+function extractAnyUrl(text) {
+  const s = String(text || '');
+  const m = s.match(/https?:\/\/[^\s<>"']+/i);
+  return m ? m[0].replace(/[).,;]+$/, '') : null;
+}
+
 // ============ PANEL (Pterodactyl) ============
 const RAM_PLANS = {
   '1gb': { memory: 1024, cpu: 50, disk: 5120 },
@@ -3233,7 +3313,81 @@ async function startBot() {
         const up = Math.floor(process.uptime());
         const h = Math.floor(up / 3600), mn = Math.floor((up % 3600) / 60), s = up % 60;
         const mem = process.memoryUsage().heapUsed / 1024 / 1024;
-        await reply('*' + config.BOT_NAME + ' is online*\nUptime: ' + h + 'h ' + mn + 'm ' + s + 's\nRAM: ' + mem.toFixed(1) + ' MB\nMode: ' + config.MODE);
+        const title = (config.BOT_NAME || 'DEADPOOL') + ' is alive Motherfucker💀';
+        const body =
+          '*' + (config.BOT_NAME || 'DEADPOOL') + ' is online*\n' +
+          'Uptime: ' + h + 'h ' + mn + 'm ' + s + 's\n' +
+          'RAM: ' + mem.toFixed(1) + ' MB\n' +
+          'Mode: ' + (config.MODE || 'public') + '\n' +
+          'Prefix: ' + (config.PREFIX || '.') + '\n' +
+          (config.POWERED_BY || '> *Powered by Confronter*');
+
+        // Place deadpool.mp3 next to index.js (or ./media/deadpool.mp3)
+        const mp3Candidates = [
+          path.join(__dirname, 'deadpool.mp3'),
+          path.join(__dirname, 'media', 'deadpool.mp3'),
+          path.join(__dirname, 'tmp', 'deadpool.mp3'),
+          path.join(DATA_DIR, 'deadpool.mp3')
+        ];
+        let audioBuf = null;
+        for (const pth of mp3Candidates) {
+          try {
+            if (fs.existsSync(pth)) {
+              audioBuf = await fs.readFile(pth);
+              if (audioBuf && audioBuf.length > 1000) break;
+              audioBuf = null;
+            }
+          } catch {}
+        }
+
+        const thumbUrl = (config.MENU_MEDIA || config.BOT_IMAGE || '').trim();
+        let channelUrl = String(config.CHANNEL_ID || '').trim();
+        if (channelUrl && !channelUrl.startsWith('http')) {
+          if (channelUrl.includes('whatsapp.com/channel/')) {
+            channelUrl = 'https://whatsapp.com/channel/' + channelUrl.split('whatsapp.com/channel/')[1].split(/[?/\s]/)[0];
+          } else if (/^[A-Za-z0-9_-]{10,}$/.test(channelUrl)) {
+            channelUrl = 'https://whatsapp.com/channel/' + channelUrl;
+          } else channelUrl = '';
+        }
+
+        if (audioBuf) {
+          try {
+            const payload = {
+              audio: audioBuf,
+              mimetype: 'audio/mpeg',
+              ptt: true,
+              contextInfo: {
+                externalAdReply: {
+                  title: title,
+                  body: 'Uptime ' + h + 'h ' + mn + 'm · Mode ' + (config.MODE || 'public'),
+                  mediaType: 1,
+                  renderLargerThumbnail: true
+                }
+              }
+            };
+            if (channelUrl) payload.contextInfo.externalAdReply.sourceUrl = channelUrl;
+            try {
+              const tb = await resolveMenuImageBuffer().catch(() => null);
+              if (tb && tb.length > 800) payload.contextInfo.externalAdReply.thumbnail = tb;
+              else if (/^https?:\/\//i.test(thumbUrl)) payload.contextInfo.externalAdReply.thumbnailUrl = thumbUrl;
+            } catch {
+              if (/^https?:\/\//i.test(thumbUrl)) payload.contextInfo.externalAdReply.thumbnailUrl = thumbUrl;
+            }
+            await sock.sendMessage(from, payload, { quoted: m });
+            await sock.sendMessage(from, { text: styleReplyText(body) }, { quoted: m }).catch(() => {});
+            return;
+          } catch (e) {
+            console.log('alive audio:', (e.message || '').slice(0, 80));
+          }
+        }
+        try {
+          const img = await resolveMenuImageBuffer().catch(() => null);
+          if (img && img.length > 800) {
+            await sock.sendMessage(from, { image: img, caption: styleReplyText(body) }, { quoted: m });
+            return;
+          }
+        } catch {}
+        await reply(body);
         return;
       }
 
@@ -3248,6 +3402,108 @@ async function startBot() {
         }
         if (contacts.length) await sock.sendMessage(from, { contacts: { displayName: contacts.length > 1 ? 'Contacts' : 'Owner', contacts } });
         else await reply('No owner numbers configured.');
+        return;
+      }
+
+      // ============ FOREIGN NUMBER (display only) ============
+      if (['foreignnumber', 'foreign', 'numbers', 'virtualnum'].includes(cmd)) {
+        const txt =
+          '🌍 *Confronter Foreign Numbers*\n\n' +
+          'I have like all countries but price varies due to demand and supply🤝\n\n' +
+          'wa.me/' + (config.OWNER_NUMBER || '254796283064') + '\n\n' +
+          '🇺🇸 *United States* +1  — @500ksh\n' +
+          '🇬🇧 *United Kingdom* +44 — @440ksh\n' +
+          '🇱🇻 *Latvia* +371 — @400ksh\n' +
+          '🇿🇦 *South Africa* +27 — @300ksh\n' +
+          '🇮🇩 *Indonesia* +62 — @320ksh\n' +
+          '🇵🇭 *Philippines* +63 — @320ksh\n' +
+          '🇪🇪 *Estonia* +372 — @320ksh\n' +
+          '🇦🇴 *Angola* +244 — @320ksh\n' +
+          '🇲🇾 *Malaysia* +60 — @450ksh\n' +
+          '🇵🇱 *Poland* +48 — @450ksh\n' +
+          '🇬🇷 *Greece* +30 — @450ksh\n' +
+          '🇵🇹 *Portugal* +351 — @450ksh\n' +
+          '🇸🇪 *Sweden* +46 — @450ksh\n' +
+          '🇮🇳 *India* +91 — @450ksh\n' +
+          '🇳🇴 *Norway* +47 — @450ksh\n' +
+          '🇨🇲 *Cameroon* +237 — @450ksh\n' +
+          '🇱🇰 *Sri Lanka* +94 — @450ksh\n' +
+          '🇲🇲 *Myanmar* +95 — @450ksh\n\n' +
+          '👇 Press link to WhatsApp now 👇\n' +
+          'https://wa.me/' + (config.OWNER_NUMBER || '254796283064') + '\n\n' +
+          '> *Confronter*';
+        try {
+          const img = await resolveMenuImageBuffer().catch(() => null);
+          if (img && img.length > 800) {
+            await sock.sendMessage(from, { image: img, caption: styleReplyText(txt).slice(0, 1024) }, { quoted: m });
+            if (txt.length > 1000) await sock.sendMessage(from, { text: styleReplyText(txt) }).catch(() => {});
+            return;
+          }
+        } catch {}
+        await reply(txt);
+        return;
+      }
+
+      // ============ HEROKU (display only) ============
+      if (cmd === 'heroku') {
+        const txt =
+          '☁️ *HEROKU SERVICES*\n\n' +
+          '📥 *Confronter Trusted ✓*\n\n' +
+          '• ↔️ Billed Heroku Acc — *350KSH*\n' +
+          '• 💳 Heroku Billing — *160KSH*\n' +
+          '• 🌿 Heroku Invite/Host — *200KSH*\n\n' +
+          'Contact: wa.me/' + (config.OWNER_NUMBER || '254796283064') + '\n\n' +
+          '> *Confronter*';
+        try {
+          const img = await resolveMenuImageBuffer().catch(() => null);
+          if (img && img.length > 800) {
+            await sock.sendMessage(from, { image: img, caption: styleReplyText(txt) }, { quoted: m });
+            return;
+          }
+        } catch {}
+        await reply(txt);
+        return;
+      }
+
+      // ============ REPO / SC / SCRIPT ============
+      if (['sc', 'script', 'repo'].includes(cmd)) {
+        const repo = String(config.REPO_URL || process.env.REPO_URL || '').trim();
+        const name = config.BOT_NAME || 'DEADPOOL';
+        let caption =
+          '💀 *' + name + ' — SOURCE*\n\n' +
+          '🚀 Hey *' + (m.pushName || 'User') + '*\n\n' +
+          '🍒 Get the source / deploy help.\n\n';
+        if (repo && /^https?:\/\//i.test(repo)) {
+          caption += '🔗 *Repo:*\n' + repo + '\n\n';
+        } else {
+          caption += '_Repo URL not set yet — set env `REPO_URL` or config.REPO_URL_\n\n';
+        }
+        caption +=
+          '🎯 Bot deployment / setup: contact owner\n' +
+          'wa.me/' + (config.OWNER_NUMBER || '254796283064') + '\n\n' +
+          '🖤 README before deployment.\n' +
+          '🏖 Made by Confronter\n' +
+          (config.POWERED_BY || '> *Powered by Confronter*');
+
+        let sent = false;
+        try {
+          const img = await resolveMenuImageBuffer().catch(() => null);
+          if (img && img.length > 800) {
+            await sock.sendMessage(from, { image: img, caption: styleReplyText(caption).slice(0, 1024) }, { quoted: m });
+            if (caption.length > 1000) await sock.sendMessage(from, { text: styleReplyText(caption) }).catch(() => {});
+            sent = true;
+          }
+        } catch {}
+        if (!sent) {
+          const urlImg = (config.MENU_MEDIA || config.BOT_IMAGE || '').trim();
+          if (/^https?:\/\//i.test(urlImg)) {
+            try {
+              await sock.sendMessage(from, { image: { url: urlImg }, caption: styleReplyText(caption).slice(0, 1024) }, { quoted: m });
+              sent = true;
+            } catch {}
+          }
+        }
+        if (!sent) await reply(caption);
         return;
       }
 
@@ -3649,14 +3905,160 @@ async function startBot() {
       }
       if (['toimg', 'toimage', 'photo'].includes(cmd)) {
         try {
+          // 1) URL in text → download image
+          const urlFromText = extractAnyUrl(text);
+          if (urlFromText) {
+            await reply('Fetching image...');
+            const buf = await fetchBuffer(urlFromText, 60000).catch(() => null);
+            if (!buf || buf.length < 200 || !isImageBuffer(buf)) {
+              await reply('Could not get image from that URL.');
+              return;
+            }
+            await sock.sendMessage(from, { image: buf, caption: '🖼️ from URL' + buildFooter() }, { quoted: m });
+            return;
+          }
+          // 2) Reply to sticker → image
           const q = getCtx(m).quotedMessage;
-          if (!q?.stickerMessage) { await reply('Reply to a sticker with ' + prefix + 'toimg'); return; }
-          const dl = await downloadMediaMsg(q);
-          if (!dl?.buffer) { await reply('Failed.'); return; }
-          await sock.sendMessage(from, { image: dl.buffer, caption: 'by ' + config.BOT_NAME });
+          if (q?.stickerMessage) {
+            const dl = await downloadMediaMsg(q);
+            if (!dl?.buffer) { await reply('Failed.'); return; }
+            await sock.sendMessage(from, { image: dl.buffer, caption: 'by ' + config.BOT_NAME }, { quoted: m });
+            return;
+          }
+          // 3) Reply to a message that is itself a URL
+          const qt = q?.conversation || q?.extendedTextMessage?.text || '';
+          const urlQ = extractAnyUrl(qt);
+          if (urlQ) {
+            await reply('Fetching image...');
+            const buf = await fetchBuffer(urlQ, 60000).catch(() => null);
+            if (!buf || buf.length < 200 || !isImageBuffer(buf)) {
+              await reply('Could not get image from that URL.');
+              return;
+            }
+            await sock.sendMessage(from, { image: buf, caption: '🖼️ from URL' + buildFooter() }, { quoted: m });
+            return;
+          }
+          await reply('Usage:\n' + prefix + 'toimg (reply sticker)\n' + prefix + 'toimage https://image-url.jpg\nOr reply to a URL');
         } catch { await reply('Convert failed.'); }
         return;
       }
+
+      // ============ TOURL (image/video/sticker → direct link via Catbox) ============
+      if (['tourl', 'upload', 'imgurl', 'mediurl'].includes(cmd)) {
+        try {
+          let media = null;
+          if (m.message?.imageMessage || m.message?.videoMessage || m.message?.stickerMessage || m.message?.documentMessage) {
+            media = m.message;
+          } else {
+            const q = getCtx(m).quotedMessage;
+            if (q && (q.imageMessage || q.videoMessage || q.stickerMessage || q.documentMessage || q.audioMessage)) media = q;
+          }
+          if (!media) {
+            await reply('Reply to an *image / video / sticker / document* with ' + prefix + 'tourl');
+            return;
+          }
+          await reply('Uploading...');
+          const dl = await downloadMediaMsg(media);
+          if (!dl?.buffer || dl.buffer.length < 100) {
+            await reply('Download failed / media expired.');
+            return;
+          }
+          let mime = 'application/octet-stream';
+          let name = 'file.bin';
+          if (dl.type === 'imageMessage' || isImageBuffer(dl.buffer)) {
+            mime = 'image/jpeg';
+            name = 'image.jpg';
+            if (dl.buffer[0] === 0x89 && dl.buffer[1] === 0x50) { mime = 'image/png'; name = 'image.png'; }
+          } else if (dl.type === 'videoMessage') {
+            mime = 'video/mp4';
+            name = 'video.mp4';
+          } else if (dl.type === 'stickerMessage') {
+            mime = 'image/webp';
+            name = 'sticker.webp';
+          } else if (dl.type === 'audioMessage') {
+            mime = 'audio/mpeg';
+            name = 'audio.mp3';
+          } else if (dl.type === 'documentMessage') {
+            mime = media.documentMessage?.mimetype || mime;
+            name = media.documentMessage?.fileName || name;
+          }
+          const url = await uploadToCatbox(dl.buffer, name, mime);
+          if (!url) {
+            await reply('Upload failed. Try again later.');
+            return;
+          }
+          await reply('🔗 *Direct URL*\n' + url + buildFooter());
+        } catch (e) {
+          await reply('tourl failed: ' + (e.message || e).toString().slice(0, 100));
+        }
+        return;
+      }
+
+      // ============ TOAUDIO (quoted video → mp3) ============
+      if (['toaudio', 'tomp3', 'mp3extract', 'extractaudio'].includes(cmd)) {
+        try {
+          let media = null;
+          if (m.message?.videoMessage) media = m.message;
+          else {
+            const q = getCtx(m).quotedMessage;
+            if (q?.videoMessage) media = q;
+            else if (q?.audioMessage) {
+              await reply('That is already audio. Reply to a *video* with ' + prefix + 'toaudio');
+              return;
+            }
+          }
+          if (!media?.videoMessage) {
+            await reply('Reply to a *video* with ' + prefix + 'toaudio');
+            return;
+          }
+          await reply('Extracting audio...');
+          const dl = await downloadMediaMsg(media);
+          if (!dl?.buffer || dl.buffer.length < 500) {
+            await reply('Download failed / media expired.');
+            return;
+          }
+          let buf = await toMp3(dl.buffer);
+          if (!buf || buf.length < 1000) {
+            await reply('Could not convert to MP3 (ffmpeg missing or bad video).');
+            return;
+          }
+          try {
+            await sock.sendMessage(from, { audio: buf, mimetype: 'audio/mpeg', ptt: false }, { quoted: m });
+          } catch {
+            await sock.sendMessage(from, { document: buf, mimetype: 'audio/mpeg', fileName: 'audio.mp3' }, { quoted: m });
+          }
+        } catch (e) {
+          await reply('toaudio failed: ' + (e.message || e).toString().slice(0, 100));
+        }
+        return;
+      }
+
+      // ============ SHORTURL ============
+      if (['shorturl', 'short', 'tinyurl', 'shorten'].includes(cmd)) {
+        try {
+          let long = extractAnyUrl(text);
+          if (!long) {
+            const q = getCtx(m).quotedMessage;
+            const qt = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || q?.videoMessage?.caption || '';
+            long = extractAnyUrl(qt);
+          }
+          if (!long) {
+            await reply('Usage:\n' + prefix + 'shorturl https://example.com/very/long/path\nOr reply to a message that contains a URL');
+            return;
+          }
+          await reply('Shortening...');
+          const short = await shortenUrl(long);
+          if (!short) {
+            await reply('Could not shorten that URL. Try again.');
+            return;
+          }
+          await reply('🔗 *Short URL*\n' + short + '\n\n📎 Original:\n' + long + buildFooter());
+        } catch (e) {
+          await reply('shorturl failed: ' + (e.message || e).toString().slice(0, 80));
+        }
+        return;
+      }
+
       if (cmd === 'qc' || cmd === 'qcstick') {
         let teks = text;
         if (!teks && getCtx(m).quotedMessage) { const q = getCtx(m).quotedMessage; teks = q.conversation || q.extendedTextMessage?.text || ''; }
@@ -4415,13 +4817,42 @@ async function startBot() {
         return;
       }
       if (['join', 'autojoin', 'rejoingroup'].includes(cmd)) {
+        // Prefer: reply/quote a group invite link, or paste link in text
+        let linkSrc = (text || '').trim();
+        if (!linkSrc || !/chat\.whatsapp\.com/i.test(linkSrc)) {
+          const q = getCtx(m).quotedMessage;
+          const qt = q?.conversation || q?.extendedTextMessage?.text || q?.imageMessage?.caption || q?.videoMessage?.caption || '';
+          if (qt) linkSrc = String(qt).trim();
+        }
+        const code = extractGroupInviteCode(linkSrc);
+        if (code) {
+          await reply('Joining group...');
+          try {
+            const gid = await sock.groupAcceptInvite(code);
+            if (gid) {
+              config.GROUP_JID = String(gid);
+              config.GROUP_INVITE = code;
+              let subject = 'Group';
+              try { subject = (await sock.groupMetadata(String(gid)))?.subject || subject; } catch {}
+              await reply('✅ Joined *' + subject + '*\nJID: `' + gid + '`');
+            } else {
+              await reply('Join request sent / already in group.');
+            }
+          } catch (e) {
+            const msg = String(e?.message || e);
+            if (/already|participant|conflict/i.test(msg)) await reply('Already in that group.');
+            else await reply('Join failed: ' + msg.slice(0, 120));
+          }
+          return;
+        }
+        // Fallback: configured GROUP_INVITE / GROUP_JID
         const inv = text || config.GROUP_INVITE || process.env.GROUP_INVITE || '';
         if (inv && !inv.endsWith('@g.us')) config.GROUP_INVITE = inv.includes('chat.whatsapp.com/') ? inv.split('chat.whatsapp.com/')[1].split(/[?/\s]/)[0] : inv.trim();
         if (text && text.endsWith('@g.us')) config.GROUP_JID = text.trim();
         await reply('Joining configured group/channel...');
         const okG = await ensureGroupMembership(true);
         await ensureChannelFollow();
-        await reply(okG ? 'Done - joined / already in group.' : 'Failed. Set GROUP_INVITE / GROUP_JID in config.');
+        await reply(okG ? 'Done - joined / already in group.' : 'Failed. Reply to a group link or: ' + prefix + 'join https://chat.whatsapp.com/XXXX');
         return;
       }
 
@@ -4487,7 +4918,7 @@ async function startBot() {
       }
 
       // ============ GROUP COMMANDS ============
-      const groupCmds = ['promote', 'demote', 'kick', 'left', 'leave', 'approve', 'hidetag', 'tagall', 'mute', 'unmute', 'antilink', 'grouplink', 'groupinfo', 'warn', 'tagadmins', 'open', 'close', 'antibot', 'antiword', 'antigroupmention', 'antistatusmention'];
+      const groupCmds = ['promote', 'demote', 'kick', 'add', 'left', 'leave', 'approve', 'hidetag', 'tagall', 'mute', 'unmute', 'antilink', 'grouplink', 'groupinfo', 'warn', 'tagadmins', 'open', 'close', 'antibot', 'antiword', 'antigroupmention', 'antistatusmention'];
       if (!isGroup(from) && groupCmds.includes(cmd)) { await reply(roast('group')); return; }
 
       if (cmd === 'antilink') {
@@ -4554,6 +4985,80 @@ async function startBot() {
         } catch (e) { await reply('Failed: ' + (e.message || e)); }
         return;
       }
+      // ============ ADD user to group ============
+      if (cmd === 'add') {
+        if (!(await isBotAdmin(from))) { await reply('I need to be admin first. Make the bot an admin, then try again.'); return; }
+        if (!(await isGroupAdmin(from, sender)) && !isOwner(sender, m) && !isDeveloper(sender, m)) { await reply(roast('admin')); return; }
+        let users = getTargetUsers(m, text, from, true);
+        // also accept bare numbers from text
+        if (!users.length && text) {
+          const nums = String(text).match(/\d{8,15}/g) || [];
+          for (const n of nums) users.push(dig(n) + '@s.whatsapp.net');
+        }
+        if (!users.length) {
+          await reply('Usage:\n' + prefix + 'add 2547xxxxxxxx\n' + prefix + 'add @user\nOr reply to their message with ' + prefix + 'add');
+          return;
+        }
+        const resolved = [];
+        const labels = [];
+        const fails = [];
+        for (const jid of users.slice(0, 10)) {
+          try {
+            let phone = dig(String(jid).split('@')[0].split(':')[0]);
+            try {
+              const p2 = await jidToPhoneAsync(jid, m, from);
+              if (p2 && /^\d{8,15}$/.test(p2)) phone = p2;
+            } catch {}
+            let targetJid = null;
+            try {
+              const wa = await sock.onWhatsApp(phone);
+              if (wa?.[0]?.exists && wa[0].jid) {
+                targetJid = jidNormalizedUser(wa[0].jid);
+                phone = dig(String(wa[0].jid).split('@')[0]) || phone;
+              }
+            } catch {}
+            if (!targetJid && /^\d{8,15}$/.test(phone || '')) targetJid = phone + '@s.whatsapp.net';
+            if (!targetJid) {
+              fails.push(String(jid).split('@')[0] + ' (not on WA)');
+              continue;
+            }
+            try {
+              const res = await sock.groupParticipantsUpdate(from, [targetJid], 'add');
+              // Baileys may return status codes per participant
+              const st = Array.isArray(res) ? res[0] : res;
+              const code = st?.status || st?.code || (st && st[targetJid]?.code);
+              if (code && String(code) !== '200' && String(code) !== '201') {
+                // 403 = privacy, 408 = invite needed, 409 = already member
+                if (String(code) === '409') {
+                  labels.push('+' + phone + ' (already)');
+                  resolved.push(targetJid);
+                } else if (String(code) === '403' || String(code) === '408') {
+                  fails.push('+' + phone + ' (privacy/invite needed)');
+                } else {
+                  fails.push('+' + phone + ' (' + code + ')');
+                }
+              } else {
+                labels.push('+' + phone);
+                resolved.push(targetJid);
+              }
+            } catch (e) {
+              fails.push('+' + phone + ' (' + String(e.message || e).slice(0, 40) + ')');
+            }
+            await delay(400);
+          } catch (e) {
+            fails.push(String(e.message || e).slice(0, 40));
+          }
+        }
+        let out = '';
+        if (labels.length) out += '✅ *ADD*\n' + labels.join(', ') + '\n';
+        if (fails.length) out += '❌ Failed:\n' + fails.join('\n');
+        if (!out) out = 'No users added.';
+        await sock.sendMessage(from, {
+          text: styleReplyText(out.trim()),
+          mentions: resolved
+        }).catch(() => reply(out.trim()));
+        return;
+      }
       if (['hidetag', 'tagall', 'htag'].includes(cmd)) {
         if (!(await isGroupAdmin(from, sender)) && !isOwner(sender, m)) { await reply(roast('admin')); return; }
         const meta = await getMeta(from);
@@ -4601,10 +5106,15 @@ async function startBot() {
         return;
       }
       if (cmd === 'left' || cmd === 'leave') {
-        if (!isOwner(sender, m) && !(await isGroupAdmin(from, sender))) { await reply(roast('admin')); return; }
-        await reply('Leaving...');
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !(await isGroupAdmin(from, sender))) { await reply(roast('admin')); return; }
+        if (!isGroup(from)) { await reply('This command only works inside a group.'); return; }
+        await reply('Leaving group...');
         await delay(600);
-        await sock.groupLeave(from);
+        try {
+          await sock.groupLeave(from);
+        } catch (e) {
+          await reply('Leave failed: ' + (e.message || e).toString().slice(0, 80));
+        }
         return;
       }
       if (cmd === 'warn') {
@@ -4706,4 +5216,3 @@ startBot().catch(e => {
   process.exit(1);
 });
 process.on('uncaughtException', e => console.log('Uncaught:', e.message));
-
