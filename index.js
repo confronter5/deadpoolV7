@@ -1,6 +1,6 @@
 /**
  * DEADPOOL V8 - Confronter Edition (full merged)
- * - APIs: https://apis.techwizardx.top  | Download site: https://confronter-downloads.onrender.com
+ * - APIs: https://api.techwizardx.top  | Download site: https://confronter-downloads.onrender.com
  * - Pair site: https://deadpool-session.onrender.com  (.pair for other users)
  * - Anti-delete / anti-edit / viewOnce: no more "Waiting for this message"
  * - .play/.audio -> pure playable audio (no caption/fileName)
@@ -10,7 +10,9 @@
  * - .block never blocks the bot number
  * - .update = git pull + restart
  * - Textmakers + imagine, panel, quoted APK/XV picks
+ * - Downloads: Confronter API (api.techwizardx.top) primary — YT / TikTok / IG / FB
  * FIX: dig / envBool / envList before config (TDZ)
+ * FIX: Developer (254796283064 + DEVELOPERS) has full access on every instance
  */
 
 const {
@@ -84,6 +86,7 @@ const defaults = {
   GOODBYE_MSG: 'Goodbye @user from *@group*.',
   PRESENCE: 'unavailable',
   ALWAYS_ONLINE: false,
+  AUTO_BIO: false,
   CHATBOT: false,
   ANTITOXIC: false,
   ANTIBUG: false,
@@ -137,7 +140,7 @@ const config = {
   ANTI_VIEW_ONCE: (env.ANTI_VIEW_ONCE || fileConfig.ANTI_VIEW_ONCE || defaults.ANTI_VIEW_ONCE),
   PRESENCE: (env.PRESENCE || fileConfig.PRESENCE || defaults.PRESENCE)
 };
-for (const k of ['AUTO_VIEW_STATUS', 'AUTO_LIKE_STATUS', 'AUTO_REACT', 'AUTO_READ', 'ANTI_CALL', 'ANTI_DELETE_STATUS', 'WELCOME', 'GOODBYE', 'ALWAYS_ONLINE', 'CHATBOT', 'ANTITOXIC', 'ANTIBUG']) {
+for (const k of ['AUTO_VIEW_STATUS', 'AUTO_LIKE_STATUS', 'AUTO_REACT', 'AUTO_READ', 'ANTI_CALL', 'ANTI_DELETE_STATUS', 'WELCOME', 'GOODBYE', 'ALWAYS_ONLINE', 'AUTO_BIO', 'CHATBOT', 'ANTITOXIC', 'ANTIBUG']) {
   config[k] = env[k] !== undefined ? envBool(env[k], defaults[k]) : (fileConfig[k] ?? defaults[k]);
 }
 for (const k of ['ANTI_DELETE', 'ANTI_EDIT', 'ANTI_VIEW_ONCE']) {
@@ -149,7 +152,7 @@ config.STATUS_LIKES = env.STATUS_LIKES ? String(env.STATUS_LIKES).split(/[\s,]+/
 config.REACT_EMOJIS = (Array.isArray(fileConfig.REACT_EMOJIS) && fileConfig.REACT_EMOJIS.length) ? fileConfig.REACT_EMOJIS : null;
 config.START_MSG = env.START_MSG || fileConfig.START_MSG || '';
 config.SEND_START_MSG = env.SEND_START_MSG !== undefined ? envBool(env.SEND_START_MSG, false) : (fileConfig.SEND_START_MSG ?? false);
-config.CONFRONTER_API = (env.CONFRONTER_API || env.API_BASE || 'https://apis.techwizardx.top').replace(/\/+$/, '');
+config.CONFRONTER_API = (env.CONFRONTER_API || env.API_BASE || 'https://api.techwizardx.top').replace(/\/+$/, '');
 config.DOWNLOAD_SITE = (env.DOWNLOAD_SITE || 'https://confronter-downloads.onrender.com').replace(/\/+$/, '');
 
 // ============ NOISE SUPPRESS ============
@@ -509,7 +512,7 @@ function buildMenuPage(page, pushName) {
     return box('GAMES', ['family100', 'tebak gambar|kata|kalimat|lirik|lontong', 'math easy|medium|hard', 'dice', '8ball', 'coinflip', 'epl', 'livescore']);
   }
   if (['owner', 'dev', 'developer'].includes(pg)) {
-    return box('OWNER / DEV', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antideletestatus on/off', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>', 'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>', 'reaction <emoji>', 'pair <number>', 'restart', 'update']);
+    return box('OWNER / DEV', ['mode public/private', 'prefix <symbol>', 'settings', 'users', 'broadcast <text>', 'block @user', 'unblock @user', 'autoview on/off', 'autolike on/off', 'autoreact on/off', 'autoread on/off', 'antidelete off/dm/chat', 'antideletestatus on/off', 'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off', 'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>', 'alwaysonline on/off', 'autobio on/off', 'setbotname <name>', 'setpp', 'setmenu <url>', 'reaction <emoji>', 'pair <number>', 'restart', 'update']);
   }
   if (['fun', 'more', 'textmaker'].includes(pg)) {
     return box('FUN & TEXTMAKER', ['joke', 'meme', 'fact', 'quote', 'truth', 'dare', 'dice', '8ball', 'coinflip', 'bible <verse>', 'news', 'livescore', 'epl', 'neon', 'fire', 'glitch', 'ice', 'matrix', 'thunder', 'hacker', 'luxury', 'blackpink', 'metallic', 'devil', 'sand', 'light', 'naruto']);
@@ -597,7 +600,7 @@ function getMenuCategories(prefix) {
       'antidelete off/dm/chat', 'antideletestatus on/off',
       'antiedit off/dm/chat', 'antiviewonce off/dm/chat', 'anticall on/off',
       'welcome on/off', 'goodbye on/off', 'font <style>', 'presence <type>',
-      'alwaysonline on/off', 'setbotname <name>', 'setpp', 'setmenu <url>',
+      'alwaysonline on/off', 'autobio on/off', 'setbotname <name>', 'setpp', 'setmenu <url>',
       'reaction <emoji>', 'pair <number>', 'restart', 'update'
     ]},
     { key: 'ai', title: 'AI', cmds: [
@@ -1004,6 +1007,7 @@ async function loadRuntimeFlags() {
     const j = await fs.readJson(RUNTIME_FLAGS_FILE);
     if (j && typeof j === 'object') {
       if (j.ANTI_DELETE_STATUS !== undefined) config.ANTI_DELETE_STATUS = !!j.ANTI_DELETE_STATUS;
+      if (j.AUTO_BIO !== undefined) config.AUTO_BIO = !!j.AUTO_BIO;
       if (j.MODE === 'public' || j.MODE === 'private') config.MODE = j.MODE;
       if (j.PREFIX) config.PREFIX = String(j.PREFIX).slice(0, 4);
     }
@@ -1013,12 +1017,79 @@ async function saveRuntimeFlags() {
   try {
     await fs.writeJson(RUNTIME_FLAGS_FILE, {
       ANTI_DELETE_STATUS: !!isAntiDeleteStatusOn(),
+      AUTO_BIO: !!config.AUTO_BIO,
       MODE: String(config.MODE || 'public').toLowerCase() === 'private' ? 'private' : 'public',
       PREFIX: config.PREFIX || '.',
       at: Date.now()
     }, { spaces: 0 });
   } catch {}
 }
+
+// ============ AUTO BIO (About) ============
+// Clock text updates every second in memory; WhatsApp About is pushed every ~20s
+// (WA rate-limits profile status — 1s pushes get ignored / banned).
+let __autoBioTimer = null;
+let __autoBioPushTimer = null;
+let __autoBioFontIdx = 0;
+let __autoBioLastText = '';
+const AUTO_BIO_FONT_CYCLE = ['sans-bold', 'bold', 'italic', 'double', 'script', 'tiny', 'serif-bold', 'typewriter', 'small-caps', 'sans'];
+
+function formatAutoBioClock(d = new Date()) {
+  try {
+    const tz = 'Africa/Nairobi';
+    const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
+    const day = d.toLocaleDateString('en-GB', { day: '2-digit', timeZone: tz });
+    const month = d.toLocaleDateString('en-US', { month: 'long', timeZone: tz });
+    const year = d.toLocaleDateString('en-US', { year: 'numeric', timeZone: tz });
+    const time = d.toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: tz
+    });
+    return weekday + ', ' + day + ' ' + month + ' ' + year + ' · ' + time + ' EAT';
+  } catch {
+    return d.toUTCString();
+  }
+}
+
+function buildAutoBioText() {
+  const name = String(config.BOT_NAME || 'DEADPOOL V8').trim() || 'DEADPOOL V8';
+  const plain = name + ' Running\n' + formatAutoBioClock();
+  const styles = AUTO_BIO_FONT_CYCLE.filter(s => FONT_MAPS[s]);
+  if (!styles.length) return plain.slice(0, 139);
+  __autoBioFontIdx = (__autoBioFontIdx + 1) % styles.length;
+  const style = styles[__autoBioFontIdx];
+  const styled = applyFont(plain, style);
+  return styled.length > 139 ? styled.slice(0, 136) + '...' : styled;
+}
+
+async function pushAutoBioNow(force = false) {
+  try {
+    if (!config.AUTO_BIO || !sock) return;
+    const text = buildAutoBioText();
+    if (!force && text === __autoBioLastText) return;
+    __autoBioLastText = text;
+    if (typeof sock.updateProfileStatus === 'function') {
+      await sock.updateProfileStatus(text);
+    }
+  } catch (e) {
+    console.log('autobio:', (e.message || '').slice(0, 80));
+  }
+}
+
+function stopAutoBio() {
+  if (__autoBioTimer) { clearInterval(__autoBioTimer); __autoBioTimer = null; }
+  if (__autoBioPushTimer) { clearInterval(__autoBioPushTimer); __autoBioPushTimer = null; }
+}
+
+function startAutoBio() {
+  stopAutoBio();
+  if (!config.AUTO_BIO) return;
+  // Keep an internal 1s tick so the next push always has a fresh second
+  __autoBioTimer = setInterval(() => {}, 1000);
+  // Push to WhatsApp About every 20 seconds (safe)
+  __autoBioPushTimer = setInterval(() => { pushAutoBioNow(true).catch(() => {}); }, 20000);
+  setTimeout(() => pushAutoBioNow(true).catch(() => {}), 2500);
+}
+
 
 function buildStartMessage() {
   // Single text bubble — plain https:// URLs on their own line = clickable in WhatsApp
@@ -1541,14 +1612,15 @@ async function autoJoinConfigured() {
 }
 
 // ============ API LAYER ============
-// Keith (apis.keithsite.lol) = primary for YT / TikTok / IG / FB
-// Confronter (apis.techwizardx.top) = everything else + fallback
-const KEITH_API = (process.env.KEITH_API || 'https://apis.keithsite.lol').replace(/\/+$/, '');
-const CONFRONTER_API = config.CONFRONTER_API;
+// Confronter (api.techwizardx.top) = PRIMARY for YT / TikTok / IG / FB + everything
+// Keith kept only as optional fallback if KEITH_API env is set
+const KEITH_API = (process.env.KEITH_API || '').replace(/\/+$/, '');
+const CONFRONTER_API = config.CONFRONTER_API || 'https://api.techwizardx.top';
 const DOWNLOAD_SITE = config.DOWNLOAD_SITE;
 
 async function keithGet(path, timeout = 90000) {
   try {
+    if (!KEITH_API) return null;
     const p = path.startsWith('/') ? path : '/' + path;
     const r = await dlGet(KEITH_API + p, { timeout });
     return r?.data ?? null;
@@ -1558,31 +1630,54 @@ async function keithGet(path, timeout = 90000) {
 async function confronterGet(path, timeout = 60000) {
   try {
     let p = path.startsWith('/') ? path : '/' + path;
-    if (!p.startsWith('/api/')) {
-      const map = {
-        '/download/ytmp3': '/api/download/ytmp3', '/download/ytmp4': '/api/download/ytmp4',
-        '/download/audio': '/api/download/ytmp3', '/download/video': '/api/download/ytmp4',
-        '/download/instadl': '/api/download/instagram', '/download/instagramdl': '/api/download/instagram',
-        '/download/tiktokdl': '/api/download/tiktok', '/download/tiktokdl3': '/api/download/tiktok',
-        '/download/fb': '/api/download/facebook', '/download/facebook': '/api/download/facebook',
-        '/download/xvideos': '/api/download/xvideos', '/download/xnxx': '/api/download/xvideos',
-        '/search/xvideos': '/api/search/xvideos', '/search/xnxx': '/api/search/xvideos',
-        '/search/lyrics': '/api/search/lyrics', '/search/lyrics2': '/api/search/lyrics',
-        '/search/apk': '/api/search/apk', '/search/aptoide': '/api/search/apk',
-        '/search/spotify': '/api/search/spotify', '/download/spotify': '/api/download/spotify',
-        '/search/movie': '/api/search/movie', '/download/movie': '/api/download/movie',
-        '/ai/gpt': '/api/ai/chat', '/ai/gemini': '/api/ai/chat', '/ai/deepseek': '/api/ai/chat',
-        '/ai/flux': '/api/ai/flux', '/ai/magicstudio': '/api/ai/flux', '/ai/shazam': '/api/ai/shazam',
-        '/fun/jokes': '/api/fun/joke', '/fun/meme': '/api/fun/meme', '/fun/fact': '/api/fun/fact',
-        '/fun/quote': '/api/fun/quote', '/fun/truth': '/api/fun/truth', '/fun/dare': '/api/fun/dare',
-        '/fun/pickuplines': '/api/fun/pickuplines', '/fun/insult': '/api/fun/insult',
-        '/news/bbc': '/api/news/bbc', '/news/tech': '/api/news/tech'
-      };
-      const basePath = p.split('?')[0];
-      const qs = p.includes('?') ? p.slice(p.indexOf('?')) : '';
-      p = map[basePath] ? map[basePath] + qs : (p.startsWith('/api/') ? p : '/api' + p);
+    // Prefer native root paths on api.techwizardx.top (catalog uses /download/ytmp3 etc.)
+    // Also accept /api/gateway/... and legacy /api/... forms.
+    const map = {
+      // YouTube audio / video
+      '/download/audio': '/download/ytmp3',
+      '/download/video': '/download/ytmp4',
+      '/download/yta': '/download/ytmp3',
+      '/download/ytv': '/download/ytmp4',
+      '/download/mp3': '/download/ytmp3',
+      '/download/mp4': '/download/ytmp4',
+      '/download/dlmp3': '/download/ytmp3',
+      '/download/dlmp4': '/download/ytmp4',
+      // Social
+      '/download/tiktokdl': '/download/tiktokdl3',
+      '/download/tiktok': '/download/tiktokdl3',
+      '/download/instadl': '/download/instagramdl',
+      '/download/instagram': '/download/instagramdl',
+      '/download/fb': '/download/fbdown',
+      '/download/facebook': '/download/fbdown',
+      '/download/fbdl': '/download/fbdown',
+      // Search / other
+      '/search/aptoide': '/search/apk',
+      '/download/xnxx': '/download/xvideos',
+      '/search/xnxx': '/search/xvideos',
+      '/search/lyrics2': '/search/lyrics',
+      // AI / fun aliases (keep if catalog has them under these names)
+      '/ai/gpt': '/ai/gpt',
+      '/fun/jokes': '/fun/jokes',
+      '/fun/meme': '/fun/meme',
+      '/fun/fact': '/fun/fact',
+      '/fun/quote': '/fun/quote',
+      '/fun/truth': '/fun/truth',
+      '/fun/dare': '/fun/dare',
+      '/news/bbc': '/news/bbc',
+      '/news/tech': '/news/tech'
+    };
+    const basePath = p.split('?')[0];
+    const qs = p.includes('?') ? p.slice(p.indexOf('?')) : '';
+    if (map[basePath]) {
+      p = map[basePath] + qs;
     }
-    const r = await dlGet(CONFRONTER_API + p, { timeout });
+    // Try root path first (working catalog style)
+    let r = await dlGet(CONFRONTER_API + p, { timeout });
+    if (r && r.status >= 400 && !p.startsWith('/api/')) {
+      // Fallback: try /api/gateway/ + path
+      const gw = '/api/gateway' + (p.startsWith('/') ? p : '/' + p);
+      r = await dlGet(CONFRONTER_API + gw, { timeout });
+    }
     return r?.data ?? null;
   } catch (e) { console.log('confronterGet:', (e.message || '').slice(0, 80)); return null; }
 }
@@ -1625,42 +1720,51 @@ function formatMediaCaption(meta, kind) {
 function isYoutubeUrl(s) { return /(?:youtube\.com|youtu\.be)\//i.test(String(s || '')); }
 
 async function searchYoutube(query) {
-  // 1) Keith search
+  // 1) Confronter primary
   try {
-    const data = await keithGet('/search/yts?q=' + encodeURIComponent(query), 30000);
-    const list = Array.isArray(data?.result) ? data.result : (Array.isArray(data?.results) ? data.results : []);
-    const v = list[0];
-    if (v) {
-      const id = v.id || v.videoId || '';
-      const url = v.url || (id ? 'https://www.youtube.com/watch?v=' + id : null);
-      if (url) return {
-        url,
-        title: v.title || query,
-        thumbnail: v.thumbnail || v.thumb || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
-        duration: v.duration || v.timestamp || null,
-        author: v.author || v.channel || v.uploader || '',
-        views: v.views || v.viewCount || null
-      };
+    for (const ep of [
+      '/search/yts?query=' + encodeURIComponent(query),
+      '/search/yts?q=' + encodeURIComponent(query),
+      '/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5'
+    ]) {
+      const data = await confronterGet(ep, 40000);
+      if (!data) continue;
+      const list = data?.result?.results || (Array.isArray(data?.result) ? data.result : data?.results) || [];
+      const v = Array.isArray(list) ? list[0] : null;
+      if (v) {
+        const id = v.id || v.videoId || '';
+        const url = v.url || (id ? 'https://www.youtube.com/watch?v=' + id : null);
+        if (url) return {
+          url,
+          title: v.title || query,
+          thumbnail: v.thumbnail || v.thumb || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
+          duration: v.duration || v.timestamp || null,
+          author: v.author || v.channel || v.uploader || '',
+          views: v.views || v.viewCount || null
+        };
+      }
     }
-  } catch (e) { console.log('keith yts:', (e.message || '').slice(0, 60)); }
-  // 2) Confronter fallback
-  try {
-    const data = await confronterGet('/api/gateway/search/yts?query=' + encodeURIComponent(query) + '&limit=5', 40000);
-    const list = data?.result?.results || (Array.isArray(data?.result) ? data.result : data?.results) || [];
-    const v = Array.isArray(list) ? list[0] : null;
-    if (v) {
-      const id = v.id || v.videoId || '';
-      const url = v.url || (id ? 'https://www.youtube.com/watch?v=' + id : null);
-      if (url) return {
-        url,
-        title: v.title || query,
-        thumbnail: v.thumbnail || v.thumb || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
-        duration: v.duration || v.timestamp || null,
-        author: v.author || v.channel || v.uploader || '',
-        views: v.views || v.viewCount || null
-      };
-    }
-  } catch (e) { console.log('yts:', (e.message || '').slice(0, 60)); }
+  } catch (e) { console.log('confronter yts:', (e.message || '').slice(0, 60)); }
+  // 2) Optional Keith fallback
+  if (KEITH_API) {
+    try {
+      const data = await keithGet('/search/yts?q=' + encodeURIComponent(query), 30000);
+      const list = Array.isArray(data?.result) ? data.result : (Array.isArray(data?.results) ? data.results : []);
+      const v = list[0];
+      if (v) {
+        const id = v.id || v.videoId || '';
+        const url = v.url || (id ? 'https://www.youtube.com/watch?v=' + id : null);
+        if (url) return {
+          url,
+          title: v.title || query,
+          thumbnail: v.thumbnail || v.thumb || (id ? 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' : ''),
+          duration: v.duration || v.timestamp || null,
+          author: v.author || v.channel || v.uploader || '',
+          views: v.views || v.viewCount || null
+        };
+      }
+    } catch (e) { console.log('keith yts:', (e.message || '').slice(0, 60)); }
+  }
   return null;
 }
 
@@ -1784,11 +1888,48 @@ async function downloadViaYtdl(url, audioOnly) {
   return null;
 }
 
-// engine binary-stream endpoints first (fast, server-side download), then JSON endpoints
+// Confronter (api.techwizardx.top) — JSON first (proven working), then file/stream fallbacks
 async function downloadViaConfronter(url, audioOnly = true) {
+  const jsonEps = audioOnly
+    ? [
+        '/download/ytmp3?url=',
+        '/download/audio?url=',
+        '/download/mp3?url=',
+        '/download/yta?url=',
+        '/download/dlmp3?url=',
+        '/api/gateway/download/ytmp3?url=',
+        '/api/download/ytmp3?url='
+      ]
+    : [
+        '/download/ytmp4?url=',
+        '/download/video?url=',
+        '/download/mp4?url=',
+        '/download/ytv?url=',
+        '/download/dlmp4?url=',
+        '/api/gateway/download/ytmp4?url=',
+        '/api/download/ytmp4?url='
+      ];
+  for (const ep of jsonEps) {
+    try {
+      const data = await confronterGet(ep + encodeURIComponent(url), 90000);
+      if (!data || data.status === false) continue;
+      const mediaUrl = extractMediaUrl(data);
+      if (!mediaUrl) continue;
+      const meta = extractMeta(data);
+      const title = String(meta.title || data?.result?.title || 'Media').slice(0, 120);
+      let buf = null;
+      try { buf = await fetchBuffer(String(mediaUrl), 120000); } catch {}
+      if (buf && buf.length > 5000) {
+        return { buffer: buf, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
+      }
+      // return URL so caller can still try proxy / direct
+      return { buffer: null, title, url: String(mediaUrl), meta: { ...meta, title }, pageUrl: url };
+    } catch (e) { console.log('confronter ep', ep, (e.message || '').slice(0, 60)); }
+  }
+  // Optional binary file endpoints (if upstream adds them)
   const fileEps = audioOnly
-    ? ['/api/download/ytmp3/file?url=', '/api/gateway/download/ytmp3/file?url=', '/api/download/audio/file?url=']
-    : ['/api/download/ytmp4/file?url=', '/api/gateway/download/ytmp4/file?url=', '/api/download/video/file?url='];
+    ? ['/download/ytmp3/file?url=', '/api/download/ytmp3/file?url=']
+    : ['/download/ytmp4/file?url=', '/api/download/ytmp4/file?url='];
   for (const ep of fileEps) {
     try {
       const r = await axios.get(CONFRONTER_API + ep + encodeURIComponent(url), {
@@ -1798,26 +1939,10 @@ async function downloadViaConfronter(url, audioOnly = true) {
       if (r.status < 400 && r.data) {
         const b = Buffer.from(r.data);
         if (b.length > 5000 && b[0] !== 0x7b && !/^\s*</.test(b.slice(0, 20).toString())) {
-          return { buffer: b, title: 'media', url: null, meta: { title: 'media' } };
+          return { buffer: b, title: 'media', url: null, meta: { title: 'media' }, pageUrl: url };
         }
       }
     } catch (e) { console.log('engine file', ep, (e.message || '').slice(0, 50)); }
-  }
-  const jsonEps = audioOnly
-    ? ['/api/download/ytmp3?url=', '/api/gateway/download/ytmp3?url=', '/api/download/audio?url=']
-    : ['/api/download/ytmp4?url=', '/api/gateway/download/ytmp4?url=', '/api/download/video?url='];
-  for (const ep of jsonEps) {
-    try {
-      const data = await confronterGet(ep + encodeURIComponent(url), 90000);
-      if (!data || data.status === false) continue;
-      const mediaUrl = extractMediaUrl(data);
-      if (!mediaUrl) continue;
-      const meta = extractMeta(data);
-      const title = String(meta.title || 'Media').slice(0, 120);
-      let buf = null;
-      try { buf = await fetchBuffer(String(mediaUrl), 90000); } catch {}
-      return { buffer: (buf && buf.length > 5000) ? buf : null, title, url: String(mediaUrl), meta };
-    } catch (e) { console.log('confronter ep', ep, (e.message || '').slice(0, 60)); }
   }
   return null;
 }
@@ -1891,38 +2016,49 @@ async function downloadYouTube(query, audioOnly = true) {
     url = found.url;
     title = found.title || query;
   }
-  // Fast: Keith SaveTube only (usually < 10s)
-  try {
-    const d = await downloadViaKeith(url, audioOnly);
-    if (d?.buffer && d.buffer.length > 5000) {
-      d.title = d.title || title;
-      return d;
-    }
-    if (d?.url) {
-      // one more direct fetch
-      try {
-        const r = await axios.get(String(d.url), {
-          responseType: 'arraybuffer', timeout: 90000, maxContentLength: 300 * 1024 * 1024,
-          validateStatus: () => true, maxRedirects: 5,
-          headers: { 'User-Agent': UA, Accept: '*/*', Referer: 'https://savetube.me/', 'Accept-Encoding': 'identity' }
-        });
-        if (r.status < 400 && r.data) {
-          const b = Buffer.from(r.data);
-          if (b.length > 5000 && b[0] !== 0x7b) {
-            return { buffer: b, title: d.title || title, url: d.url, meta: d.meta };
-          }
-        }
-      } catch {}
-    }
-  } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 60)); }
-  // Fallback: confronter file binary (skip slow ytdl on cloud)
+  // PRIMARY: Confronter API (api.techwizardx.top) — working YT endpoints
   try {
     const d = await downloadViaConfronter(url, audioOnly);
     if (d?.buffer && d.buffer.length > 5000) {
       d.title = d.title || title;
       return d;
     }
+    if (d?.url) {
+      try {
+        let buf = await proxyFetch(d.url, audioOnly).catch(() => null);
+        if (!buf) buf = await fetchBuffer(String(d.url), 120000).catch(() => null);
+        if (buf && buf.length > 5000) {
+          return { buffer: buf, title: d.title || title, url: d.url, meta: d.meta };
+        }
+      } catch {}
+    }
   } catch (e) { console.log('confronter yt:', (e.message || '').slice(0, 60)); }
+  // Optional: Keith fallback only if KEITH_API env is configured
+  if (KEITH_API) {
+    try {
+      const d = await downloadViaKeith(url, audioOnly);
+      if (d?.buffer && d.buffer.length > 5000) {
+        d.title = d.title || title;
+        return d;
+      }
+      if (d?.url) {
+        try {
+          const buf = await fetchBuffer(String(d.url), 90000).catch(() => null);
+          if (buf && buf.length > 5000) {
+            return { buffer: buf, title: d.title || title, url: d.url, meta: d.meta };
+          }
+        } catch {}
+      }
+    } catch (e) { console.log('keith yt:', (e.message || '').slice(0, 60)); }
+  }
+  // Last resort: local yt-dlp / ytdl-core if installed
+  try {
+    const d = await downloadViaYtdl(url, audioOnly);
+    if (d?.buffer && d.buffer.length > 5000) {
+      d.title = d.title || title;
+      return d;
+    }
+  } catch (e) { console.log('ytdl yt:', (e.message || '').slice(0, 60)); }
   return null;
 }
 
@@ -2469,6 +2605,7 @@ async function startBot() {
       global.__BOT_READY = true;
       global.__BOT_READY_AT = Math.floor(Date.now() / 1000);
       console.log(config.BOT_NAME + ' ONLINE');
+      try { if (config.AUTO_BIO) startAutoBio(); } catch {}
       setTimeout(async () => {
         try { await autoJoinConfigured(); } catch {}
         try {
@@ -3652,23 +3789,29 @@ async function startBot() {
         return;
       }
 
-      // ============ TIKTOK (Keith primary) ============
+      // ============ TIKTOK (Confronter primary) ============
       if (['tiktok', 'tt'].includes(cmd)) {
         if (!text || !/tiktok\.com|vm\.tiktok|vt\.tiktok/i.test(text)) { await reply('Usage: ' + prefix + 'tiktok <url>'); return; }
         await reply('Downloading TikTok...');
         let mediaUrl = null, title = 'TikTok';
-        // Keith first
+        // Confronter first (api.techwizardx.top)
         try {
-          const data = await keithGet('/download/tiktokdl3?url=' + encodeURIComponent(text.trim()), 60000);
-          mediaUrl = extractMediaUrl(data);
-          title = extractMeta(data).title || data?.result?.title || data?.result?.caption || 'TikTok';
+          for (const ep of ['/download/tiktokdl3?url=', '/download/tiktokdl?url=', '/api/gateway/download/tiktok?url=', '/api/download/tiktok?url=']) {
+            try {
+              const data = await confronterGet(ep + encodeURIComponent(text.trim()), 60000);
+              if (!data || data.status === false) continue;
+              mediaUrl = extractMediaUrl(data);
+              title = extractMeta(data).title || data?.result?.title || data?.result?.caption || 'TikTok';
+              if (mediaUrl) break;
+            } catch {}
+          }
         } catch {}
-        // Confronter fallback
-        if (!mediaUrl) {
+        // Optional Keith fallback
+        if (!mediaUrl && KEITH_API) {
           try {
-            const data = await confronterGet('/api/download/tiktok?url=' + encodeURIComponent(text.trim()), 60000);
+            const data = await keithGet('/download/tiktokdl3?url=' + encodeURIComponent(text.trim()), 60000);
             mediaUrl = extractMediaUrl(data);
-            title = extractMeta(data).title || data?.result?.title || 'TikTok';
+            title = extractMeta(data).title || data?.result?.title || data?.result?.caption || 'TikTok';
           } catch {}
         }
         if (!mediaUrl) { await reply('Failed to download TikTok.'); return; }
@@ -3681,16 +3824,16 @@ async function startBot() {
         return;
       }
 
-      // ============ INSTAGRAM (Keith primary) ============
+      // ============ INSTAGRAM (Confronter primary) ============
       if (['ig', 'instagram', 'insta'].includes(cmd)) {
         if (!text || !text.includes('instagram')) { await reply('Usage: ' + prefix + 'ig <url>'); return; }
         await reply('Downloading Instagram...');
         try {
           let urls = [];
-          // Keith first
-          for (const ep of ['/download/instadl?url=', '/download/instagramdl?url=']) {
+          // Confronter first (api.techwizardx.top)
+          for (const ep of ['/download/instagramdl?url=', '/download/instadl?url=', '/api/gateway/download/instagram?url=', '/api/download/instagram?url=']) {
             try {
-              const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+              const data = await confronterGet(ep + encodeURIComponent(text.trim()), 60000);
               if (!data || data.success === false || data.status === false) continue;
               const r = data?.result;
               if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl || x.video || x.image))).filter(u => typeof u === 'string' && u.startsWith('http'));
@@ -3704,14 +3847,24 @@ async function startBot() {
               if (urls.length) break;
             } catch {}
           }
-          // Confronter fallback
-          if (!urls.length) {
-            try {
-              const data = await confronterGet('/api/download/instagram?url=' + encodeURIComponent(text.trim()), 60000);
-              const r = data?.result;
-              if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl))).filter(u => typeof u === 'string' && u.startsWith('http'));
-              else { const u = extractMediaUrl(data); if (u) urls = [u]; }
-            } catch {}
+          // Optional Keith fallback
+          if (!urls.length && KEITH_API) {
+            for (const ep of ['/download/instadl?url=', '/download/instagramdl?url=']) {
+              try {
+                const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+                if (!data || data.success === false || data.status === false) continue;
+                const r = data?.result;
+                if (Array.isArray(r)) urls = r.map(x => (typeof x === 'string' ? x : (x.url || x.download || x.dl || x.video || x.image))).filter(u => typeof u === 'string' && u.startsWith('http'));
+                else {
+                  const u = extractMediaUrl(data);
+                  if (u) urls = [u];
+                  if (r?.url) urls.push(r.url);
+                  if (r?.video) urls.push(r.video);
+                  if (r?.images && Array.isArray(r.images)) urls.push(...r.images);
+                }
+                if (urls.length) break;
+              } catch {}
+            }
           }
           urls = [...new Set(urls.filter(Boolean))];
           if (!urls.length) { await reply('Failed to download Instagram.'); return; }
@@ -3729,24 +3882,28 @@ async function startBot() {
         return;
       }
 
-      // ============ FACEBOOK (Keith primary) ============
+      // ============ FACEBOOK (Confronter primary) ============
       if (['fb', 'facebook'].includes(cmd)) {
         if (!text || !/facebook\.com|fb\.watch/i.test(text)) { await reply('Usage: ' + prefix + 'fb <url>'); return; }
         await reply('Downloading Facebook video...');
         try {
           let u = null;
-          for (const ep of ['/download/fbdown?url=', '/download/fbdl?url=']) {
+          for (const ep of ['/download/fbdown?url=', '/download/fbdl?url=', '/api/gateway/download/facebook?url=', '/api/download/facebook?url=']) {
             try {
-              const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+              const data = await confronterGet(ep + encodeURIComponent(text.trim()), 60000);
+              if (!data || data.status === false) continue;
               u = extractMediaUrl(data);
               if (u) break;
             } catch {}
           }
-          if (!u) {
-            try {
-              const data = await confronterGet('/api/download/facebook?url=' + encodeURIComponent(text.trim()), 60000);
-              u = extractMediaUrl(data);
-            } catch {}
+          if (!u && KEITH_API) {
+            for (const ep of ['/download/fbdown?url=', '/download/fbdl?url=']) {
+              try {
+                const data = await keithGet(ep + encodeURIComponent(text.trim()), 60000);
+                u = extractMediaUrl(data);
+                if (u) break;
+              } catch {}
+            }
           }
           if (!u) { await reply('Failed to download.'); return; }
           let buf = await proxyFetch(u, false).catch(() => null);
@@ -4498,9 +4655,28 @@ async function startBot() {
         else await reply('Always Online: *' + (config.ALWAYS_ONLINE ? 'ON' : 'OFF') + '*');
         return;
       }
+      if (cmd === 'autobio') {
+        if (!isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
+        const v = String(args[0] || '').toLowerCase();
+        if (v === 'on' || v === 'true' || v === '1') {
+          config.AUTO_BIO = true;
+          await saveRuntimeFlags();
+          startAutoBio();
+          await pushAutoBioNow(true).catch(() => {});
+          await reply('AutoBio *ON*\nAbout updates with live day/date/time + rotating fonts.\n(WhatsApp allows ~every 20s, not every second.)');
+        } else if (v === 'off' || v === 'false' || v === '0') {
+          config.AUTO_BIO = false;
+          await saveRuntimeFlags();
+          stopAutoBio();
+          await reply('AutoBio *OFF*');
+        } else {
+          await reply('AutoBio: *' + (config.AUTO_BIO ? 'ON' : 'OFF') + '*\nUsage: ' + prefix + 'autobio on/off\nPreview:\n' + buildAutoBioText());
+        }
+        return;
+      }
 
       // ============ OWNER GATE ============
-      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antideletestatus', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'userlist', 'bcusers', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'die', 'block', 'unblock', 'antibug', 'antitoxic', 'reaction', 'chatbot', 'getsession', 'session', 'panel', 'ramlist', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'join', 'autojoin', 'rejoingroup'];
+      const ownerCmds = ['mode', 'prefix', 'settings', 'autoview', 'autolike', 'autoreact', 'autoread', 'anticall', 'antidelete', 'antideletestatus', 'antiedit', 'antiviewonce', 'broadcast', 'bc', 'users', 'userlist', 'bcusers', 'welcome', 'goodbye', 'setbotname', 'setpp', 'setmenu', 'botimage', 'startmsg', 'font', 'die', 'block', 'unblock', 'antibug', 'antitoxic', 'reaction', 'chatbot', 'autobio', 'getsession', 'session', 'panel', 'ramlist', '1gb', '2gb', '3gb', '4gb', '5gb', 'unli', 'listsrv', 'listusr', 'delsrv', 'delusr', 'join', 'autojoin', 'rejoingroup'];
       if (ownerCmds.includes(cmd) && !isOwner(sender, m) && !isDeveloper(sender, m) && !isMe) { await reply(roast('owner')); return; }
 
       if (cmd === 'mode') {
@@ -4578,6 +4754,7 @@ async function startBot() {
         txt += '• Font: *' + (config.FONT || 'off') + '*  →  `' + p + 'font bold`\n';
         txt += '• Presence: *' + config.PRESENCE + '*  →  `' + p + 'presence typing`\n';
         txt += '• AlwaysOnline: *' + on(config.ALWAYS_ONLINE) + '*  →  `' + p + 'alwaysonline on`\n\n';
+        txt += '• AutoBio: *' + on(config.AUTO_BIO) + '*  →  `' + p + 'autobio on/off`\n\n';
         txt += '*Status*\n';
         txt += '• AutoView: *' + on(config.AUTO_VIEW_STATUS) + '*  →  `' + p + 'autoview on/off`\n';
         txt += '• AutoLike: *' + on(config.AUTO_LIKE_STATUS) + '*  →  `' + p + 'autolike on/off`\n';
